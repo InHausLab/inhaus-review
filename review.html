@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InHaus Lab — Inspection Review</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ==================== NAV BAR ==================== -->
+<nav class="nav-bar">
+  <a href="index.html" class="nav-back">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    All Inspections
+  </a>
+  <div class="nav-divider"></div>
+  <a href="index.html" class="nav-logo">
+    <div class="logo-icon">IL</div>
+    InHaus Lab
+  </a>
+  <span class="nav-title" id="nav-title">Loading…</span>
+  <div class="nav-spacer"></div>
+  <div class="nav-meta">
+    <span id="save-indicator" class="save-indicator"></span>
+  </div>
+</nav>
+
+<!-- ==================== STICKY STATUS BAR ==================== -->
+<div class="review-sticky-bar">
+  <div>
+    <div class="address" id="sticky-address">—</div>
+    <div class="date" id="sticky-date">—</div>
+  </div>
+  <div id="sticky-status"></div>
+  <span class="owner-tag" id="sticky-owner"></span>
+  <div class="nav-spacer"></div>
+  <button id="submit-btn" class="btn btn-submit" onclick="submitToTanner()" disabled>
+    Submit to Tanner →
+  </button>
+</div>
+
+<!-- ==================== MAIN ==================== -->
+<main class="page-wrap">
+
+  <!-- Demo mode banner -->
+  <div id="demo-bar" class="placeholder-mode-bar hidden">
+    ⚠ Demo mode — Apps Script URL not configured. Showing sample data. Save and submit actions will not persist.
+  </div>
+
+  <!-- Submitted banner -->
+  <div id="submitted-banner" class="submitted-banner hidden">
+    <div class="banner-icon">✅</div>
+    <div class="banner-text">
+      <h3>Submitted to Tanner</h3>
+      <p id="submitted-banner-text">Tanner has been notified. This inspection is locked.</p>
+    </div>
+  </div>
+
+  <!-- ========== SECTION 1 — INSPECTION SUMMARY ========== -->
+  <div class="review-section">
+    <div class="card">
+      <div class="card-header" data-toggle>
+        <div class="card-header-left">
+          <span class="section-number">1</span>
+          <div>
+            <div class="card-title">Inspection Summary</div>
+            <div class="card-subtitle">Core details and report builder notes</div>
+          </div>
+        </div>
+        <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <polyline points="5 8 10 13 15 8"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <div class="field-group two-col">
+          <div>
+            <label class="field-label" for="field-client-name">Client Name</label>
+            <input type="text" id="field-client-name" class="field-input" placeholder="Client name">
+            <div class="field-original"></div>
+          </div>
+          <div>
+            <label class="field-label" for="field-property-address">Property Address</label>
+            <input type="text" id="field-property-address" class="field-input" placeholder="Property address">
+            <div class="field-original"></div>
+          </div>
+        </div>
+        <div class="field-group two-col mt-12">
+          <div>
+            <label class="field-label" for="field-inspection-date">Inspection Date</label>
+            <input type="date" id="field-inspection-date" class="field-input">
+            <div class="field-original"></div>
+          </div>
+          <div class="field-display-only">
+            <label class="field-label" for="field-inspector-name">Lead Inspector</label>
+            <input type="text" id="field-inspector-name" class="field-input" readonly placeholder="Inspector name">
+          </div>
+        </div>
+        <div class="field-group single mt-16">
+          <div>
+            <label class="field-label" for="field-report-notes">
+              Report Builder Notes
+              <span class="text-muted" style="font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">— What Tanner needs to know about this inspection</span>
+            </label>
+            <textarea id="field-report-notes" class="field-textarea large" placeholder="e.g. Client's main concern is the basement moisture. Focus Tanner on the east wall findings. Water panel was not ordered — client declined. Mold swab results will arrive separately..."></textarea>
+            <div class="field-original"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== SECTION 2 — COMPLETENESS GATE ========== -->
+  <div class="review-section">
+    <div class="card">
+      <div class="card-header" data-toggle>
+        <div class="card-header-left">
+          <span class="section-number">2</span>
+          <div>
+            <div class="card-title">Before You Can Submit</div>
+            <div class="card-subtitle">All items must be complete before submission unlocks</div>
+          </div>
+        </div>
+        <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <polyline points="5 8 10 13 15 8"/>
+        </svg>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="gate-section gate-failing" id="gate-section">
+          <div class="gate-header">
+            <span class="gate-title">Completeness checklist</span>
+            <span class="gate-status-text failing" id="gate-status-text">Checking…</span>
+          </div>
+          <div class="gate-list" id="gate-list">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== SECTION 3 — ROOMS & OBSERVATIONS ========== -->
+  <div class="review-section">
+    <div class="card">
+      <div class="card-header" data-toggle>
+        <div class="card-header-left">
+          <span class="section-number">3</span>
+          <div>
+            <div class="card-title">Rooms &amp; Observations</div>
+            <div class="card-subtitle">Review and edit all room notes</div>
+          </div>
+        </div>
+        <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <polyline points="5 8 10 13 15 8"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <div id="rooms-container">
+          <div class="loading-state">
+            <div class="loading-spinner"></div><br>Loading rooms…
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== SECTION 4 — TESTS & SAMPLES ========== -->
+  <div class="review-section">
+    <div class="card">
+      <div class="card-header" data-toggle>
+        <div class="card-header-left">
+          <span class="section-number">4</span>
+          <div>
+            <div class="card-title">Tests &amp; Samples</div>
+            <div class="card-subtitle">Locations, sample IDs, and confirmation</div>
+          </div>
+        </div>
+        <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <polyline points="5 8 10 13 15 8"/>
+        </svg>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div style="overflow-x:auto">
+          <table class="tests-table">
+            <thead>
+              <tr>
+                <th style="width:160px">Test</th>
+                <th style="width:200px">Location</th>
+                <th style="width:160px">Sample ID</th>
+                <th style="width:90px;text-align:center">Conducted?</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="tests-tbody">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+        <div style="padding:12px 16px;border-top:1px solid var(--gray-100)">
+          <label class="field-label">Tests Not Conducted / Client Notes</label>
+          <input type="text" id="field-tests-not-conducted" class="field-input"
+            placeholder="e.g. PFAS and Water Panel not ordered by client">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== SECTION 5 — PHOTOS ========== -->
+  <div class="review-section">
+    <div class="card">
+      <div class="card-header" data-toggle>
+        <div class="card-header-left">
+          <span class="section-number">5</span>
+          <div>
+            <div class="card-title">Photos</div>
+            <div class="card-subtitle">Mark each photo Include, Exclude, or Unreviewed</div>
+          </div>
+        </div>
+        <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <polyline points="5 8 10 13 15 8"/>
+        </svg>
+      </div>
+      <div class="card-body">
+
+        <!-- Filter bar -->
+        <div class="photos-filter-bar">
+          <button class="filter-btn active" data-filter="all">All</button>
+          <button class="filter-btn" data-filter="include">Include</button>
+          <button class="filter-btn" data-filter="exclude">Exclude</button>
+          <button class="filter-btn" data-filter="unreviewed">Unreviewed</button>
+          <select id="room-filter" class="filter-select">
+            <option value="all">All Rooms</option>
+          </select>
+          <div class="nav-spacer"></div>
+          <span class="text-muted" id="photo-filter-count"></span>
+        </div>
+
+        <!-- Photo grid -->
+        <div class="photo-grid" id="photo-grid">
+          <div class="loading-state" style="grid-column:1/-1">
+            <div class="loading-spinner"></div><br>Loading photos…
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== SECTION 6 — SUBMIT TO TANNER ========== -->
+  <div class="review-section" id="submit-section-wrap">
+    <div class="card" id="submit-section">
+      <div class="card-header" data-toggle>
+        <div class="card-header-left">
+          <span class="section-number">6</span>
+          <div>
+            <div class="card-title">Submit to Tanner</div>
+            <div class="card-subtitle">Final confirmation before sending to report builder</div>
+          </div>
+        </div>
+        <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <polyline points="5 8 10 13 15 8"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <div class="submit-summary">
+          <div class="submit-stat">
+            <div class="stat-num" id="summary-included">—</div>
+            <div class="stat-label">Photos Included</div>
+          </div>
+          <div class="submit-stat">
+            <div class="stat-num" id="summary-reviewed">—</div>
+            <div class="stat-label">Rooms Reviewed</div>
+          </div>
+          <div class="submit-stat">
+            <div class="stat-num" id="summary-rooms">—</div>
+            <div class="stat-label">Total Rooms</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:8px">
+          <label class="field-label">Report Builder Notes Preview</label>
+        </div>
+        <div class="notes-preview empty" id="notes-preview">No notes yet.</div>
+
+        <div class="submit-actions">
+          <div>
+            <button class="admin-unlock" type="button" onclick="adminUnlock()">
+              Admin: Reopen Review
+            </button>
+          </div>
+          <button id="submit-btn-bottom" class="btn btn-submit" onclick="submitToTanner()" disabled>
+            Submit to Tanner →
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- Photo modal (populated by JS) -->
+<div id="photo-modal" class="photo-modal hidden"></div>
+<div class="toast-container" id="toast-container"></div>
+
+<script src="portal.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    portalInit('review');
+
+    // Keep both submit buttons in sync
+    const topBtn    = document.getElementById('submit-btn');
+    const bottomBtn = document.getElementById('submit-btn-bottom');
+
+    if (topBtn && bottomBtn) {
+      const syncButtons = () => {
+        bottomBtn.disabled = topBtn.disabled;
+        bottomBtn.textContent = topBtn.textContent;
+      };
+      const observer = new MutationObserver(syncButtons);
+      observer.observe(topBtn, { attributes: true, childList: true, characterData: true });
+      syncButtons();
+    }
+
+    // Sync notes preview with field
+    const notesField = document.getElementById('field-report-notes');
+    const notesPreview = document.getElementById('notes-preview');
+    if (notesField && notesPreview) {
+      notesField.addEventListener('input', () => {
+        const val = notesField.value.trim();
+        notesPreview.textContent = val || 'No notes yet.';
+        notesPreview.className = `notes-preview ${val ? '' : 'empty'}`;
+      });
+    }
+
+    // Tests not conducted field
+    const tncField = document.getElementById('field-tests-not-conducted');
+    if (tncField) {
+      tncField.addEventListener('blur', () => {
+        if (typeof saveField === 'function') {
+          saveField('summary', 'testsNotConducted', tncField.value);
+        }
+      });
+    }
+  });
+</script>
+</body>
+</html>

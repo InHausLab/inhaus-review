@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InHaus Lab — Inspection Review</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Page-specific overrides */
+    .stats-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .stat-pill {
+      background: var(--white);
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-lg);
+      padding: 12px 20px;
+      text-align: center;
+      min-width: 110px;
+    }
+    .stat-pill .num {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--green);
+      line-height: 1;
+    }
+    .stat-pill .lbl {
+      font-size: .72rem;
+      color: var(--gray-500);
+      margin-top: 3px;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ==================== NAV BAR ==================== -->
+<nav class="nav-bar">
+  <a href="index.html" class="nav-logo">
+    <div class="logo-icon">IL</div>
+    InHaus Lab
+  </a>
+  <div class="nav-divider"></div>
+  <span class="nav-title">Inspector Review Portal</span>
+  <div class="nav-spacer"></div>
+  <div class="nav-meta">
+    <span id="nav-clock"></span>
+  </div>
+</nav>
+
+<!-- ==================== MAIN ==================== -->
+<main class="page-wrap">
+
+  <div class="page-header">
+    <h1>Inspection Review</h1>
+    <p>All inspections — review and submit to Tanner when complete.</p>
+  </div>
+
+  <!-- Demo mode banner -->
+  <div id="demo-bar" class="placeholder-mode-bar hidden">
+    ⚠ Demo mode — Apps Script URL not configured. Showing sample data. Changes will not be saved.
+  </div>
+
+  <!-- Stats row (populated by JS) -->
+  <div class="stats-row" id="stats-row">
+    <div class="stat-pill"><div class="num" id="stat-total">—</div><div class="lbl">Total</div></div>
+    <div class="stat-pill"><div class="num" id="stat-in-review">—</div><div class="lbl">In Review</div></div>
+    <div class="stat-pill"><div class="num" id="stat-submitted">—</div><div class="lbl">Submitted</div></div>
+    <div class="stat-pill"><div class="num" id="stat-complete">—</div><div class="lbl">Complete</div></div>
+  </div>
+
+  <!-- Table card -->
+  <div class="card">
+    <div class="list-toolbar" style="padding: 14px 20px 0; border-bottom: 1px solid var(--gray-100);">
+      <span class="count-label" id="inspection-count">Loading…</span>
+      <button class="btn btn-secondary btn-sm" onclick="loadInspectionList()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.73-7.44"/></svg>
+        Refresh
+      </button>
+    </div>
+    <div class="inspection-table-wrap" style="padding: 0 0 4px;">
+      <table class="inspection-table">
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Client</th>
+            <th>Date</th>
+            <th>Inspector</th>
+            <th>Status</th>
+            <th>Photos</th>
+            <th>Missing</th>
+            <th>Last Updated</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="inspection-tbody">
+          <tr>
+            <td colspan="9" class="loading-state">
+              <div>
+                <div class="loading-spinner"></div>
+                <br>Loading inspections…
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<div class="toast-container" id="toast-container"></div>
+
+<script src="portal.js"></script>
+<script>
+  // Clock
+  function updateClock() {
+    const el = document.getElementById('nav-clock');
+    if (el) el.textContent = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  }
+  updateClock();
+  setInterval(updateClock, 30000);
+
+  // Stats population helper
+  function populateStats(inspections) {
+    const total      = inspections.length;
+    const inReview   = inspections.filter(i => i.status === 'In Review').length;
+    const submitted  = inspections.filter(i => i.status === 'Submitted to Tanner').length;
+    const complete   = inspections.filter(i => i.status === 'Report Complete').length;
+    document.getElementById('stat-total').textContent     = total;
+    document.getElementById('stat-in-review').textContent = inReview;
+    document.getElementById('stat-submitted').textContent  = submitted;
+    document.getElementById('stat-complete').textContent   = complete;
+  }
+
+  // Override renderInspectionList to also populate stats
+  const _origRender = window.portalInit;
+  document.addEventListener('DOMContentLoaded', () => {
+    // Patch loadInspectionList to also update stats after render
+    const origLoad = window.loadInspectionList;
+
+    // We'll hook into data once it's available via MutationObserver on tbody
+    const observer = new MutationObserver(() => {
+      // Collect rendered rows and compute stats from MOCK or live data
+      const tbody = document.getElementById('inspection-tbody');
+      if (tbody && tbody.children.length && !tbody.querySelector('.loading-state')) {
+        // Count badges
+        const badges = tbody.querySelectorAll('.badge');
+        let inReview = 0, submitted = 0, complete = 0;
+        badges.forEach(b => {
+          const t = b.textContent.trim();
+          if (t === 'In Review') inReview++;
+          else if (t === 'Submitted to Tanner') submitted++;
+          else if (t === 'Report Complete') complete++;
+        });
+        const total = tbody.querySelectorAll('tr').length;
+        document.getElementById('stat-total').textContent     = total;
+        document.getElementById('stat-in-review').textContent = inReview;
+        document.getElementById('stat-submitted').textContent  = submitted;
+        document.getElementById('stat-complete').textContent   = complete;
+        document.getElementById('inspection-count').textContent =
+          `${total} inspection${total !== 1 ? 's' : ''}`;
+      }
+    });
+    observer.observe(document.getElementById('inspection-tbody'), { childList: true, subtree: false });
+
+    portalInit('list');
+  });
+</script>
+</body>
+</html>
