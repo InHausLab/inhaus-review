@@ -6,7 +6,7 @@
  */
 
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzZoRaJtJs9Nvb3H1aLToccUazpqtij3pWNHl0tX3okFw9E47BewY7arvRJlp2XXsGYOw/exec';
-const ACCESS_TOKEN    = 'InHaus2026';
+const ACCESS_TOKEN    = 'inhaus_review_2026';
 
 const IS_DEMO = (APPS_SCRIPT_URL === 'PLACEHOLDER_URL');
 
