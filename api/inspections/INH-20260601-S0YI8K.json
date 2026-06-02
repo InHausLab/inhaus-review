@@ -1,1 +1,240 @@
-{"status": "ok", "inspection": {"inspectionId": "INH-20260601-S0YI8K", "propertyAddress": "test property", "inspectorName": "Tanner", "inspectionDate": "2026-06-01", "clientName": "Test", "numberOfLevels": "2", "numberOfBedrooms": "2", "numberOfBathrooms": "3", "waterSource": "Well", "waterSourceDescription": "", "residenceType": "Single-Family Home", "yearBuilt": "", "squareFootage": "", "basement": "", "carpetedRooms": "", "fireplace": "", "pets": "", "smokingVaping": "", "stoveType": "Gas", "wifiNetwork": "asdfasd", "clientConcerns": "lots of concerns", "occupancyDuringInspection": "", "weatherConditions": "", "knownProblemAreas": "", "startedAt": "2026-06-01T19:19:57.324Z", "endedAt": "2026-06-01T20:11:32.898Z", "status": "completed", "preAssessmentChecklist": {"preAssessment": {"reviewConcerns": true, "reviewHome": true, "corentiumRegistered": true, "waterTestsActivated": true, "radonPrepared": true, "qtrakSetup": true}}, "arrivalSetup": {"assessmentStartTime": "13:00", "utilityRoomLevel": "Basement", "homeownerGreeted": true, "tarpPlaced": true, "equipmentUnloaded": true, "equipmentTidy": true, "reviewConcerns": true, "askAdditional": true, "testsExplained": true, "durationExplained": true, "sedentaryAdvised": true, "airthingsPaired": true, "airthingsWifiConnected": true, "airthingsPlaced": true, "filterInserted": true, "fanPluggedIn": true, "allergenPlacement": true, "qtrakSensorTest": true, "arrivalNotes": "these are test notes", "boulderBlueTestLocation": "kitchen", "boulderBlueSampleId": "B234KFKS"}, "deviceSetup": {"pfasKitchenFaucet": true, "airthingsViewPlusSetup": true}, "exteriorAssessment": {"exteriorGuidance": {}, "exteriorPhotos": {}, "sidingTypes": ["Wood"]}, "radonSetup": {"radonMultipleMonitors": true}, "rooms": [{"roomName": "Room 1 - Primary Bedroom", "type": "room-test", "level": "lowest", "stepId": "lowest-room-0", "flirGuidance": {"flirScanStains": true, "flirStartExterior": true, "flirPhotoAll": true, "flirPhotoNoConcern": true}, "roomType": "Bedroom", "flirDone": "Yes", "flirConcerns": "No", "breezeDone": "Yes", "aiSummary": "No items flagged.", "aiSummaryGeneratedAt": "2026-06-01T19:28:57.351Z"}, {"roomName": "Basement", "type": "room-test", "level": "lowest", "stepId": "lowest-room-1", "flirGuidance": {}, "breezeDone": "Yes"}, {"roomName": "Bedroom 1", "type": "bedroom", "level": "upper", "stepId": "bedroom-0", "flirGuidance": {}}, {"roomName": "Bedroom 2", "type": "bedroom", "level": "upper", "stepId": "bedroom-1", "flirGuidance": {}, "flirDone": "Yes"}, {"roomName": "Bathroom 1", "type": "bathroom", "level": "upper", "stepId": "bathroom-0", "breezeDone": "Yes", "bathUnderSink": true, "bathToilet": true, "bathShower": true, "bathGrout": true, "bathLeak": "No"}, {"roomName": "Bathroom 2", "type": "bathroom", "level": "upper", "stepId": "bathroom-1"}, {"roomName": "Bathroom 3", "type": "bathroom", "level": "upper", "stepId": "bathroom-2"}, {"roomName": "Main Living Area", "type": "living-area", "level": "main", "stepId": "living-area", "flirGuidance": {}}, {"roomName": "Kitchen Inspection", "type": "kitchen-appliance", "level": "main", "stepId": "kitchen-appliance", "stoveType": "Gas", "exhaustVented": "Ducted (to outside)", "fridge": false, "appliancesCondition": "Excellent - New or Recently Replaced (0-3 years)", "moldVisible": "Yes"}, {"roomName": "Water Samples", "type": "water-sample", "level": "main", "stepId": "water-sample", "waterPanelCollected": "Yes", "microplasticsStatus": "Collected", "pfasStatus": "Collected"}, {"roomName": "ATP Testing", "type": "atp-kitchen", "level": "main", "stepId": "atp-kitchen", "atpCleaned": "Yes", "atpPostStatus": "Pass", "atpSurface": "Counter", "atpPreRLU": 100, "atpPreStatus": "Pass", "atpPostRLU": 5}, {"roomName": "Kitchen Air Testing", "type": "kitchen-air", "level": "main", "stepId": "kitchen-air", "flirGuidance": {}}], "utilityRoom": {"ventilationType": {"bathExhaust": true, "hrv": false, "erv": true}, "levelLocation": "Basement", "forcedHVAC": "Yes", "heatingType": "Other (specify)", "acType": "Central AC", "hvacCondensation": "No", "hvacLeaks": "No", "uvSystemPresent": "No", "otherAirPurifierPresent": "Yes", "airFiltrationPresent": "Yes", "waterFiltrationPresent": "Yes", "waterSofteningPresent": "Yes"}, "wrapUp": {}, "customerDebrief": {"radonPickupTime": "2026-06-03T20:19", "debriefCompleted": "Yes", "radonPickupReminder": "Yes", "reportDateCommunicated": "Yes", "aiFollowUpPlan": "# HOME HEALTH INSPECTION FOLLOW-UP PLAN\n**Property:** Test Property\n\n---\n\n## IMMEDIATE (Within 30 Days)\n\n**No immediate concerns identified.** The primary bedroom inspection revealed no flagged items.\n\n---\n\n## 3-6 MONTHS\n\n- **Radon Testing**\n  - *What to check:* Radon gas levels in the home\n  - *Why it matters:* Radon is a colorless, odorless radioactive gas that accumulates in basements and lower levels; prolonged exposure increases lung cancer risk\n  - *Test needed:* EPA-approved radon test kit (minimum 48-hour exposure) or hire certified radon inspector\n\n- **HVAC Filter Inspection & Documentation**\n  - *What to check:* Current filter condition, size, and MERV rating\n  - *Why it matters:* Clogged filters reduce air quality, strain the system, and increase energy costs\n  - *Test needed:* Visual inspection; replace if visibly dirty; establish replacement schedule (typically every 1-3 months)\n\n---\n\n## 12 MONTHS\n\n- **Well Water Testing** (if not tested within past year)\n  - *What to check:* Bacterial contamination, nitrates, pH, hardness, and other potability standards\n  - *Why it matters:* Private wells lack municipal oversight; contamination can occur without visible signs\n  - *Test needed:* Certified lab analysis of water samples; contact your state health department for approved testing facilities\n\n---\n\n## ANNUAL\n\n- **HVAC System Maintenance**\n  - *What to check:* System efficiency, refrigerant levels, electrical connections, and ductwork integrity\n  - *Why it matters:* Regular maintenance extends equipment lifespan and prevents costly mid-season failures\n  - *Test needed:* Professional HVAC inspection and servicing (ideally before heating/cooling seasons)\n\n- **Well System Inspection**\n  - *What to check:* Pressure tank condition, pump operation, and wellhead sealing\n  - *Why it matters:* Well pump failure or contamination pathways compromise water safety and availability\n  - *Test needed:* Licensed well contractor inspection\n\n---\n\n## OVERALL HOME HEALTH STATUS\nNo significant health or safety concerns were identified in this inspection; however, critical baseline information regarding radon exposure, HVAC condition, and well water quality must be established within the next 6 months to ensure ongoing habitability.", "aiFollowUpPlanGeneratedAt": "2026-06-01T20:08:29.181Z"}, "postAssessment": {"shipping": {}, "dataManagement": {}, "finalCheck": {}}, "completedAt": "2026-06-01T20:11:32.898Z", "ventilationReadable": "Bathroom Exhaust Fan(s), ERV", "windowsOpen": "", "appliancesCondition": "Excellent - New or Recently Replaced (0-3 years)", "roomsWithDampness": 0, "roomsWithMustySmell": 0, "roomSummaries": {"lowest-room-0": {"roomName": "Room 1 - Primary Bedroom", "summary": "No items flagged.", "generatedAt": "2026-06-01T19:28:57.351Z"}}, "aiFollowUpPlan": "# HOME HEALTH INSPECTION FOLLOW-UP PLAN\n**Property:** Test Property\n\n---\n\n## IMMEDIATE (Within 30 Days)\n\n**No immediate concerns identified.** The primary bedroom inspection revealed no flagged items.\n\n---\n\n## 3-6 MONTHS\n\n- **Radon Testing**\n  - *What to check:* Radon gas levels in the home\n  - *Why it matters:* Radon is a colorless, odorless radioactive gas that accumulates in basements and lower levels; prolonged exposure increases lung cancer risk\n  - *Test needed:* EPA-approved radon test kit (minimum 48-hour exposure) or hire certified radon inspector\n\n- **HVAC Filter Inspection & Documentation**\n  - *What to check:* Current filter condition, size, and MERV rating\n  - *Why it matters:* Clogged filters reduce air quality, strain the system, and increase energy costs\n  - *Test needed:* Visual inspection; replace if visibly dirty; establish replacement schedule (typically every 1-3 months)\n\n---\n\n## 12 MONTHS\n\n- **Well Water Testing** (if not tested within past year)\n  - *What to check:* Bacterial contamination, nitrates, pH, hardness, and other potability standards\n  - *Why it matters:* Private wells lack municipal oversight; contamination can occur without visible signs\n  - *Test needed:* Certified lab analysis of water samples; contact your state health department for approved testing facilities\n\n---\n\n## ANNUAL\n\n- **HVAC System Maintenance**\n  - *What to check:* System efficiency, refrigerant levels, electrical connections, and ductwork integrity\n  - *Why it matters:* Regular maintenance extends equipment lifespan and prevents costly mid-season failures\n  - *Test needed:* Professional HVAC inspection and servicing (ideally before heating/cooling seasons)\n\n- **Well System Inspection**\n  - *What to check:* Pressure tank condition, pump operation, and wellhead sealing\n  - *Why it matters:* Well pump failure or contamination pathways compromise water safety and availability\n  - *Test needed:* Licensed well contractor inspection\n\n---\n\n## OVERALL HOME HEALTH STATUS\nNo significant health or safety concerns were identified in this inspection; however, critical baseline information regarding radon exposure, HVAC condition, and well water quality must be established within the next 6 months to ensure ongoing habitability.", "aiFollowUpPlanGeneratedAt": "2026-06-01T20:08:29.181Z"}}
+{
+  "status": "ok",
+  "inspection": {
+    "inspectionId": "INH-20260601-S0YI8K",
+    "propertyAddress": "test property",
+    "inspectorName": "Tanner",
+    "inspectionDate": "2026-06-01",
+    "clientName": "Test",
+    "numberOfLevels": "2",
+    "numberOfBedrooms": "2",
+    "numberOfBathrooms": "3",
+    "waterSource": "Well",
+    "waterSourceDescription": "",
+    "residenceType": "Single-Family Home",
+    "yearBuilt": "",
+    "squareFootage": "",
+    "basement": "",
+    "carpetedRooms": "",
+    "fireplace": "",
+    "pets": "",
+    "smokingVaping": "",
+    "stoveType": "Gas",
+    "wifiNetwork": "asdfasd",
+    "clientConcerns": "lots of concerns",
+    "occupancyDuringInspection": "",
+    "weatherConditions": "",
+    "knownProblemAreas": "",
+    "startedAt": "2026-06-01T19:19:57.324Z",
+    "endedAt": "2026-06-01T20:11:32.898Z",
+    "status": "completed",
+    "preAssessmentChecklist": {
+      "preAssessment": {
+        "reviewConcerns": true,
+        "reviewHome": true,
+        "corentiumRegistered": true,
+        "waterTestsActivated": true,
+        "radonPrepared": true,
+        "qtrakSetup": true
+      }
+    },
+    "arrivalSetup": {
+      "assessmentStartTime": "13:00",
+      "utilityRoomLevel": "Basement",
+      "homeownerGreeted": true,
+      "tarpPlaced": true,
+      "equipmentUnloaded": true,
+      "equipmentTidy": true,
+      "reviewConcerns": true,
+      "askAdditional": true,
+      "testsExplained": true,
+      "durationExplained": true,
+      "sedentaryAdvised": true,
+      "airthingsPaired": true,
+      "airthingsWifiConnected": true,
+      "airthingsPlaced": true,
+      "filterInserted": true,
+      "fanPluggedIn": true,
+      "allergenPlacement": true,
+      "qtrakSensorTest": true,
+      "arrivalNotes": "these are test notes",
+      "boulderBlueTestLocation": "kitchen",
+      "boulderBlueSampleId": "B234KFKS"
+    },
+    "deviceSetup": {
+      "pfasKitchenFaucet": true,
+      "airthingsViewPlusSetup": true
+    },
+    "exteriorAssessment": {
+      "exteriorGuidance": {},
+      "exteriorPhotos": {},
+      "sidingTypes": [
+        "Wood"
+      ]
+    },
+    "radonSetup": {
+      "radonMultipleMonitors": true
+    },
+    "rooms": [
+      {
+        "roomName": "Room 1 - Primary Bedroom",
+        "type": "room-test",
+        "level": "lowest",
+        "stepId": "lowest-room-0",
+        "flirGuidance": {
+          "flirScanStains": true,
+          "flirStartExterior": true,
+          "flirPhotoAll": true,
+          "flirPhotoNoConcern": true
+        },
+        "roomType": "Bedroom",
+        "flirDone": "Yes",
+        "flirConcerns": "No",
+        "breezeDone": "Yes",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-01T19:28:57.351Z"
+      },
+      {
+        "roomName": "Basement",
+        "type": "room-test",
+        "level": "lowest",
+        "stepId": "lowest-room-1",
+        "flirGuidance": {},
+        "breezeDone": "Yes"
+      },
+      {
+        "roomName": "Bedroom 1",
+        "type": "bedroom",
+        "level": "upper",
+        "stepId": "bedroom-0",
+        "flirGuidance": {}
+      },
+      {
+        "roomName": "Bedroom 2",
+        "type": "bedroom",
+        "level": "upper",
+        "stepId": "bedroom-1",
+        "flirGuidance": {},
+        "flirDone": "Yes"
+      },
+      {
+        "roomName": "Bathroom 1",
+        "type": "bathroom",
+        "level": "upper",
+        "stepId": "bathroom-0",
+        "breezeDone": "Yes",
+        "bathUnderSink": true,
+        "bathToilet": true,
+        "bathShower": true,
+        "bathGrout": true,
+        "bathLeak": "No"
+      },
+      {
+        "roomName": "Bathroom 2",
+        "type": "bathroom",
+        "level": "upper",
+        "stepId": "bathroom-1"
+      },
+      {
+        "roomName": "Bathroom 3",
+        "type": "bathroom",
+        "level": "upper",
+        "stepId": "bathroom-2"
+      },
+      {
+        "roomName": "Main Living Area",
+        "type": "living-area",
+        "level": "main",
+        "stepId": "living-area",
+        "flirGuidance": {}
+      },
+      {
+        "roomName": "Kitchen Inspection",
+        "type": "kitchen-appliance",
+        "level": "main",
+        "stepId": "kitchen-appliance",
+        "stoveType": "Gas",
+        "exhaustVented": "Ducted (to outside)",
+        "fridge": false,
+        "appliancesCondition": "Excellent - New or Recently Replaced (0-3 years)",
+        "moldVisible": "Yes"
+      },
+      {
+        "roomName": "Water Samples",
+        "type": "water-sample",
+        "level": "main",
+        "stepId": "water-sample",
+        "waterPanelCollected": "Yes",
+        "microplasticsStatus": "Collected",
+        "pfasStatus": "Collected"
+      },
+      {
+        "roomName": "ATP Testing",
+        "type": "atp-kitchen",
+        "level": "main",
+        "stepId": "atp-kitchen",
+        "atpCleaned": "Yes",
+        "atpPostStatus": "Pass",
+        "atpSurface": "Counter",
+        "atpPreRLU": 100,
+        "atpPreStatus": "Pass",
+        "atpPostRLU": 5
+      },
+      {
+        "roomName": "Kitchen Air Testing",
+        "type": "kitchen-air",
+        "level": "main",
+        "stepId": "kitchen-air",
+        "flirGuidance": {}
+      }
+    ],
+    "utilityRoom": {
+      "ventilationType": {
+        "bathExhaust": true,
+        "hrv": false,
+        "erv": true
+      },
+      "levelLocation": "Basement",
+      "forcedHVAC": "Yes",
+      "heatingType": "Other (specify)",
+      "acType": "Central AC",
+      "hvacCondensation": "No",
+      "hvacLeaks": "No",
+      "uvSystemPresent": "No",
+      "otherAirPurifierPresent": "Yes",
+      "airFiltrationPresent": "Yes",
+      "waterFiltrationPresent": "Yes",
+      "waterSofteningPresent": "Yes"
+    },
+    "wrapUp": {},
+    "customerDebrief": {
+      "radonPickupTime": "2026-06-03T20:19",
+      "debriefCompleted": "Yes",
+      "radonPickupReminder": "Yes",
+      "reportDateCommunicated": "Yes",
+      "aiFollowUpPlan": "# HOME HEALTH INSPECTION FOLLOW-UP PLAN\n**Property:** Test Property\n\n---\n\n## IMMEDIATE (Within 30 Days)\n\n**No immediate concerns identified.** The primary bedroom inspection revealed no flagged items.\n\n---\n\n## 3-6 MONTHS\n\n- **Radon Testing**\n  - *What to check:* Radon gas levels in the home\n  - *Why it matters:* Radon is a colorless, odorless radioactive gas that accumulates in basements and lower levels; prolonged exposure increases lung cancer risk\n  - *Test needed:* EPA-approved radon test kit (minimum 48-hour exposure) or hire certified radon inspector\n\n- **HVAC Filter Inspection & Documentation**\n  - *What to check:* Current filter condition, size, and MERV rating\n  - *Why it matters:* Clogged filters reduce air quality, strain the system, and increase energy costs\n  - *Test needed:* Visual inspection; replace if visibly dirty; establish replacement schedule (typically every 1-3 months)\n\n---\n\n## 12 MONTHS\n\n- **Well Water Testing** (if not tested within past year)\n  - *What to check:* Bacterial contamination, nitrates, pH, hardness, and other potability standards\n  - *Why it matters:* Private wells lack municipal oversight; contamination can occur without visible signs\n  - *Test needed:* Certified lab analysis of water samples; contact your state health department for approved testing facilities\n\n---\n\n## ANNUAL\n\n- **HVAC System Maintenance**\n  - *What to check:* System efficiency, refrigerant levels, electrical connections, and ductwork integrity\n  - *Why it matters:* Regular maintenance extends equipment lifespan and prevents costly mid-season failures\n  - *Test needed:* Professional HVAC inspection and servicing (ideally before heating/cooling seasons)\n\n- **Well System Inspection**\n  - *What to check:* Pressure tank condition, pump operation, and wellhead sealing\n  - *Why it matters:* Well pump failure or contamination pathways compromise water safety and availability\n  - *Test needed:* Licensed well contractor inspection\n\n---\n\n## OVERALL HOME HEALTH STATUS\nNo significant health or safety concerns were identified in this inspection; however, critical baseline information regarding radon exposure, HVAC condition, and well water quality must be established within the next 6 months to ensure ongoing habitability.",
+      "aiFollowUpPlanGeneratedAt": "2026-06-01T20:08:29.181Z"
+    },
+    "postAssessment": {
+      "shipping": {},
+      "dataManagement": {},
+      "finalCheck": {}
+    },
+    "completedAt": "2026-06-01T20:11:32.898Z",
+    "ventilationReadable": "Bathroom Exhaust Fan(s), ERV",
+    "windowsOpen": "",
+    "appliancesCondition": "Excellent - New or Recently Replaced (0-3 years)",
+    "roomsWithDampness": 0,
+    "roomsWithMustySmell": 0,
+    "roomSummaries": {
+      "lowest-room-0": {
+        "roomName": "Room 1 - Primary Bedroom",
+        "summary": "No items flagged.",
+        "generatedAt": "2026-06-01T19:28:57.351Z"
+      }
+    },
+    "aiFollowUpPlan": "# HOME HEALTH INSPECTION FOLLOW-UP PLAN\n**Property:** Test Property\n\n---\n\n## IMMEDIATE (Within 30 Days)\n\n**No immediate concerns identified.** The primary bedroom inspection revealed no flagged items.\n\n---\n\n## 3-6 MONTHS\n\n- **Radon Testing**\n  - *What to check:* Radon gas levels in the home\n  - *Why it matters:* Radon is a colorless, odorless radioactive gas that accumulates in basements and lower levels; prolonged exposure increases lung cancer risk\n  - *Test needed:* EPA-approved radon test kit (minimum 48-hour exposure) or hire certified radon inspector\n\n- **HVAC Filter Inspection & Documentation**\n  - *What to check:* Current filter condition, size, and MERV rating\n  - *Why it matters:* Clogged filters reduce air quality, strain the system, and increase energy costs\n  - *Test needed:* Visual inspection; replace if visibly dirty; establish replacement schedule (typically every 1-3 months)\n\n---\n\n## 12 MONTHS\n\n- **Well Water Testing** (if not tested within past year)\n  - *What to check:* Bacterial contamination, nitrates, pH, hardness, and other potability standards\n  - *Why it matters:* Private wells lack municipal oversight; contamination can occur without visible signs\n  - *Test needed:* Certified lab analysis of water samples; contact your state health department for approved testing facilities\n\n---\n\n## ANNUAL\n\n- **HVAC System Maintenance**\n  - *What to check:* System efficiency, refrigerant levels, electrical connections, and ductwork integrity\n  - *Why it matters:* Regular maintenance extends equipment lifespan and prevents costly mid-season failures\n  - *Test needed:* Professional HVAC inspection and servicing (ideally before heating/cooling seasons)\n\n- **Well System Inspection**\n  - *What to check:* Pressure tank condition, pump operation, and wellhead sealing\n  - *Why it matters:* Well pump failure or contamination pathways compromise water safety and availability\n  - *Test needed:* Licensed well contractor inspection\n\n---\n\n## OVERALL HOME HEALTH STATUS\nNo significant health or safety concerns were identified in this inspection; however, critical baseline information regarding radon exposure, HVAC condition, and well water quality must be established within the next 6 months to ensure ongoing habitability.",
+    "aiFollowUpPlanGeneratedAt": "2026-06-01T20:08:29.181Z",
+    "id": "INH-20260601-S0YI8K"
+  }
+}

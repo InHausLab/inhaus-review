@@ -17,7 +17,9 @@
       "reviewedAt": "",
       "submittedAt": "",
       "reportBuilderNotes": "",
-      "reviewToken": "MARSHALL"
+      "reviewToken": "MARSHALL",
+      "id": "INH-20260422-C7KYGW",
+      "lastUpdated": "2026-04-22T23:25:37.000Z"
     },
     {
       "inspectionId": "INH-20260506-DV4MDG",
@@ -35,7 +37,9 @@
       "reviewedAt": "",
       "submittedAt": "",
       "reportBuilderNotes": "",
-      "reviewToken": "SUNSHINE"
+      "reviewToken": "SUNSHINE",
+      "id": "INH-20260506-DV4MDG",
+      "lastUpdated": "2026-05-06T02:14:21.000Z"
     },
     {
       "inspectionId": "INH-20260601-S0YI8K",
@@ -53,7 +57,9 @@
       "reviewedAt": "",
       "submittedAt": "",
       "reportBuilderNotes": "",
-      "reviewToken": "3PWXYVQZ"
+      "reviewToken": "3PWXYVQZ",
+      "id": "INH-20260601-S0YI8K",
+      "lastUpdated": "2026-06-01T20:11:46.040Z"
     },
     {
       "inspectionId": "INH-20260601-S0YI8K",
@@ -71,7 +77,9 @@
       "reviewedAt": "",
       "submittedAt": "",
       "reportBuilderNotes": "",
-      "reviewToken": "L4G5MIX3"
+      "reviewToken": "L4G5MIX3",
+      "id": "INH-20260601-S0YI8K",
+      "lastUpdated": "2026-06-01T19:22:54.500Z"
     },
     {
       "inspectionId": "INH-20260529-Y0F0KO",
@@ -89,7 +97,9 @@
       "reviewedAt": "",
       "submittedAt": "",
       "reportBuilderNotes": "",
-      "reviewToken": "55QBPM0T"
+      "reviewToken": "55QBPM0T",
+      "id": "INH-20260529-Y0F0KO",
+      "lastUpdated": "2026-05-29T19:28:12.774Z"
     },
     {
       "inspectionId": "INH-20260520-EAYNCM",
@@ -107,7 +117,9 @@
       "reviewedAt": "",
       "submittedAt": "",
       "reportBuilderNotes": "",
-      "reviewToken": "UVJJ57VL"
+      "reviewToken": "UVJJ57VL",
+      "id": "INH-20260520-EAYNCM",
+      "lastUpdated": "2026-05-28T19:48:57.751Z"
     }
   ]
 }
