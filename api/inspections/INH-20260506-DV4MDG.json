@@ -203,27 +203,27 @@
         "photos": [
           {
             "caption": "Boulder Blue Primary Bedroom",
-            "driveUrl": "https://drive.google.com/thumbnail?id=19MfJNPjPU18Eut2fum-FD-4zNZ6BbHPE&sz=w800",
+            "driveUrl": "./photos/19MfJNPjPU18Eut2fum-FD-4zNZ6BbHPE.jpg",
             "imageData": null
           },
           {
             "caption": "Boulder Blue",
-            "driveUrl": "https://drive.google.com/thumbnail?id=1qGyuaOcMX9IU0ceezOzE2pxw8_4JBD__&sz=w800",
+            "driveUrl": "./photos/1qGyuaOcMX9IU0ceezOzE2pxw8_4JBD__.jpg",
             "imageData": null
           },
           {
             "caption": "PFAS Sample 1",
-            "driveUrl": "https://drive.google.com/thumbnail?id=1m299Z5N--XM_AtbvHhpjOqmyadH4AdTp&sz=w800",
+            "driveUrl": "./photos/1m299Z5N--XM_AtbvHhpjOqmyadH4AdTp.jpg",
             "imageData": null
           },
           {
             "caption": "PFAS Sample 2",
-            "driveUrl": "https://drive.google.com/thumbnail?id=1GFc_rMAHW-upxdG7fZBxkOovuGoMPttn&sz=w800",
+            "driveUrl": "./photos/1GFc_rMAHW-upxdG7fZBxkOovuGoMPttn.jpg",
             "imageData": null
           },
           {
             "caption": "Boulder Blue \u2014 Second Floor Primary Bedroom",
-            "driveUrl": "https://drive.google.com/thumbnail?id=1Ch-9kkZIMf81YoZw-SLKZSEl2iK7PMnG&sz=w800",
+            "driveUrl": "./photos/1Ch-9kkZIMf81YoZw-SLKZSEl2iK7PMnG.jpg",
             "imageData": null
           },
           {
@@ -233,12 +233,12 @@
           },
           {
             "caption": "Spare Photo 45",
-            "driveUrl": "https://drive.google.com/thumbnail?id=1aJluhlcfHFchlM4yEyJrV4DIP4qtOvOk&sz=w800",
+            "driveUrl": "./photos/1aJluhlcfHFchlM4yEyJrV4DIP4qtOvOk.jpg",
             "imageData": null
           },
           {
             "caption": "Spare Photo 23",
-            "driveUrl": "https://drive.google.com/thumbnail?id=1rNtp1OMVnwfTjyCpp0HhrxTy68IzmruA&sz=w800",
+            "driveUrl": "./photos/1rNtp1OMVnwfTjyCpp0HhrxTy68IzmruA.jpg",
             "imageData": null
           }
         ]
