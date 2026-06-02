@@ -356,6 +356,80 @@
     ],
     "reviewStatus": "Needs Review",
     "reviewToken": "SUNSHINE",
-    "id": "INH-20260506-DV4MDG"
+    "id": "INH-20260506-DV4MDG",
+    "photos": [
+      {
+        "photoId": "ph_12_00",
+        "roomName": "Main Living Area",
+        "stepName": "",
+        "caption": "Boulder Blue Primary Bedroom",
+        "driveUrl": "./photos/19MfJNPjPU18Eut2fum-FD-4zNZ6BbHPE.jpg",
+        "timestamp": "",
+        "included": null
+      },
+      {
+        "photoId": "ph_12_01",
+        "roomName": "Main Living Area",
+        "stepName": "",
+        "caption": "Boulder Blue",
+        "driveUrl": "./photos/1qGyuaOcMX9IU0ceezOzE2pxw8_4JBD__.jpg",
+        "timestamp": "",
+        "included": null
+      },
+      {
+        "photoId": "ph_12_02",
+        "roomName": "Main Living Area",
+        "stepName": "",
+        "caption": "PFAS Sample 1",
+        "driveUrl": "./photos/1m299Z5N--XM_AtbvHhpjOqmyadH4AdTp.jpg",
+        "timestamp": "",
+        "included": null
+      },
+      {
+        "photoId": "ph_12_03",
+        "roomName": "Main Living Area",
+        "stepName": "",
+        "caption": "PFAS Sample 2",
+        "driveUrl": "./photos/1GFc_rMAHW-upxdG7fZBxkOovuGoMPttn.jpg",
+        "timestamp": "",
+        "included": null
+      },
+      {
+        "photoId": "ph_12_04",
+        "roomName": "Main Living Area",
+        "stepName": "",
+        "caption": "Boulder Blue \u2014 Second Floor Primary Bedroom",
+        "driveUrl": "./photos/1Ch-9kkZIMf81YoZw-SLKZSEl2iK7PMnG.jpg",
+        "timestamp": "",
+        "included": null
+      },
+      {
+        "photoId": "ph_12_05",
+        "roomName": "Main Living Area",
+        "stepName": "",
+        "caption": "Microplastics",
+        "driveUrl": "https://drive.google.com/thumbnail?id=12vddJ_BP-TrNfHhEY1NqGLnXRMGMOq9f&sz=w800",
+        "timestamp": "",
+        "included": null
+      },
+      {
+        "photoId": "ph_12_06",
+        "roomName": "Main Living Area",
+        "stepName": "",
+        "caption": "Spare Photo 45",
+        "driveUrl": "./photos/1aJluhlcfHFchlM4yEyJrV4DIP4qtOvOk.jpg",
+        "timestamp": "",
+        "included": null
+      },
+      {
+        "photoId": "ph_12_07",
+        "roomName": "Main Living Area",
+        "stepName": "",
+        "caption": "Spare Photo 23",
+        "driveUrl": "./photos/1rNtp1OMVnwfTjyCpp0HhrxTy68IzmruA.jpg",
+        "timestamp": "",
+        "included": null
+      }
+    ]
   }
 }
