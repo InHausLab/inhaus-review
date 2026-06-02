@@ -368,7 +368,14 @@ async function loadInspection() {
       return;
     }
     try {
-      insp = await apiFetch({ action: 'get', id, token });
+      // Try static file first, fall back to Apps Script
+      const staticResp = await fetch(`./api/inspections/${id}.json?t=` + Date.now());
+      if (staticResp.ok) {
+        const staticData = await staticResp.json();
+        insp = staticData.inspection || staticData;
+      } else {
+        insp = await apiFetch({ action: 'get', id, token });
+      }
     } catch (err) {
       showToast(`Failed to load inspection: ${err.message}`, 'error');
       return;
