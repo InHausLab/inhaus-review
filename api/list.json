@@ -2,6 +2,24 @@
   "status": "ok",
   "inspections": [
     {
+      "inspectionId": "INH-20260506-DV4MDG",
+      "clientName": "Sunshine Ranch",
+      "propertyAddress": "Sunshine Ranch \u2014 Well Water",
+      "inspectionDate": "2026-05-06",
+      "inspectorName": "David Kline",
+      "status": "Needs Review",
+      "photoCount": "8",
+      "missingCount": "0",
+      "spreadsheetId": "1mjK_Yuf0BMhmYDcUVuiXVBLI5fB9Wryu8gJ21rQ4AFE",
+      "folderId": "1srYcTxhRW41sSE46d6R4tkIZxkg9ztjz",
+      "syncedAt": "2026-05-06T02:14:21.000Z",
+      "reviewedBy": "",
+      "reviewedAt": "",
+      "submittedAt": "",
+      "reportBuilderNotes": "",
+      "reviewToken": "SUNSHINE"
+    },
+    {
       "inspectionId": "INH-20260601-S0YI8K",
       "clientName": "Test",
       "propertyAddress": "test property",
