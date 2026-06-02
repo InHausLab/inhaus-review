@@ -294,7 +294,13 @@ async function loadInspectionList() {
     if (bar) bar.classList.remove('hidden');
   } else {
     try {
-      data = await apiFetch({ action: 'list', token: ACCESS_TOKEN });
+      // Try static file first (fast, no auth needed), fall back to Apps Script
+      const staticResp = await fetch('./api/list.json?t=' + Date.now());
+      if (staticResp.ok) {
+        data = await staticResp.json();
+      } else {
+        data = await apiFetch({ action: 'list', token: ACCESS_TOKEN });
+      }
     } catch (err) {
       tableBody.innerHTML = `<tr><td colspan="9" class="empty-state">
         Failed to load inspections: ${err.message}
