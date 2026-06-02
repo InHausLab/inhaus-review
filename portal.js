@@ -737,7 +737,17 @@ function renderPhotosSection(insp, locked) {
   const container = qs('#photo-grid');
   if (!container) return;
 
-  const photos = (insp.photos || []).slice().sort((a, b) => {
+  // Support both flat insp.photos and nested insp.rooms[].photos
+  let flatPhotos = insp.photos || [];
+  if (!flatPhotos.length && insp.rooms) {
+    insp.rooms.forEach(room => {
+      (room.photos || []).forEach(p => {
+        flatPhotos.push(Object.assign({ roomName: room.roomName, photoId: p.photoId || ('ph_' + Math.random().toString(36).slice(2)) }, p));
+      });
+    });
+  }
+
+  const photos = flatPhotos.slice().sort((a, b) => {
     return new Date(a.timestamp) - new Date(b.timestamp);
   });
 
