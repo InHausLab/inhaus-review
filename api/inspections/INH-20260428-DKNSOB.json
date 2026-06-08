@@ -804,7 +804,9 @@
         "flirConcerns": "No",
         "breezeDone": "No",
         "type": "room-test",
-        "level": "lowest"
+        "level": "lowest",
+        "aiSummary": "Breeze cleaning has not been completed in the gym. This should be scheduled to ensure the space is properly maintained.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bedroom-primary-bedroom": {
         "roomName": "Primary Bedroom",
@@ -814,7 +816,9 @@
         "flirConcerns": "",
         "breezeDone": "Yes",
         "type": "bedroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bedroom-bedroom-2": {
         "roomName": "Bedroom 2",
@@ -824,7 +828,9 @@
         "flirConcerns": "",
         "breezeDone": "",
         "type": "bedroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bedroom-bedroom-3": {
         "roomName": "Bedroom 3",
@@ -834,7 +840,9 @@
         "flirConcerns": "",
         "breezeDone": "",
         "type": "bedroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bedroom-bedroom-4": {
         "roomName": "Bedroom 4",
@@ -844,7 +852,9 @@
         "flirConcerns": "",
         "breezeDone": "",
         "type": "bedroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bedroom-bedroom-5": {
         "roomName": "Bedroom 5",
@@ -854,7 +864,9 @@
         "flirConcerns": "",
         "breezeDone": "",
         "type": "bedroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bedroom-bedroom-6": {
         "roomName": "Bedroom 6",
@@ -864,7 +876,9 @@
         "flirConcerns": "No",
         "breezeDone": "No",
         "type": "bedroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "Bedroom 6 breeze test was not completed during this inspection. This should be scheduled for the next visit to evaluate air circulation in the room.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bedroom-bedroom-7": {
         "roomName": "Bedroom 7",
@@ -874,7 +888,9 @@
         "flirConcerns": "Yes",
         "breezeDone": "No",
         "type": "bedroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "HVAC system in Bedroom 7 requires evaluation. Flir thermal imaging detected anomalies that warrant further assessment. Breeze test was not completed and should be scheduled.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bathroom-primary-bathroom": {
         "roomName": "Primary Bathroom",
@@ -884,7 +900,9 @@
         "flirConcerns": "",
         "breezeDone": "No",
         "type": "bathroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "Water staining is present in the primary bathroom and should be evaluated to determine the source. A breeze test was not performed in this room. Follow-up is recommended to assess the staining and complete the breeze test if needed.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bathroom-bathroom-2": {
         "roomName": "Bathroom 2",
@@ -894,7 +912,9 @@
         "flirConcerns": "",
         "breezeDone": "",
         "type": "bathroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bathroom-kitchen-powder-room": {
         "roomName": "Kitchen Powder Room",
@@ -904,7 +924,9 @@
         "flirConcerns": "",
         "breezeDone": "No",
         "type": "bathroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "Breeze test was not completed in the kitchen powder room. This should be scheduled for a follow-up visit to assess air quality and ventilation.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bathroom-staff-bathroom": {
         "roomName": "Staff Bathroom",
@@ -914,7 +936,9 @@
         "flirConcerns": "",
         "breezeDone": "No",
         "type": "bathroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "The breeze test was not completed in the staff bathroom. This should be scheduled for a follow-up inspection.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bathroom-gym-bathrooms": {
         "roomName": "Gym Bathrooms",
@@ -924,7 +948,9 @@
         "flirConcerns": "",
         "breezeDone": "",
         "type": "bathroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "bathroom-powder-room": {
         "roomName": "Powder Room",
@@ -934,7 +960,9 @@
         "flirConcerns": "",
         "breezeDone": "No",
         "type": "bathroom",
-        "level": "rooms"
+        "level": "rooms",
+        "aiSummary": "The powder room ventilation system has not been tested. Follow-up needed to verify that the exhaust fan is operational and properly vented to the exterior.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "living-area-main-living-area": {
         "roomName": "Main Living Area",
@@ -944,7 +972,9 @@
         "flirConcerns": "",
         "breezeDone": "",
         "type": "living-area",
-        "level": "main"
+        "level": "main",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "kitchen-appliance-kitchen": {
         "roomName": "Kitchen",
@@ -954,7 +984,9 @@
         "flirConcerns": "",
         "breezeDone": "",
         "type": "kitchen-appliance",
-        "level": "main"
+        "level": "main",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "water-sample-water-samples": {
         "roomName": "Water Samples",
@@ -964,7 +996,9 @@
         "flirConcerns": "",
         "breezeDone": "",
         "type": "water-sample",
-        "level": "main"
+        "level": "main",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "atp-kitchen-atp-testing": {
         "roomName": "ATP Testing",
@@ -974,7 +1008,9 @@
         "flirConcerns": "",
         "breezeDone": "",
         "type": "atp-kitchen",
-        "level": "main"
+        "level": "main",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "kitchen-air-kitchen-air-testing": {
         "roomName": "Kitchen Air Testing",
@@ -984,7 +1020,9 @@
         "flirConcerns": "",
         "breezeDone": "No",
         "type": "kitchen-air",
-        "level": "main"
+        "level": "main",
+        "aiSummary": "Air testing was not completed in the kitchen during this inspection. This should be scheduled for a follow-up visit to establish baseline air quality data.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "additional-room-movie-room": {
         "roomName": "Movie Room",
@@ -994,7 +1032,9 @@
         "flirConcerns": "",
         "breezeDone": "Yes",
         "type": "additional-room",
-        "level": "supplementary"
+        "level": "supplementary",
+        "aiSummary": "No items flagged.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "additional-room-piano-room": {
         "roomName": "Piano Room",
@@ -1004,7 +1044,9 @@
         "flirConcerns": "No",
         "breezeDone": "",
         "type": "additional-room",
-        "level": "supplementary"
+        "level": "supplementary",
+        "aiSummary": "Water staining was observed on surfaces in the piano room. Recommend identifying the source of moisture and addressing any leaks or drainage issues to prevent further damage.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       },
       "additional-room-staff-room": {
         "roomName": "Staff Room",
@@ -1014,7 +1056,9 @@
         "flirConcerns": "Yes",
         "breezeDone": "No",
         "type": "additional-room",
-        "level": "supplementary"
+        "level": "supplementary",
+        "aiSummary": "FLIR imaging identified thermal anomalies in the staff room that require follow-up investigation. Breeze testing has not yet been completed for this area and should be scheduled.",
+        "aiSummaryGeneratedAt": "2026-06-08T19:32:00Z"
       }
     }
   }
