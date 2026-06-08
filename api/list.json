@@ -1,7 +1,25 @@
 {
-  "generatedAt": "2026-06-08T12:00:00.000Z",
-  "count": 4,
+  "generatedAt": "2026-06-08T19:00:00.000Z",
+  "count": 5,
   "inspections": [
+    {
+      "inspectionId": "INH-20260428-DKNSOB",
+      "clientName": "Alpha One",
+      "propertyAddress": "Aspen, CO 81612",
+      "inspectionDate": "2026-04-28",
+      "inspectorName": "David Kline",
+      "status": "Needs Review",
+      "photoCount": 57,
+      "missingCount": 0,
+      "spreadsheetId": "1RexZNwuiG5J4r5Imwgsj8WMT3Pzv2BQGJ7H1TT3oUbQ",
+      "folderId": "1nDOMQRZGwmC8b1qSMvLLpmHjX7CgZE6E",
+      "syncedAt": "2026-06-08T19:00:00.000Z",
+      "reviewedBy": "",
+      "reviewedAt": "",
+      "submittedAt": "",
+      "reportBuilderNotes": "",
+      "reviewToken": "ALPHAONE1"
+    },
     {
       "inspectionId": "INH-20260520-EAYNCM",
       "clientName": "David Kline",
