@@ -1,7 +1,43 @@
 {
-  "generatedAt": "2026-06-10T12:00:00.000Z",
-  "count": 5,
+  "generatedAt": "2026-06-10T21:12:39.000Z",
+  "count": 8,
   "inspections": [
+    {
+      "inspectionId": "INH-20260506-DV4MDG",
+      "clientName": "Sunshine Ranch",
+      "propertyAddress": "Sunshine Ranch",
+      "inspectionDate": "2026-05-06",
+      "inspectorName": "Dave",
+      "status": "In Review",
+      "photoCount": 8,
+      "missingCount": 0,
+      "reviewToken": "***",
+      "syncedAt": "2026-05-06T00:00:00.000Z"
+    },
+    {
+      "inspectionId": "INH-20260422-C7KYGW",
+      "clientName": "Ryan Marshall",
+      "propertyAddress": "301 Cemetery Rd, Basalt",
+      "inspectionDate": "2026-04-22",
+      "inspectorName": "Dave",
+      "status": "In Review",
+      "photoCount": 14,
+      "missingCount": 0,
+      "reviewToken": "***",
+      "syncedAt": "2026-04-22T00:00:00.000Z"
+    },
+    {
+      "inspectionId": "INH-20260428-DKNSOB",
+      "clientName": "Alpha One",
+      "propertyAddress": "Alpha One (commercial)",
+      "inspectionDate": "2026-04-28",
+      "inspectorName": "Dave",
+      "status": "In Review",
+      "photoCount": 57,
+      "missingCount": 0,
+      "reviewToken": "***",
+      "syncedAt": "2026-04-29T09:44:00Z"
+    },
     {
       "inspectionId": "INH-20260520-EAYNCM",
       "clientName": "David Kline",
