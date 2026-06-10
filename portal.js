@@ -197,6 +197,13 @@ function getURLParams() {
   return { id: p.get('id'), token: p.get('token') };
 }
 
+const STATUS_TOOLTIPS = {
+  'Synced':              'Data has been exported from the Inspector App and is ready to review here.',
+  'In Review':           'Inspector is currently reviewing this inspection.',
+  'Submitted to Tanner': 'Inspector has completed review and sent to Tanner for report building.',
+  'Report Complete':     'Tanner has finished building the report.'
+};
+
 function statusBadgeHTML(status) {
   const map = {
     'Synced':              'badge-synced',
@@ -205,7 +212,8 @@ function statusBadgeHTML(status) {
     'Report Complete':     'badge-complete'
   };
   const cls = map[status] || 'badge-synced';
-  return `<span class="badge ${cls}">${status}</span>`;
+  const tip = STATUS_TOOLTIPS[status] || '';
+  return `<span class="badge ${cls}" title="${escapeHTML(tip)}">${status}</span>`;
 }
 
 /* ============================================================
@@ -386,6 +394,135 @@ async function loadInspection() {
   renderReviewPage(insp);
 }
 
+/* ============================================================
+   SECTION 5 — POST-INSPECTION CONTENT
+   ============================================================ */
+
+function renderPostContentSection(insp, locked) {
+  const body = qs('#post-content-body');
+  if (!body) return;
+  body.innerHTML = '';
+
+  const rd = insp.reviewedData || {};
+
+  // ---- Follow-up Actions ----
+  body.appendChild(buildPostSubheading('Follow-Up Actions Needed',
+    'Recommended re-checks for the client report. Leave unused slots blank.'));
+  for (let i = 1; i <= 5; i++) {
+    body.appendChild(buildPostGroup([
+      { label: `Action ${i} — Description`, stepId: 'post', field: `followUp_${i}_desc`,
+        type: 'textarea', value: rd[`followUp_${i}_desc`] || insp.stepData?.['post-assessment']?.[`followUp_${i}_whatToWatch`] || '', locked,
+        placeholder: 'e.g. Re-test basement east wall in 3 months — active moisture risk (🎙 speak then review)' },
+      { label: 'Timeframe', stepId: 'post', field: `followUp_${i}_timeframe`,
+        type: 'select', options: ['', '1 month', '3 months', '6 months', '1 year', 'As needed'],
+        value: rd[`followUp_${i}_timeframe`] || insp.stepData?.['post-assessment']?.[`followUp_${i}_timeframe`] || '', locked },
+      { label: 'Photo reference(s)', stepId: 'post', field: `followUp_${i}_photoRef`,
+        type: 'text', value: rd[`followUp_${i}_photoRef`] || insp.stepData?.['post-assessment']?.[`followUp_${i}_photoRef`] || '', locked,
+        placeholder: 'e.g. Photos #023, #025' }
+    ]));
+  }
+
+  body.appendChild(buildPostDivider());
+
+  // ---- Actions Taken ----
+  body.appendChild(buildPostSubheading('Actions Taken During Assessment',
+    'What you physically did on-site. Each entry appears in the report.'));
+  for (let i = 1; i <= 6; i++) {
+    body.appendChild(buildPostGroup([
+      { label: `Action ${i}`, stepId: 'post', field: `actionTaken_${i}_desc`,
+        type: 'textarea', value: rd[`actionTaken_${i}_desc`] || insp.stepData?.['post-assessment']?.[`actionTaken_${i}_desc`] || '', locked,
+        placeholder: 'e.g. Replaced HVAC filter — 20x20x1 MERV 11, installed new' },
+      { label: 'Photo reference', stepId: 'post', field: `actionTaken_${i}_photoRef`,
+        type: 'text', value: rd[`actionTaken_${i}_photoRef`] || insp.stepData?.['post-assessment']?.[`actionTaken_${i}_photoRef`] || '', locked,
+        placeholder: 'e.g. Photo #045' }
+    ]));
+  }
+
+  body.appendChild(buildPostDivider());
+
+  // ---- Assessment Observations ----
+  body.appendChild(buildPostSubheading('Assessment Observations',
+    'Notable findings for the report. Include location, what you saw, and a photo reference for each.'));
+  for (let i = 1; i <= 6; i++) {
+    body.appendChild(buildPostGroup([
+      { label: `Observation ${i} — Room / Location`, stepId: 'post', field: `obs_${i}_location`,
+        type: 'text', value: rd[`obs_${i}_location`] || insp.stepData?.['post-assessment']?.[`obs_${i}_location`] || '', locked,
+        placeholder: 'e.g. Primary Bathroom' },
+      { label: 'Observation', stepId: 'post', field: `obs_${i}_note`,
+        type: 'textarea', value: rd[`obs_${i}_note`] || insp.stepData?.['post-assessment']?.[`obs_${i}_note`] || '', locked,
+        placeholder: 'e.g. Active moisture staining on drywall below showerhead — no active drip at time of inspection' },
+      { label: 'Photo reference', stepId: 'post', field: `obs_${i}_photoRef`,
+        type: 'text', value: rd[`obs_${i}_photoRef`] || insp.stepData?.['post-assessment']?.[`obs_${i}_photoRef`] || '', locked,
+        placeholder: 'e.g. Photo #023' }
+    ]));
+  }
+
+  if (!locked) {
+    // Wire up all inputs in this section
+    qsa('#post-content-body input, #post-content-body textarea, #post-content-body select').forEach(inp => {
+      inp.addEventListener('blur', () => saveField(inp.dataset.step, inp.dataset.field, inp.value));
+      inp.addEventListener('input', () => debouncedSave(inp.dataset.step, inp.dataset.field, inp.value));
+    });
+  }
+}
+
+function buildPostSubheading(title, subtitle) {
+  const wrap = el('div', { class: 'post-subheading' });
+  wrap.appendChild(el('div', { class: 'post-subheading-title' }, title));
+  if (subtitle) wrap.appendChild(el('div', { class: 'post-subheading-sub' }, subtitle));
+  return wrap;
+}
+
+function buildPostDivider() {
+  return el('div', { class: 'post-divider' });
+}
+
+function buildPostGroup(fields) {
+  const wrap = el('div', { class: 'post-group' });
+  for (const f of fields) {
+    const row = el('div', { class: 'post-field-row' });
+    const lbl = el('label', { class: 'field-label' }, f.label);
+    row.appendChild(lbl);
+    let inp;
+    if (f.type === 'textarea') {
+      inp = el('textarea', {
+        class: 'field-textarea',
+        rows: '2',
+        'data-step': f.stepId,
+        'data-field': f.field,
+        placeholder: f.placeholder || '',
+        ...(f.locked ? { readonly: '' } : {})
+      });
+      inp.value = f.value || '';
+    } else if (f.type === 'select') {
+      inp = el('select', {
+        class: 'field-input',
+        'data-step': f.stepId,
+        'data-field': f.field,
+        ...(f.locked ? { disabled: '' } : {})
+      });
+      (f.options || []).forEach(opt => {
+        const o = el('option', { value: opt }, opt || '— select —');
+        if (f.value === opt) o.selected = true;
+        inp.appendChild(o);
+      });
+    } else {
+      inp = el('input', {
+        type: 'text',
+        class: 'field-input',
+        'data-step': f.stepId,
+        'data-field': f.field,
+        placeholder: f.placeholder || '',
+        ...(f.locked ? { readonly: '' } : {})
+      });
+      inp.value = f.value || '';
+    }
+    row.appendChild(inp);
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
 function renderReviewPage(insp) {
   // Nav title
   const navTitle = qs('#nav-title');
@@ -416,6 +553,7 @@ function renderReviewPage(insp) {
   renderSummarySection(insp, isSubmitted);
   renderRoomsSection(insp, isSubmitted);
   renderTestsSection(insp, isSubmitted);
+  renderPostContentSection(insp, isSubmitted);
   renderPhotosSection(insp, isSubmitted);
   renderSubmitSection(insp, isSubmitted);
   checkGate();
@@ -682,6 +820,7 @@ function renderTestsSection(insp, locked) {
     const notesVal     = insp.reviewedData?.[test.key + '_notes'] || '';
     const isConfirmed  = !!confirmed[test.key];
 
+    const qtyVal = insp.reviewedData?.[test.key + '_qty'] || insp[test.key + '_qty'] || '';
     tr.innerHTML = `
       <td class="test-name">${escapeHTML(test.label)}</td>
       <td><input type="text" class="inline-input" data-step="tests" data-field="${test.key}_location"
@@ -689,6 +828,9 @@ function renderTestsSection(insp, locked) {
           ${locked ? 'readonly' : ''}></td>
       <td><input type="text" class="inline-input" data-step="tests" data-field="${test.sampleKey}"
           value="${escapeHTML(sampleVal)}" placeholder="Sample ID…"
+          ${locked ? 'readonly' : ''}></td>
+      <td><input type="number" class="inline-input" data-step="tests" data-field="${test.key}_qty"
+          value="${escapeHTML(qtyVal)}" placeholder="#" min="0" style="width:50px;text-align:center"
           ${locked ? 'readonly' : ''}></td>
       <td class="confirmed-check">
         <input type="checkbox" data-step="tests" data-field="${test.key}_confirmed"
@@ -857,7 +999,7 @@ function buildPhotoCard(photo, locked) {
     const btns = [
       { label: '✓ Include', val: true,  cls: 'active-include' },
       { label: '✗ Exclude', val: false, cls: 'active-exclude' },
-      { label: '?',         val: null,  cls: 'active-unreviewed' }
+      { label: '? Unreviewed', val: null,  cls: 'active-unreviewed' }
     ];
     for (const b of btns) {
       const btn = el('button', {

@@ -1321,3 +1321,76 @@ body {
 .gap-12 { gap: 12px; }
 .hidden { display: none !important; }
 .locked { pointer-events: none; opacity: .6; }
+
+/* ── Post-Inspection Content Section ────────────────────────── */
+.post-subheading {
+  margin: 0 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--green-100, #e8f0df);
+}
+.post-subheading-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--green-800, #1a2f0c);
+  letter-spacing: -0.01em;
+}
+.post-subheading-sub {
+  font-size: 0.8rem;
+  color: var(--gray-500, #6b7280);
+  margin-top: 3px;
+}
+.post-divider {
+  height: 1px;
+  background: var(--gray-100, #f0f0f0);
+  margin: 24px 0;
+}
+.post-group {
+  background: var(--gray-50, #fafafa);
+  border: 1px solid var(--gray-100, #f0f0f0);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.post-field-row {
+  margin-bottom: 10px;
+}
+.post-field-row:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Photo Status Legend ────────────────────────────────────── */
+.photo-status-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 0 14px 0;
+  font-size: 0.78rem;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.legend-include {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+.legend-exclude {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+.legend-unreviewed {
+  background: #fef9c3;
+  color: #854d0e;
+  border: 1px solid #fef08a;
+}
+
+/* ── Status badge tooltip cursor ──────────────────────────── */
+.badge[title] {
+  cursor: help;
+}
