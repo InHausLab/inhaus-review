@@ -335,7 +335,7 @@ function renderInspectionList(inspections, tableBody, countLabel) {
     row.innerHTML = `
       <td>
         <div class="td-address">${escapeHTML(insp.propertyAddress)}</div>
-        <div class="td-id">${escapeHTML(insp.id)}</div>
+        <div class="td-id">${escapeHTML(insp.id || insp.inspectionId)}</div>
       </td>
       <td>${escapeHTML(insp.clientName)}</td>
       <td>${formatDate(insp.inspectionDate)}</td>
@@ -349,7 +349,7 @@ function renderInspectionList(inspections, tableBody, countLabel) {
       </td>
       <td class="text-muted">${formatDateTime(insp.lastUpdated)}</td>
       <td>
-        <a href="review.html?id=${encodeURIComponent(insp.id)}&token=${encodeURIComponent(insp.reviewToken)}"
+        <a href="review.html?id=${encodeURIComponent(insp.id || insp.inspectionId)}&token=${encodeURIComponent(insp.reviewToken)}"
            class="btn btn-open btn-sm">Open Review →</a>
       </td>
     `;
