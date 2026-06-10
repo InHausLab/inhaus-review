@@ -553,7 +553,7 @@ function renderReviewPage(insp) {
   renderSummarySection(insp, isSubmitted);
   renderRoomsSection(insp, isSubmitted);
   renderTestsSection(insp, isSubmitted);
-  renderPostContentSection(insp, isSubmitted);
+  try { renderPostContentSection(insp, isSubmitted); } catch(e) { console.error('renderPostContentSection failed:', e); }
   renderPhotosSection(insp, isSubmitted);
   renderSubmitSection(insp, isSubmitted);
   checkGate();
