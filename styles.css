@@ -1500,6 +1500,69 @@ body {
 .picker-modal-count { margin-left: auto; font-size: 0.75rem; font-weight: 600; color: var(--green); }
 .picker-grid-empty { grid-column: 1 / -1; text-align: center; padding: 40px 20px; font-size: 0.85rem; color: var(--gray-400); }
 
+/* ── Completion Score Card ───────────────────────────── */
+.score-card {
+  display: flex; gap: 20px; align-items: stretch;
+  border-radius: 14px; padding: 20px 22px;
+  margin-bottom: 28px; border: 2.5px solid transparent;
+}
+.score-a-plus { background: #f0fdf4; border-color: #86efac; }
+.score-a      { background: #f0fdf4; border-color: #86efac; }
+.score-b      { background: #eff6ff; border-color: #93c5fd; }
+.score-c      { background: #fffbeb; border-color: #fcd34d; }
+.score-d      { background: #fff7ed; border-color: #fdba74; }
+.score-f      { background: #fef2f2; border-color: #fca5a5; }
+
+.score-left {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-width: 72px; padding-right: 20px;
+  border-right: 1px solid rgba(0,0,0,0.08);
+}
+.score-number {
+  font-size: 2.8rem; font-weight: 800; line-height: 1;
+  color: var(--gray-900);
+}
+.score-grade {
+  font-size: 1.1rem; font-weight: 700; margin-top: 4px;
+}
+.score-a-plus .score-grade, .score-a .score-grade { color: #16a34a; }
+.score-b .score-grade      { color: #2563eb; }
+.score-c .score-grade      { color: #d97706; }
+.score-d .score-grade      { color: #ea580c; }
+.score-f .score-grade      { color: #dc2626; }
+
+.score-right  { flex: 1; }
+.score-title-row { margin-bottom: 12px; }
+.score-title  { font-size: 0.95rem; font-weight: 700; color: var(--gray-900); }
+.score-subtitle { font-size: 0.72rem; color: var(--gray-500); margin-top: 2px; }
+
+.score-bars { display: flex; flex-direction: column; gap: 7px; }
+.score-bar-row { display: grid; grid-template-columns: 110px 1fr 40px; align-items: center; gap: 8px; }
+.score-bar-label  { font-size: 0.72rem; font-weight: 600; color: var(--gray-600); }
+.score-bar-track  { height: 7px; background: rgba(0,0,0,0.08); border-radius: 4px; overflow: hidden; }
+.score-bar-fill   { height: 100%; background: var(--green); border-radius: 4px; transition: width 0.4s ease; }
+.score-bar-pts    { font-size: 0.7rem; font-weight: 700; color: var(--gray-700); text-align: right; }
+.score-bar-detail { font-size: 0.65rem; color: var(--gray-400); grid-column: 2 / 5; margin-top: -4px; }
+
+/* Submit section score */
+.submit-score-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-radius: 10px;
+  background: var(--gray-50); border: 1.5px solid var(--gray-100);
+  margin-bottom: 18px;
+}
+.submit-score-num {
+  font-size: 2rem; font-weight: 800; line-height: 1;
+}
+.submit-score-grade { font-size: 1.1rem; font-weight: 700; }
+.submit-score-num.score-a-plus, .submit-score-num.score-a,
+.submit-score-grade.score-a-plus, .submit-score-grade.score-a { color: #16a34a; }
+.submit-score-num.score-b, .submit-score-grade.score-b       { color: #2563eb; }
+.submit-score-num.score-c, .submit-score-grade.score-c       { color: #d97706; }
+.submit-score-num.score-d, .submit-score-grade.score-d       { color: #ea580c; }
+.submit-score-num.score-f, .submit-score-grade.score-f       { color: #dc2626; }
+.submit-score-label { font-size: 0.78rem; color: var(--gray-500); }
+
 /* ── Photo Library (bottom of Section 5) ────────────────── */
 .photo-library-section {
   margin-top: 32px;

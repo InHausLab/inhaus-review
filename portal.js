@@ -662,6 +662,9 @@ function renderPostContentSection(insp, locked) {
     ]));
   }
 
+  // ---- Completion Score ----
+  renderScoreCard(body, insp);
+
   // ---- Photo Library ----
   renderPhotoLibrary(body, allPhotos, rd);
 
@@ -694,6 +697,112 @@ function renderPhotoFAB(allPhotos, slots, rd) {
   fab.innerHTML = '\uD83D\uDCF7';
   fab.addEventListener('click', () => openFABModal(allPhotos, slots, rd));
   document.body.appendChild(fab);
+}
+
+/* ============================================================
+   COMPLETION SCORE
+   ============================================================ */
+
+function calculateCompletionScore(insp) {
+  const rd       = insp.reviewedData || {};
+  const photos   = insp.photos       || [];
+  const steps    = insp.stepData     || {};
+  const tests    = insp.testsConfirmed || {};
+
+  const tryParse = key => { try { return JSON.parse(rd[key] || '[]'); } catch(e) { return []; } };
+
+  // --- Category 1: Photo placement (30 pts) ---
+  let photoScore = 30; // full credit if no photos
+  if (photos.length > 0) {
+    const allSlotIds = new Set();
+    for (let i = 1; i <= 5; i++) tryParse(`followUp_${i}_photoIds`).forEach(id => allSlotIds.add(id));
+    for (let i = 1; i <= 6; i++) tryParse(`actionTaken_${i}_photoIds`).forEach(id => allSlotIds.add(id));
+    for (let i = 1; i <= 6; i++) tryParse(`obs_${i}_photoIds`).forEach(id => allSlotIds.add(id));
+    photoScore = Math.round((allSlotIds.size / photos.length) * 30);
+  }
+
+  // --- Category 2: Observations filled (25 pts) ---
+  let obsFilled = 0;
+  for (let i = 1; i <= 6; i++) {
+    const note  = (rd[`obs_${i}_note`] || '').trim();
+    const loc   = (rd[`obs_${i}_location`] || '').trim();
+    const hasPhoto = tryParse(`obs_${i}_photoIds`).length > 0;
+    if (note && loc && hasPhoto) obsFilled += 1;       // full point
+    else if (note || loc)        obsFilled += 0.5;     // half point — text but no photo or no location
+  }
+  const obsScore = Math.round((obsFilled / 6) * 25);
+
+  // --- Category 3: Actions taken filled (25 pts) ---
+  let actionsFilled = 0;
+  for (let i = 1; i <= 6; i++) {
+    const desc = (rd[`actionTaken_${i}_desc`] || insp.postAssessment?.[`actionTaken_${i}_desc`] || '').trim();
+    const hasPhoto = tryParse(`actionTaken_${i}_photoIds`).length > 0;
+    if (desc && hasPhoto) actionsFilled += 1;
+    else if (desc)        actionsFilled += 0.6;
+  }
+  const actionsScore = Math.round((actionsFilled / 6) * 25);
+
+  // --- Category 4: Checklist gates (20 pts) ---
+  const gateResults  = evaluateGate(insp);
+  const gatePassed   = gateResults.filter(r => r.pass).length;
+  const gateScore    = Math.round((gatePassed / gateResults.length) * 20);
+
+  const total = Math.min(100, photoScore + obsScore + actionsScore + gateScore);
+
+  let grade, gradeClass;
+  if (total >= 95) { grade = 'A+'; gradeClass = 'score-a-plus'; }
+  else if (total >= 85) { grade = 'A';  gradeClass = 'score-a'; }
+  else if (total >= 75) { grade = 'B';  gradeClass = 'score-b'; }
+  else if (total >= 65) { grade = 'C';  gradeClass = 'score-c'; }
+  else if (total >= 50) { grade = 'D';  gradeClass = 'score-d'; }
+  else                  { grade = 'F';  gradeClass = 'score-f'; }
+
+  return {
+    total, grade, gradeClass,
+    categories: [
+      { label: 'Photos placed',     score: photoScore,   max: 30, detail: photos.length === 0 ? 'No photos' : `${[...new Set([].concat(...[1,2,3,4,5].map(i=>tryParse(`followUp_${i}_photoIds`)), ...[1,2,3,4,5,6].map(i=>tryParse(`actionTaken_${i}_photoIds`)), ...[1,2,3,4,5,6].map(i=>tryParse(`obs_${i}_photoIds`))))].length} of ${photos.length} assigned` },
+      { label: 'Observations',      score: obsScore,     max: 25, detail: `${Math.round(obsFilled)} of 6 complete` },
+      { label: 'Actions taken',     score: actionsScore, max: 25, detail: `${Math.round(actionsFilled)} of 6 complete` },
+      { label: 'Checklist',         score: gateScore,    max: 20, detail: `${gatePassed} of ${gateResults.length} items` }
+    ]
+  };
+}
+
+function renderScoreCard(body, insp) {
+  const score = calculateCompletionScore(insp);
+
+  const card = el('div', { class: `score-card ${score.gradeClass}` });
+
+  // Left: big number + grade
+  const scoreLeft = el('div', { class: 'score-left' });
+  scoreLeft.appendChild(el('div', { class: 'score-number' }, String(score.total)));
+  scoreLeft.appendChild(el('div', { class: 'score-grade' }, score.grade));
+  card.appendChild(scoreLeft);
+
+  // Right: label + breakdown
+  const scoreRight = el('div', { class: 'score-right' });
+  const titleRow = el('div', { class: 'score-title-row' });
+  titleRow.appendChild(el('div', { class: 'score-title' }, 'Inspection Score'));
+  titleRow.appendChild(el('div', { class: 'score-subtitle' }, 'Used for inspector performance tracking'));
+  scoreRight.appendChild(titleRow);
+
+  const bars = el('div', { class: 'score-bars' });
+  score.categories.forEach(cat => {
+    const row = el('div', { class: 'score-bar-row' });
+    row.appendChild(el('div', { class: 'score-bar-label' }, cat.label));
+    const track = el('div', { class: 'score-bar-track' });
+    const fill = el('div', { class: 'score-bar-fill' });
+    fill.style.width = `${Math.round((cat.score / cat.max) * 100)}%`;
+    track.appendChild(fill);
+    row.appendChild(track);
+    row.appendChild(el('div', { class: 'score-bar-pts' }, `${cat.score}/${cat.max}`));
+    row.appendChild(el('div', { class: 'score-bar-detail' }, cat.detail));
+    bars.appendChild(row);
+  });
+  scoreRight.appendChild(bars);
+  card.appendChild(scoreRight);
+
+  body.appendChild(card);
 }
 
 function renderPhotoLibrary(body, allPhotos, rd) {
@@ -1669,6 +1778,19 @@ function updateSubmitButton(results) {
 
 function renderSubmitSection(insp, locked) {
   updatePhotoSummary(insp.photos || []);
+
+  // Score in submit section
+  const scoreWrap = qs('#submit-score-wrap');
+  if (scoreWrap) {
+    scoreWrap.innerHTML = '';
+    const s = calculateCompletionScore(insp);
+    scoreWrap.innerHTML = `
+      <div class="submit-score-row">
+        <span class="submit-score-num ${s.gradeClass}">${s.total}</span>
+        <span class="submit-score-grade ${s.gradeClass}">${s.grade}</span>
+        <span class="submit-score-label">Inspection Score — used for performance tracking</span>
+      </div>`;
+  }
 
   const notesPreview = qs('#notes-preview');
   if (notesPreview) {
