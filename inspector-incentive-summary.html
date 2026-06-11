@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InHaus — Inspector Incentive System</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; }
+
+.nav { background: #2c3f16; padding: 0 24px; height: 52px; display: flex; align-items: center; gap: 12px; }
+.nav-logo { color: white; font-size: 1rem; font-weight: 800; }
+.nav-logo span { opacity: 0.5; font-weight: 400; }
+.nav-tag { background: rgba(255,255,255,0.15); color: white; font-size: 0.68rem; font-weight: 700; padding: 3px 10px; border-radius: 10px; }
+
+.page { max-width: 780px; margin: 0 auto; padding: 36px 20px 80px; }
+
+/* HERO */
+.hero { background: #2c3f16; border-radius: 18px; padding: 36px 32px; margin-bottom: 32px; color: white; }
+.hero-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.6; margin-bottom: 10px; }
+.hero-title { font-size: 1.9rem; font-weight: 800; line-height: 1.2; margin-bottom: 12px; }
+.hero-title span { color: #9cc47a; }
+.hero-body  { font-size: 0.9rem; line-height: 1.7; opacity: 0.85; max-width: 560px; }
+
+/* SECTION */
+.section { margin-bottom: 32px; }
+.section-title { font-size: 1rem; font-weight: 800; color: #1d1d1f; margin-bottom: 4px; }
+.section-sub   { font-size: 0.78rem; color: #6e6e73; margin-bottom: 16px; }
+
+/* SCORE BREAKDOWN */
+.score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.score-box { background: white; border-radius: 12px; padding: 16px 18px; border: 1.5px solid #f0f0f0; }
+.score-box-icon  { font-size: 1.4rem; margin-bottom: 6px; }
+.score-box-title { font-size: 0.82rem; font-weight: 700; color: #1d1d1f; margin-bottom: 3px; }
+.score-box-pts   { font-size: 0.72rem; font-weight: 700; color: #2c3f16; margin-bottom: 4px; }
+.score-box-desc  { font-size: 0.7rem; color: #6e6e73; line-height: 1.5; }
+
+/* COMP TABLE */
+.comp-card { background: white; border-radius: 14px; overflow: hidden; border: 1.5px solid #f0f0f0; margin-bottom: 16px; }
+.comp-row { display: grid; grid-template-columns: 40px 1fr 70px 90px 120px; align-items: center; padding: 11px 18px; border-bottom: 1px solid #f9f9f9; gap: 8px; }
+.comp-row.hdr { background: #fafafa; }
+.comp-row.hdr div { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #9ca3af; }
+.comp-row:last-child { border-bottom: none; }
+.grade-badge { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; font-size: 0.75rem; font-weight: 800; color: white; }
+.g-a   { background: #16a34a; }
+.g-b   { background: #3b82f6; }
+.g-c   { background: #d97706; }
+.g-d   { background: #f97316; }
+.g-f   { background: #ef4444; }
+.comp-name { font-size: 0.82rem; font-weight: 600; }
+.comp-score { font-size: 0.82rem; font-weight: 700; text-align: center; }
+.comp-adj  { font-size: 0.82rem; font-weight: 700; text-align: center; }
+.comp-action { font-size: 0.75rem; color: #6e6e73; }
+.green { color: #16a34a; }
+.blue  { color: #3b82f6; }
+.amber { color: #d97706; }
+.red   { color: #ef4444; }
+.pip-tag { display: inline-block; background: #fee2e2; color: #dc2626; font-size: 0.68rem; font-weight: 800; padding: 2px 8px; border-radius: 6px; }
+
+/* CLOCK MOCKUP */
+.clock-section { background: white; border-radius: 18px; border: 1.5px solid #f0f0f0; overflow: hidden; margin-bottom: 16px; }
+.clock-section-hdr { background: #1c1c1e; padding: 12px 20px; display: flex; align-items: center; gap: 10px; }
+.phone-dot { width: 10px; height: 10px; border-radius: 50%; }
+.clock-section-title { color: rgba(255,255,255,0.7); font-size: 0.75rem; font-weight: 600; margin-left: 4px; }
+.clock-body { padding: 24px 24px 20px; }
+
+.clock-cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+.clock-card { border-radius: 14px; padding: 18px 16px; text-align: center; position: relative; overflow: hidden; }
+.clock-card.hot  { background: linear-gradient(135deg, #16a34a, #22c55e); color: white; }
+.clock-card.warm { background: linear-gradient(135deg, #d97706, #f59e0b); color: white; }
+.clock-card.cold { background: linear-gradient(135deg, #6b7280, #9ca3af); color: white; }
+
+.clock-label   { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.75; margin-bottom: 8px; }
+.clock-time    { font-size: 2rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; margin-bottom: 6px; }
+.clock-amount  { font-size: 1.1rem; font-weight: 800; margin-bottom: 4px; }
+.clock-sublabel { font-size: 0.62rem; opacity: 0.75; }
+.clock-divider { width: 30px; height: 2px; background: rgba(255,255,255,0.3); margin: 8px auto; border-radius: 2px; }
+
+/* WHAT INSPECTOR SEES */
+.inspector-view { background: #1c1c1e; border-radius: 16px; padding: 20px; margin-top: 16px; }
+.iv-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.iv-title { color: white; font-size: 0.85rem; font-weight: 700; }
+.iv-score { background: #22c55e; color: white; font-size: 0.72rem; font-weight: 700; padding: 4px 10px; border-radius: 8px; }
+.iv-clock-wrap { background: rgba(255,255,255,0.06); border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; }
+.iv-clock-row  { display: flex; align-items: center; justify-content: space-between; }
+.iv-clock-left { }
+.iv-clock-emoji { font-size: 1.4rem; margin-bottom: 4px; }
+.iv-clock-time  { font-size: 2.2rem; font-weight: 800; color: #4ade80; font-variant-numeric: tabular-nums; line-height: 1; }
+.iv-clock-sublabel { font-size: 0.68rem; color: rgba(255,255,255,0.5); margin-top: 3px; }
+.iv-amount { text-align: right; }
+.iv-amount-num   { font-size: 2rem; font-weight: 800; color: #4ade80; }
+.iv-amount-label { font-size: 0.68rem; color: rgba(255,255,255,0.5); margin-top: 2px; }
+.iv-bar-wrap  { margin-bottom: 14px; }
+.iv-bar-track { height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; }
+.iv-bar-fill  { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #4ade80, #22c55e); transition: width 1s; }
+.iv-bar-labels { display: flex; justify-content: space-between; margin-top: 5px; }
+.iv-bar-labels span { font-size: 0.6rem; color: rgba(255,255,255,0.35); }
+.iv-message { text-align: center; font-size: 0.78rem; color: rgba(255,255,255,0.7); padding: 10px; background: rgba(255,255,255,0.06); border-radius: 8px; }
+
+/* STEPS */
+.steps { display: flex; flex-direction: column; gap: 10px; }
+.step { display: flex; gap: 14px; align-items: flex-start; background: white; border-radius: 12px; padding: 14px 16px; border: 1.5px solid #f0f0f0; }
+.step-num { width: 28px; height: 28px; border-radius: 50%; background: #2c3f16; color: white; font-size: 0.78rem; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+.step-title { font-size: 0.85rem; font-weight: 700; margin-bottom: 3px; }
+.step-desc  { font-size: 0.75rem; color: #6e6e73; line-height: 1.5; }
+
+/* QUOTE BLOCK */
+.quote { background: #f0f5e8; border-left: 4px solid #2c3f16; border-radius: 0 10px 10px 0; padding: 16px 20px; margin: 20px 0; }
+.quote-text { font-size: 0.88rem; color: #2c3f16; font-weight: 600; line-height: 1.6; }
+
+@media (max-width: 600px) {
+  .score-grid { grid-template-columns: 1fr; }
+  .clock-cards { grid-template-columns: 1fr; }
+  .comp-row { grid-template-columns: 36px 1fr 60px 70px; }
+  .comp-row > :last-child { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <div class="nav-logo">InHaus <span>Lab</span></div>
+  <div class="nav-tag">Internal — Inspector Incentive System</div>
+</div>
+
+<div class="page">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-label">InHaus Lab · Inspector Management</div>
+    <div class="hero-title">Turn quality into <span>motivation</span>.<br>Every inspection, scored in real time.</div>
+    <div class="hero-body">
+      We've built a system that automatically scores every inspection 0–100, tracks performance per inspector over time, and ties compensation to outcomes — not just hours worked. Inspectors see their score before they submit. They see a clock. They see a dollar amount. It changes behavior.
+    </div>
+  </div>
+
+  <!-- THE SCORE -->
+  <div class="section">
+    <div class="section-title">How the Score Works</div>
+    <div class="section-sub">Calculated automatically the moment an inspector submits. No manual review required.</div>
+
+    <div class="score-grid">
+      <div class="score-box">
+        <div class="score-box-icon">📸</div>
+        <div class="score-box-title">Photos Placed</div>
+        <div class="score-box-pts">30 points</div>
+        <div class="score-box-desc">Every photo from the inspection must be assigned to an action or observation. Unplaced photos are flagged. Score = % of photos with a home.</div>
+      </div>
+      <div class="score-box">
+        <div class="score-box-icon">🔍</div>
+        <div class="score-box-title">Observations</div>
+        <div class="score-box-pts">25 points</div>
+        <div class="score-box-desc">Each observation needs a room location, a written note, and at least one photo. Partial credit for text without a photo reference.</div>
+      </div>
+      <div class="score-box">
+        <div class="score-box-icon">🔧</div>
+        <div class="score-box-title">Actions Taken</div>
+        <div class="score-box-pts">25 points</div>
+        <div class="score-box-desc">Every action taken on-site (filter replaced, equipment installed) needs a description and supporting photo. Full credit for both, partial for description only.</div>
+      </div>
+      <div class="score-box">
+        <div class="score-box-icon">✅</div>
+        <div class="score-box-title">Checklist Gates</div>
+        <div class="score-box-pts">20 points</div>
+        <div class="score-box-desc">Room notes reviewed, test locations recorded, sample IDs captured, all photos marked include/exclude, report notes filled in.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- THE COMP STRUCTURE -->
+  <div class="section">
+    <div class="section-title">Comp Structure</div>
+    <div class="section-sub">Monthly average score determines base adjustment. Same-day bonuses stack on top.</div>
+
+    <div class="comp-card">
+      <div class="comp-row hdr">
+        <div></div>
+        <div>Grade</div>
+        <div style="text-align:center">Avg Score</div>
+        <div style="text-align:center">Base Adj</div>
+        <div>What It Means</div>
+      </div>
+      <div class="comp-row">
+        <div><div class="grade-badge g-a">A+</div></div>
+        <div class="comp-name">Excellent</div>
+        <div class="comp-score green">95–100</div>
+        <div class="comp-adj green">+5%</div>
+        <div class="comp-action" style="color:#16a34a">Bonus pay this month</div>
+      </div>
+      <div class="comp-row">
+        <div><div class="grade-badge g-a">A</div></div>
+        <div class="comp-name">Strong</div>
+        <div class="comp-score green">85–94</div>
+        <div class="comp-adj green">+5%</div>
+        <div class="comp-action" style="color:#16a34a">Bonus pay this month</div>
+      </div>
+      <div class="comp-row">
+        <div><div class="grade-badge g-b">B</div></div>
+        <div class="comp-name">Good</div>
+        <div class="comp-score blue">75–84</div>
+        <div class="comp-adj blue">+2%</div>
+        <div class="comp-action">Above baseline — small bump</div>
+      </div>
+      <div class="comp-row">
+        <div><div class="grade-badge g-c">C</div></div>
+        <div class="comp-name">Acceptable</div>
+        <div class="comp-score amber">65–74</div>
+        <div class="comp-adj amber">Base</div>
+        <div class="comp-action">Standard pay, no adjustment</div>
+      </div>
+      <div class="comp-row">
+        <div><div class="grade-badge g-d">D</div></div>
+        <div class="comp-name">Needs Work</div>
+        <div class="comp-score red">50–64</div>
+        <div class="comp-adj red">−2%</div>
+        <div class="comp-action">Pay docked — coaching required</div>
+      </div>
+      <div class="comp-row">
+        <div><div class="grade-badge g-f">F</div></div>
+        <div class="comp-name">Failing</div>
+        <div class="comp-score red">&lt; 50</div>
+        <div class="comp-adj"><span class="pip-tag">PIP</span></div>
+        <div class="comp-action" style="color:#ef4444">Performance improvement plan</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- THE CLOCK -->
+  <div class="section">
+    <div class="section-title">⚡ The Same-Day Bonus Clock</div>
+    <div class="section-sub">The most powerful part. Inspectors see this in real time while completing their report.</div>
+
+    <div class="quote">
+      <div class="quote-text">"You have 3h 24m left to earn your $50 same-day bonus. Score is currently 71 — you need 85 to qualify. 4 photos still unplaced."</div>
+    </div>
+
+    <!-- Three clock states -->
+    <div class="clock-cards" style="margin-bottom:20px">
+      <div class="clock-card hot">
+        <div class="clock-label">Plenty of time</div>
+        <div class="clock-time">5:42:00</div>
+        <div class="clock-divider"></div>
+        <div class="clock-amount">$50</div>
+        <div class="clock-sublabel">bonus on the table</div>
+      </div>
+      <div class="clock-card warm">
+        <div class="clock-label">Getting close</div>
+        <div class="clock-time">1:15:00</div>
+        <div class="clock-divider"></div>
+        <div class="clock-amount">$35</div>
+        <div class="clock-sublabel">diminished — act fast</div>
+      </div>
+      <div class="clock-card cold">
+        <div class="clock-label">Window closed</div>
+        <div class="clock-time">0:00:00</div>
+        <div class="clock-divider"></div>
+        <div class="clock-amount">$0</div>
+        <div class="clock-sublabel">bonus expired</div>
+      </div>
+    </div>
+
+    <!-- What inspector sees on phone -->
+    <div class="inspector-view">
+      <div class="iv-top">
+        <div class="iv-title">📱 What the inspector sees before submitting</div>
+        <div class="iv-score">Score: 88 — A ✓</div>
+      </div>
+      <div class="iv-clock-wrap">
+        <div class="iv-clock-row">
+          <div class="iv-clock-left">
+            <div class="iv-clock-emoji">⚡</div>
+            <div class="iv-clock-time">3:24:17</div>
+            <div class="iv-clock-sublabel">time remaining today</div>
+          </div>
+          <div class="iv-amount">
+            <div class="iv-amount-num">$50</div>
+            <div class="iv-amount-label">same-day bonus</div>
+          </div>
+        </div>
+      </div>
+      <div class="iv-bar-wrap">
+        <div class="iv-bar-track">
+          <div class="iv-bar-fill" style="width:62%"></div>
+        </div>
+        <div class="iv-bar-labels">
+          <span>Inspection started</span>
+          <span>← 38% of day used</span>
+          <span>Midnight</span>
+        </div>
+      </div>
+      <div class="iv-message">
+        You qualify! Score is 88 (A). Submit before midnight to earn the $50 same-day bonus.
+      </div>
+    </div>
+  </div>
+
+  <!-- HOW THE CLOCK DIMINISHES -->
+  <div class="section">
+    <div class="section-title">How the Bonus Diminishes</div>
+    <div class="section-sub">Rewards speed AND quality. Can't game one without the other.</div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div>
+          <div class="step-title">First 4 hours — Full bonus ($50)</div>
+          <div class="step-desc">Inspector wraps up and submits within 4 hours of starting. Score must be 85+. They get the full same-day bonus. This is the target behavior — efficient, thorough, done.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div>
+          <div class="step-title">4–6 hours — Reduced bonus ($35)</div>
+          <div class="step-desc">Still same day, still A grade, but took a bit longer. Bonus is there — just smaller. Creates a real incentive to not drag it out.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div>
+          <div class="step-title">6–8 hours — Minimum bonus ($20)</div>
+          <div class="step-desc">Getting to the end of the day. Still worth finishing strong. $20 is still real money — it's worth it to place those last photos and get the score above 85.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div>
+          <div class="step-title">After 8 hours or next day — No bonus</div>
+          <div class="step-desc">Window is closed. Base comp still applies. Monthly average still counts. But the same-day urgency is gone. Inspector learns: do it right, do it fast, or leave money on the table.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WHY IT WORKS -->
+  <div class="section">
+    <div class="section-title">Why This Changes Behavior</div>
+    <div class="section-sub">It's not just a scorecard — it's a feedback loop that runs during every inspection.</div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">💡</div>
+        <div>
+          <div class="step-title">Inspectors self-correct in real time</div>
+          <div class="step-desc">They see "4 photos unplaced" and "score is 71 — need 85 to qualify." They go back and place the photos. Without this, those photos stay unplaced and Tanner has to chase them.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">📈</div>
+        <div>
+          <div class="step-title">Performance is objective, not subjective</div>
+          <div class="step-desc">No more "I think Dave did a good job this month." The score is the score. 91 is 91. Every inspector knows exactly what earns more money and what triggers a PIP. No surprises.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">🏆</div>
+        <div>
+          <div class="step-title">Good inspectors get rewarded, bad ones self-select out</div>
+          <div class="step-desc">An inspector who consistently scores 90+ earns meaningfully more than one who scores 60. Over time, you attract quality people and the low performers either improve or leave. The system does the work.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
