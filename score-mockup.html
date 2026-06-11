@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InHaus Inspection Score — Mockup</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; padding: 24px 16px 60px; }
+
+h1 { font-size: 1.2rem; font-weight: 700; margin-bottom: 4px; color: #1d1d1f; }
+.page-sub { font-size: 0.8rem; color: #6e6e73; margin-bottom: 28px; }
+
+h2 { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #aeaeb2; margin: 28px 0 12px; }
+
+/* Score card */
+.score-card {
+  display: flex; gap: 0; align-items: stretch;
+  border-radius: 14px; overflow: hidden;
+  margin-bottom: 14px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+}
+.score-left {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 20px 22px; min-width: 90px; flex-shrink: 0;
+}
+.score-number { font-size: 3rem; font-weight: 800; line-height: 1; color: white; }
+.score-grade  { font-size: 1.1rem; font-weight: 700; color: rgba(255,255,255,0.85); margin-top: 4px; }
+.score-right  { flex: 1; padding: 16px 18px; background: white; }
+.score-title  { font-size: 0.9rem; font-weight: 700; color: #1d1d1f; margin-bottom: 2px; }
+.score-inspector { font-size: 0.72rem; color: #6e6e73; margin-bottom: 12px; }
+
+.score-bars { display: flex; flex-direction: column; gap: 8px; }
+.bar-row { display: grid; grid-template-columns: 108px 1fr 38px; align-items: center; gap: 8px; }
+.bar-label  { font-size: 0.7rem; font-weight: 600; color: #3a3a3c; }
+.bar-track  { height: 7px; background: #f0f0f0; border-radius: 4px; overflow: hidden; }
+.bar-fill   { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+.bar-pts    { font-size: 0.7rem; font-weight: 700; color: #3a3a3c; text-align: right; }
+.bar-detail { font-size: 0.62rem; color: #aeaeb2; grid-column: 2 / 4; margin-top: -3px; }
+
+/* Grade colors */
+.bg-aplus { background: #16a34a; }
+.bg-a     { background: #22c55e; }
+.bg-b     { background: #3b82f6; }
+.bg-c     { background: #f59e0b; }
+.bg-d     { background: #f97316; }
+.bg-f     { background: #ef4444; }
+.fill-aplus, .fill-a { background: #16a34a; }
+.fill-b   { background: #3b82f6; }
+.fill-c   { background: #f59e0b; }
+.fill-d   { background: #f97316; }
+.fill-f   { background: #ef4444; }
+
+/* Submit section mini score */
+.submit-card {
+  background: white; border-radius: 14px; padding: 18px 20px;
+  margin-bottom: 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+}
+.submit-card-title { font-size: 0.75rem; font-weight: 700; color: #aeaeb2; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 12px; }
+.submit-score-row { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.submit-big-num { font-size: 2.6rem; font-weight: 800; }
+.submit-grade   { font-size: 1.2rem; font-weight: 700; }
+.submit-label   { font-size: 0.78rem; color: #6e6e73; line-height: 1.4; }
+.submit-btn { display: block; width: 100%; padding: 14px; background: #2c3f16; color: white; border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 700; cursor: pointer; text-align: center; }
+
+/* Monthly table */
+.perf-table { background: white; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.07); }
+.perf-row { display: grid; grid-template-columns: 1fr 60px 60px 60px 70px; align-items: center; padding: 11px 16px; border-bottom: 1px solid #f5f5f7; }
+.perf-row.header { background: #f5f5f7; }
+.perf-row.header div { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #aeaeb2; }
+.perf-name { font-size: 0.82rem; font-weight: 600; color: #1d1d1f; }
+.perf-num  { font-size: 0.82rem; font-weight: 700; text-align: center; }
+.perf-tag  { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.68rem; font-weight: 700; }
+.tag-a     { background: #dcfce7; color: #166534; }
+.tag-b     { background: #dbeafe; color: #1e40af; }
+.tag-c     { background: #fef9c3; color: #854d0e; }
+.tag-f     { background: #fee2e2; color: #991b1b; }
+</style>
+</head>
+<body>
+
+<h1>InHaus — Inspection Score</h1>
+<p class="page-sub">How it looks in the review portal + Tanner's dashboard</p>
+
+<!-- ── SECTION 5 SCORE CARDS ─────────────────────────────── -->
+<h2>Score Card — Section 5 (Inspector sees this)</h2>
+
+<!-- A+ -->
+<div class="score-card">
+  <div class="score-left bg-aplus">
+    <div class="score-number">96</div>
+    <div class="score-grade">A+</div>
+  </div>
+  <div class="score-right">
+    <div class="score-title">Inspection Score</div>
+    <div class="score-inspector">Dave Kline · 301 Cemetery Rd · Jun 10</div>
+    <div class="score-bars">
+      <div class="bar-row">
+        <div class="bar-label">Photos placed</div>
+        <div class="bar-track"><div class="bar-fill fill-aplus" style="width:96%"></div></div>
+        <div class="bar-pts">29/30</div>
+        <div class="bar-detail">52 of 54 photos assigned</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">Observations</div>
+        <div class="bar-track"><div class="bar-fill fill-aplus" style="width:100%"></div></div>
+        <div class="bar-pts">25/25</div>
+        <div class="bar-detail">6 of 6 complete</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">Actions taken</div>
+        <div class="bar-track"><div class="bar-fill fill-aplus" style="width:92%"></div></div>
+        <div class="bar-pts">23/25</div>
+        <div class="bar-detail">5.5 of 6 complete</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">Checklist</div>
+        <div class="bar-track"><div class="bar-fill fill-aplus" style="width:100%"></div></div>
+        <div class="bar-pts">20/20</div>
+        <div class="bar-detail">6 of 6 items</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- B -->
+<div class="score-card">
+  <div class="score-left bg-b">
+    <div class="score-number">78</div>
+    <div class="score-grade">B</div>
+  </div>
+  <div class="score-right">
+    <div class="score-title">Inspection Score</div>
+    <div class="score-inspector">Dave Kline · 12 Elk Trail · Jun 8</div>
+    <div class="score-bars">
+      <div class="bar-row">
+        <div class="bar-label">Photos placed</div>
+        <div class="bar-track"><div class="bar-fill fill-b" style="width:73%"></div></div>
+        <div class="bar-pts">22/30</div>
+        <div class="bar-detail">31 of 57 photos assigned</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">Observations</div>
+        <div class="bar-track"><div class="bar-fill fill-b" style="width:84%"></div></div>
+        <div class="bar-pts">21/25</div>
+        <div class="bar-detail">4.5 of 6 complete</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">Actions taken</div>
+        <div class="bar-track"><div class="bar-fill fill-b" style="width:100%"></div></div>
+        <div class="bar-pts">25/25</div>
+        <div class="bar-detail">6 of 6 complete</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">Checklist</div>
+        <div class="bar-track"><div class="bar-fill fill-b" style="width:50%"></div></div>
+        <div class="bar-pts">10/20</div>
+        <div class="bar-detail">3 of 6 items</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- F -->
+<div class="score-card">
+  <div class="score-left bg-f">
+    <div class="score-number">41</div>
+    <div class="score-grade">F</div>
+  </div>
+  <div class="score-right">
+    <div class="score-title">Inspection Score</div>
+    <div class="score-inspector">Dave Kline · 88 Aspen Way · Jun 5</div>
+    <div class="score-bars">
+      <div class="bar-row">
+        <div class="bar-label">Photos placed</div>
+        <div class="bar-track"><div class="bar-fill fill-f" style="width:13%"></div></div>
+        <div class="bar-pts">4/30</div>
+        <div class="bar-detail">8 of 62 photos assigned</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">Observations</div>
+        <div class="bar-track"><div class="bar-fill fill-f" style="width:40%"></div></div>
+        <div class="bar-pts">10/25</div>
+        <div class="bar-detail">2 of 6 complete</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">Actions taken</div>
+        <div class="bar-track"><div class="bar-fill fill-f" style="width:48%"></div></div>
+        <div class="bar-pts">12/25</div>
+        <div class="bar-detail">3 of 6 complete</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">Checklist</div>
+        <div class="bar-track"><div class="bar-fill fill-f" style="width:75%"></div></div>
+        <div class="bar-pts">15/20</div>
+        <div class="bar-detail">4.5 of 6 items</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── SUBMIT SECTION ─────────────────────────────────────── -->
+<h2>Submit Section (what Dave sees before hitting the button)</h2>
+
+<div class="submit-card">
+  <div class="submit-card-title">Ready to Submit?</div>
+  <div class="submit-score-row">
+    <div class="submit-big-num" style="color:#16a34a">96</div>
+    <div class="submit-grade" style="color:#16a34a">A+</div>
+    <div class="submit-label">Inspection Score<br>Used for inspector performance tracking</div>
+  </div>
+  <button class="submit-btn">Submit to Tanner →</button>
+</div>
+
+<div class="submit-card">
+  <div class="submit-card-title">Ready to Submit?</div>
+  <div class="submit-score-row">
+    <div class="submit-big-num" style="color:#ef4444">41</div>
+    <div class="submit-grade" style="color:#ef4444">F</div>
+    <div class="submit-label">Inspection Score<br>26 unplaced photos · 4 incomplete sections</div>
+  </div>
+  <button class="submit-btn" style="background:#9ca3af; cursor:not-allowed">Submit to Tanner → (blocked)</button>
+</div>
+
+<!-- ── TANNER / MATT DASHBOARD ────────────────────────────── -->
+<h2>Tanner's Dashboard — Monthly Performance</h2>
+
+<div class="perf-table">
+  <div class="perf-row header">
+    <div>Inspector</div>
+    <div style="text-align:center">Jobs</div>
+    <div style="text-align:center">Avg Score</div>
+    <div style="text-align:center">Grade</div>
+    <div style="text-align:center">Comp Adj</div>
+  </div>
+  <div class="perf-row">
+    <div class="perf-name">Dave Kline</div>
+    <div class="perf-num">12</div>
+    <div class="perf-num" style="color:#16a34a">91</div>
+    <div><span class="perf-tag tag-a">A</span></div>
+    <div class="perf-num" style="color:#16a34a">+5%</div>
+  </div>
+  <div class="perf-row">
+    <div class="perf-name">New Inspector</div>
+    <div class="perf-num">4</div>
+    <div class="perf-num" style="color:#3b82f6">79</div>
+    <div><span class="perf-tag tag-b">B</span></div>
+    <div class="perf-num" style="color:#3a3a3c">Base</div>
+  </div>
+  <div class="perf-row">
+    <div class="perf-name">Part-time Inspector</div>
+    <div class="perf-num">6</div>
+    <div class="perf-num" style="color:#f59e0b">67</div>
+    <div><span class="perf-tag tag-c">C</span></div>
+    <div class="perf-num" style="color:#f59e0b">−3%</div>
+  </div>
+  <div class="perf-row" style="border-bottom:none">
+    <div class="perf-name" style="color:#ef4444">Problem Inspector</div>
+    <div class="perf-num">3</div>
+    <div class="perf-num" style="color:#ef4444">44</div>
+    <div><span class="perf-tag tag-f">F</span></div>
+    <div class="perf-num" style="color:#ef4444">PIP</div>
+  </div>
+</div>
+
+</body>
+</html>
