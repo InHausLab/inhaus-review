@@ -117,6 +117,7 @@
     <div class="perf-pill"><div class="perf-pill-num" id="sum-jobs">—</div><div class="perf-pill-label">Inspections</div></div>
     <div class="perf-pill"><div class="perf-pill-num" id="sum-avg">—</div><div class="perf-pill-label">Avg Score</div></div>
     <div class="perf-pill"><div class="perf-pill-num" id="sum-aplus">—</div><div class="perf-pill-label">A / A+ Scores</div></div>
+    <div class="perf-pill" style="border-color:#fcd34d"><div class="perf-pill-num" id="sum-bonus" style="color:#d97706">—</div><div class="perf-pill-label">⚡ Same-Day Bonuses</div></div>
     <div class="perf-pill"><div class="perf-pill-num" id="sum-failing">—</div><div class="perf-pill-label">Below 65</div></div>
   </div>
 
@@ -140,12 +141,19 @@ function gradeFromScore(s) {
   return               { grade: 'F',  cls: 'red-score',    chipCls: 'chip-f',  bgCls: 'red-bg'   };
 }
 
-function compFromAvg(avg) {
-  if (avg >= 90) return { label: '+5%',  cls: 'comp-pos' };
-  if (avg >= 80) return { label: '+2%',  cls: 'comp-pos' };
-  if (avg >= 70) return { label: 'Base', cls: 'comp-base' };
-  if (avg >= 60) return { label: '−2%',  cls: 'comp-neg' };
-  return               { label: 'PIP',   cls: 'comp-pip' };
+function isSameDayBonus(job) {
+  if (!job.completionScore || job.completionScore < 85) return false;
+  if (!job.date || !job.submittedAt) return false;
+  return job.date.slice(0,10) === job.submittedAt.slice(0,10);
+}
+
+function compFromAvg(avg, bonuses) {
+  const bonusStr = bonuses > 0 ? ` +⚡${bonuses}` : '';
+  if (avg >= 90) return { label: `+5%${bonusStr}`,  cls: 'comp-pos' };
+  if (avg >= 80) return { label: `+2%${bonusStr}`,  cls: 'comp-pos' };
+  if (avg >= 70) return { label: `Base${bonusStr}`, cls: bonuses > 0 ? 'comp-pos' : 'comp-base' };
+  if (avg >= 60) return { label: `−2%${bonusStr}`,  cls: 'comp-neg' };
+  return               { label: 'PIP',               cls: 'comp-pip' };
 }
 
 function initials(name) {
@@ -154,12 +162,12 @@ function initials(name) {
 
 // DEMO data — replaced by real API data when available
 const DEMO_INSPECTIONS = [
-  { id:'INH-20260422-C7KYGW', address:'301 Cemetery Rd, Basalt',    inspector:'Dave Kline',  date:'2026-04-22', completionScore:91,  completionGrade:'A',  photos:14, status:'Report Complete' },
-  { id:'INH-20260428-DKNSOB', address:'Alpha One Ranch',            inspector:'Dave Kline',  date:'2026-04-28', completionScore:87,  completionGrade:'A',  photos:57, status:'Submitted to Tanner' },
-  { id:'INH-20260506-DV4MDG', address:'Sunshine Ranch',             inspector:'Dave Kline',  date:'2026-05-06', completionScore:78,  completionGrade:'B',  photos:8,  status:'Submitted to Tanner' },
-  { id:'INH-20260520-EAYNCM', address:'Meadow Barn Ranch',          inspector:'Dave Kline',  date:'2026-05-20', completionScore:94,  completionGrade:'A+', photos:0,  status:'In Review' },
-  { id:'INH-20260529-Y0F0KO', address:'12 Elk Trail, Carbondale',   inspector:'Dave Kline',  date:'2026-05-29', completionScore:63,  completionGrade:'C',  photos:0,  status:'In Review' },
-  { id:'INH-20260601-S0YI8K', address:'88 Aspen Way, Aspen',        inspector:'Dave Kline',  date:'2026-06-01', completionScore:41,  completionGrade:'F',  photos:0,  status:'In Review' },
+  { id:'INH-20260422-C7KYGW', address:'301 Cemetery Rd, Basalt',    inspector:'Dave Kline',  date:'2026-04-22', submittedAt:'2026-04-22T17:34:00Z', completionScore:91,  completionGrade:'A',  photos:14, status:'Report Complete' },
+  { id:'INH-20260428-DKNSOB', address:'Alpha One Ranch',            inspector:'Dave Kline',  date:'2026-04-28', submittedAt:'2026-04-29T09:12:00Z', completionScore:87,  completionGrade:'A',  photos:57, status:'Submitted to Tanner' },
+  { id:'INH-20260506-DV4MDG', address:'Sunshine Ranch',             inspector:'Dave Kline',  date:'2026-05-06', submittedAt:'2026-05-06T16:55:00Z', completionScore:78,  completionGrade:'B',  photos:8,  status:'Submitted to Tanner' },
+  { id:'INH-20260520-EAYNCM', address:'Meadow Barn Ranch',          inspector:'Dave Kline',  date:'2026-05-20', submittedAt:'2026-05-20T14:22:00Z', completionScore:94,  completionGrade:'A+', photos:0,  status:'In Review' },
+  { id:'INH-20260529-Y0F0KO', address:'12 Elk Trail, Carbondale',   inspector:'Dave Kline',  date:'2026-05-29', submittedAt:null,                   completionScore:63,  completionGrade:'C',  photos:0,  status:'In Review' },
+  { id:'INH-20260601-S0YI8K', address:'88 Aspen Way, Aspen',        inspector:'Dave Kline',  date:'2026-06-01', submittedAt:null,                   completionScore:41,  completionGrade:'F',  photos:0,  status:'In Review' },
 ];
 
 function buildPerformancePage(inspections, filterMonth, filterInspector) {
@@ -183,6 +191,7 @@ function buildPerformancePage(inspections, filterMonth, filterInspector) {
   document.getElementById('sum-jobs').textContent    = filtered.length;
   document.getElementById('sum-avg').textContent     = avgScore != null ? avgScore : '—';
   document.getElementById('sum-aplus').textContent   = allScores.filter(s => s >= 85).length;
+  document.getElementById('sum-bonus').textContent   = filtered.filter(j => isSameDayBonus(j)).length;
   document.getElementById('sum-failing').textContent = allScores.filter(s => s < 65).length;
 
   // Inspector select options
@@ -210,10 +219,12 @@ function buildPerformancePage(inspections, filterMonth, filterInspector) {
     const avgB = b[1].filter(i=>i.completionScore!=null).reduce((s,i)=>s+i.completionScore,0) / (b[1].filter(i=>i.completionScore!=null).length||1);
     return avgB - avgA;
   }).forEach(([name, jobs]) => {
-    const scores  = jobs.filter(j=>j.completionScore!=null).map(j=>j.completionScore);
-    const avg     = scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length) : null;
-    const g       = avg != null ? gradeFromScore(avg) : { grade:'—', cls:'comp-base', chipCls:'chip-na', bgCls:'green-bg' };
-    const comp    = avg != null ? compFromAvg(avg) : { label:'—', cls:'comp-base' };
+    const scores      = jobs.filter(j=>j.completionScore!=null).map(j=>j.completionScore);
+    const avg         = scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length) : null;
+    const bonusJobs   = jobs.filter(j => isSameDayBonus(j));
+    const bonusCount  = bonusJobs.length;
+    const g           = avg != null ? gradeFromScore(avg) : { grade:'—', cls:'comp-base', chipCls:'chip-na', bgCls:'green-bg' };
+    const comp        = avg != null ? compFromAvg(avg, bonusCount) : { label:'—', cls:'comp-base' };
 
     const card = document.createElement('div');
     card.className = 'inspector-card';
@@ -228,7 +239,8 @@ function buildPerformancePage(inspections, filterMonth, filterInspector) {
 
     const info = document.createElement('div');
     info.className = 'insp-info';
-    info.innerHTML = `<div class="insp-name">${name}</div><div class="insp-meta">${jobs.length} inspection${jobs.length!==1?'s':''} · ${scores.length} scored</div>`;
+    const bonusLabel = bonusCount > 0 ? ` · <span style="color:#d97706;font-weight:700">⚡ ${bonusCount} same-day bonus${bonusCount!==1?'es':''}</span>` : '';
+    info.innerHTML = `<div class="insp-name">${name}</div><div class="insp-meta">${jobs.length} inspection${jobs.length!==1?'s':''} · ${scores.length} scored${bonusLabel}</div>`;
 
     const scoreBlock = document.createElement('div');
     scoreBlock.className = 'insp-score-block';
@@ -258,9 +270,13 @@ function buildPerformancePage(inspections, filterMonth, filterInspector) {
 
     jobs.sort((a,b)=>b.date.localeCompare(a.date)).forEach(job => {
       const jg = job.completionScore != null ? gradeFromScore(job.completionScore) : null;
+      const isBonus = isSameDayBonus(job);
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><a href="review.html?id=${job.id}&token=InHaus2026" style="color:var(--green);text-decoration:none;font-weight:600">${job.address}</a></td>
+        <td>
+          <a href="review.html?id=${job.id}&token=InHaus2026" style="color:var(--green);text-decoration:none;font-weight:600">${job.address}</a>
+          ${isBonus ? ' <span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:1px 7px;border-radius:8px;font-weight:700">⚡ Same-Day</span>' : ''}
+        </td>
         <td>${new Date(job.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</td>
         <td>${jg ? `<span class="score-chip ${jg.chipCls}">${job.completionScore} ${jg.grade}</span>` : '<span class="score-chip chip-na">Not scored</span>'}</td>
         <td>${job.photos ?? '—'}</td>

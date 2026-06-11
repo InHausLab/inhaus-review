@@ -1784,12 +1784,19 @@ function renderSubmitSection(insp, locked) {
   if (scoreWrap) {
     scoreWrap.innerHTML = '';
     const s = calculateCompletionScore(insp);
+    const today       = new Date().toISOString().slice(0,10);
+    const inspDate    = insp.inspectionDate ? insp.inspectionDate.slice(0,10) : null;
+    const bonusEligible = s.total >= 85 && inspDate && today === inspDate;
+    const bonusBadge = bonusEligible
+      ? '<div style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:#fef9c3;color:#854d0e;padding:6px 12px;border-radius:8px;font-size:0.8rem;font-weight:700">⚡ Same-Day Bonus earned — A grade submitted today!</div>'
+      : '';
     scoreWrap.innerHTML = `
       <div class="submit-score-row">
         <span class="submit-score-num ${s.gradeClass}">${s.total}</span>
         <span class="submit-score-grade ${s.gradeClass}">${s.grade}</span>
         <span class="submit-score-label">Inspection Score — used for performance tracking</span>
-      </div>`;
+      </div>
+      ${bonusBadge}`;
   }
 
   const notesPreview = qs('#notes-preview');
@@ -1817,10 +1824,18 @@ async function submitToTanner() {
   if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
 
   // Calculate and save score before submitting
-  const finalScore = _inspection ? calculateCompletionScore(_inspection) : null;
+  const finalScore   = _inspection ? calculateCompletionScore(_inspection) : null;
+  const submittedAt   = new Date().toISOString();
+  const inspDate      = _inspection?.inspectionDate || '';
+  const sameDayBonus  = finalScore && finalScore.total >= 85 && inspDate && submittedAt.slice(0,10) === inspDate.slice(0,10);
 
   try {
-    await apiFetch({}, 'POST', { action: 'submit', id, token, completionScore: finalScore ? finalScore.total : null, completionGrade: finalScore ? finalScore.grade : null });
+    await apiFetch({}, 'POST', { action: 'submit', id, token,
+      completionScore: finalScore ? finalScore.total : null,
+      completionGrade: finalScore ? finalScore.grade : null,
+      submittedAt,
+      sameDayBonus: sameDayBonus || false
+    });
   } catch (err) {
     showToast(`Submission failed: ${err.message}`, 'error');
     if (btn) { btn.disabled = false; btn.textContent = 'Submit to Tanner →'; }
