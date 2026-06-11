@@ -1435,46 +1435,72 @@ body {
 .palette-thumb:hover:not(.assigned-elsewhere) { border-color: var(--green); }
 .palette-thumb.dragging { opacity: 0.45; }
 
-/* ── Section 5: Photo Picker Field ─────────────────────────── */
-.photo-picker-field { margin-top: 6px; }
-.photo-picker-assigned { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
-.picker-thumb { position: relative; width: 72px; height: 72px; border-radius: 8px; overflow: visible; flex-shrink: 0; }
-.picker-thumb img { width: 72px; height: 72px; border-radius: 8px; object-fit: cover; display: block; }
+/* ── Section 5: Photo Picker Field (inline) ─────────────────── */
+.photo-picker-field { margin-top: 8px; }
+.photo-picker-assigned { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.picker-thumb {
+  position: relative; width: 80px; flex-shrink: 0;
+  border-radius: 8px; overflow: visible;
+}
+.picker-thumb img {
+  width: 80px; height: 80px; border-radius: 8px; object-fit: cover; display: block;
+}
 .picker-thumb-placeholder {
-  width: 72px; height: 72px; border-radius: 8px; background: var(--gray-100);
+  width: 80px; height: 80px; border-radius: 8px; background: var(--gray-100);
   display: flex; align-items: center; justify-content: center;
   font-size: 0.65rem; color: var(--gray-500);
 }
+.picker-thumb-caption {
+  font-size: 0.6rem; color: var(--gray-500); margin-top: 3px;
+  text-align: center; line-height: 1.2; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; max-width: 80px;
+}
 .picker-rm {
-  position: absolute; top: -6px; right: -6px; width: 18px; height: 18px;
-  border-radius: 50%; background: #ef4444; color: white; border: none;
-  font-size: 0.6rem; cursor: pointer; display: flex; align-items: center;
+  position: absolute; top: -7px; right: -7px; width: 20px; height: 20px;
+  border-radius: 50%; background: #ef4444; color: white; border: 2px solid white;
+  font-size: 0.65rem; cursor: pointer; display: flex; align-items: center;
   justify-content: center; padding: 0; z-index: 1;
 }
-.picker-add-btn { border: 1.5px dashed var(--gray-200); background: none; border-radius: 6px; padding: 6px 10px; font-size: 0.75rem; color: var(--gray-500); cursor: pointer; }
-.picker-add-btn:hover { border-color: var(--green); color: var(--green); }
-.picker-drop-zone {
-  border: 1.5px dashed var(--gray-200); border-radius: 6px; padding: 5px 10px;
-  font-size: 0.72rem; color: var(--gray-400); text-align: center;
-  margin-bottom: 4px; transition: background 0.15s, border-color 0.15s;
+.picker-add-btn-inline {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; padding: 10px 14px; border-radius: 8px;
+  border: 1.5px dashed var(--gray-300); background: var(--gray-50, #f9f9f9);
+  font-size: 0.82rem; color: var(--gray-600); cursor: pointer;
+  font-weight: 500; transition: all 0.15s; text-align: left;
 }
-.picker-drop-zone.drag-over { background: var(--green-pale); border-color: var(--green); color: var(--green); }
+.picker-add-btn-inline:hover { border-color: var(--green); color: var(--green); background: var(--green-pale, #f0f5e8); }
+.picker-add-icon { font-size: 1rem; }
 
-/* ── Section 5: Photo Picker Modal ─────────────────────────── */
+/* ── Section 5: Photo Picker Modal (full-screen) ─────────────── */
 .photo-picker-modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000;
-  display: flex; align-items: center; justify-content: center; padding: 20px;
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000;
+  display: flex; align-items: flex-end; justify-content: center;
 }
 .photo-picker-modal {
-  background: white; border-radius: 16px; padding: 20px;
-  max-width: 600px; width: 100%; max-height: 80vh; overflow-y: auto;
+  background: white; border-radius: 18px 18px 0 0; padding: 0;
+  width: 100%; max-width: 700px; height: 92vh;
+  display: flex; flex-direction: column; overflow: hidden;
 }
-.photo-picker-modal h3 { font-size: 1rem; font-weight: 700; margin-bottom: 14px; }
-.photo-picker-modal-size-bar { display: flex; gap: 4px; align-items: center; margin-bottom: 12px; }
-.photo-picker-modal-size-bar span { font-size: 0.7rem; color: var(--gray-500); margin-right: 4px; }
+.picker-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px 12px; border-bottom: 1px solid var(--gray-100);
+  flex-shrink: 0;
+}
+.picker-modal-header h3 { font-size: 1rem; font-weight: 700; margin: 0; }
+.picker-modal-close {
+  width: 30px; height: 30px; border-radius: 50%; border: none;
+  background: var(--gray-100); color: var(--gray-600); font-size: 0.85rem;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.picker-modal-size-row {
+  display: flex; align-items: center; gap: 6px; padding: 10px 20px;
+  border-bottom: 1px solid var(--gray-100); flex-shrink: 0;
+}
+.picker-modal-size-row span { font-size: 0.75rem; color: var(--gray-500); }
+.picker-modal-count { margin-left: auto; font-size: 0.75rem; font-weight: 600; color: var(--green); }
 .photo-picker-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--modal-thumb-size, 100px), 1fr));
-  gap: 8px; margin-bottom: 16px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--modal-thumb-size, 115px), 1fr));
+  gap: 8px; padding: 16px 20px; overflow-y: auto; flex: 1;
 }
 .picker-grid-item {
   position: relative; border-radius: 8px; overflow: hidden; cursor: pointer;
@@ -1498,8 +1524,11 @@ body {
   border-radius: 50%; display: flex; align-items: center;
   justify-content: center; font-size: 0.7rem; font-weight: 700;
 }
+.picker-modal-footer {
+  padding: 12px 20px 20px; border-top: 1px solid var(--gray-100); flex-shrink: 0;
+}
 .picker-done-btn {
-  background: #2c3f16; color: white; border: none; border-radius: 8px;
-  padding: 10px 24px; font-size: 0.9rem; font-weight: 600; cursor: pointer; width: 100%;
+  background: #2c3f16; color: white; border: none; border-radius: 10px;
+  padding: 14px 24px; font-size: 0.95rem; font-weight: 600; cursor: pointer; width: 100%;
 }
 .picker-done-btn:hover { background: var(--green-light); }

@@ -463,77 +463,90 @@ function buildPhotoPalette(allPhotos, assignedSet) {
 
 function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) {
   const wrap = el('div', { class: 'photo-picker-field' });
-  const assigned = el('div', { class: 'photo-picker-assigned' });
-  assignedIds.forEach(pid => {
-    const photo = allPhotos.find(p => p.photoId === pid);
-    if (!photo) return;
-    const thumb = el('div', { class: 'picker-thumb' });
-    if (photo.driveUrl) {
-      thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy' }));
-    } else {
-      thumb.appendChild(el('div', { class: 'picker-thumb-placeholder' }, (pid || '').slice(-4)));
-    }
-    if (!locked) {
-      const rm = el('button', { class: 'picker-rm', title: 'Remove', type: 'button' }, '\u2715');
-      rm.addEventListener('click', () => {
-        const ids = assignedIds.filter(id => id !== pid);
-        saveField(stepId, slotKey, JSON.stringify(ids));
-        debouncedSave(stepId, slotKey, JSON.stringify(ids));
-        renderPostContentSection(_inspection, false);
-      });
-      thumb.appendChild(rm);
-    }
-    assigned.appendChild(thumb);
-  });
-  wrap.appendChild(assigned);
-  if (!locked && assignedIds.length < 4) {
-    const dropZone = el('div', { class: 'picker-drop-zone' }, '\u2193 Drop here');
-    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', e => {
-      e.preventDefault();
-      dropZone.classList.remove('drag-over');
-      const photoId = e.dataTransfer.getData('text/photo-id');
-      if (!photoId || assignedIds.includes(photoId)) return;
-      const ids = [...assignedIds, photoId];
-      saveField(stepId, slotKey, JSON.stringify(ids));
-      debouncedSave(stepId, slotKey, JSON.stringify(ids));
-      renderPostContentSection(_inspection, false);
+
+  if (assignedIds.length > 0) {
+    const row = el('div', { class: 'photo-picker-assigned' });
+    assignedIds.forEach(pid => {
+      const photo = allPhotos.find(p => p.photoId === pid);
+      if (!photo) return;
+      const thumb = el('div', { class: 'picker-thumb' });
+      if (photo.driveUrl) {
+        thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy' }));
+      } else {
+        thumb.appendChild(el('div', { class: 'picker-thumb-placeholder' }, (pid || '').slice(-4)));
+      }
+      if (photo.caption) {
+        thumb.appendChild(el('div', { class: 'picker-thumb-caption' }, photo.caption));
+      }
+      if (!locked) {
+        const rm = el('button', { class: 'picker-rm', title: 'Remove', type: 'button' }, '\u2715');
+        rm.addEventListener('click', () => {
+          const ids = assignedIds.filter(id => id !== pid);
+          saveField(stepId, slotKey, JSON.stringify(ids));
+          debouncedSave(stepId, slotKey, JSON.stringify(ids));
+          renderPostContentSection(_inspection, false);
+        });
+        thumb.appendChild(rm);
+      }
+      row.appendChild(thumb);
     });
-    wrap.appendChild(dropZone);
-    const addBtn = el('button', { class: 'picker-add-btn', type: 'button' }, '+ Add photo');
+    wrap.appendChild(row);
+  }
+
+  if (!locked) {
+    const addBtn = el('button', { class: 'picker-add-btn-inline', type: 'button' });
+    addBtn.innerHTML = `<span class="picker-add-icon">\uD83D\uDCF7</span> ${assignedIds.length > 0 ? 'Edit photos' : '+ Add photos'}`;
     addBtn.addEventListener('click', () => openPhotoPickerModal(slotKey, stepId, assignedIds, allPhotos));
     wrap.appendChild(addBtn);
   }
+
   return wrap;
 }
 
 function openPhotoPickerModal(slotKey, stepId, currentIds, allPhotos) {
   const existing = qs('.photo-picker-modal-overlay');
   if (existing) existing.remove();
+
   const overlay = el('div', { class: 'photo-picker-modal-overlay' });
   const modal = el('div', { class: 'photo-picker-modal' });
-  modal.appendChild(el('h3', {}, 'Assign Photos'));
 
-  // Size controls for modal grid
-  const modalSizeBar = el('div', { class: 'photo-picker-modal-size-bar' });
-  modalSizeBar.appendChild(el('span', {}, 'Photo size:'));
-  const MODAL_SIZES = { S: '80px', M: '110px', L: '150px' };
+  // Header row
+  const header = el('div', { class: 'picker-modal-header' });
+  header.appendChild(el('h3', {}, 'Select Photos'));
+  const closeBtn = el('button', { class: 'picker-modal-close', type: 'button' }, '\u2715');
+  closeBtn.addEventListener('click', () => overlay.remove());
+  header.appendChild(closeBtn);
+  modal.appendChild(header);
+
+  // Size controls
+  const MODAL_SIZES = { S: '80px', M: '115px', L: '160px' };
   let modalSize = getPaletteSize();
+  const sizeRow = el('div', { class: 'picker-modal-size-row' });
+  sizeRow.appendChild(el('span', {}, 'Size:'));
   ['S','M','L'].forEach(s => {
     const btn = el('button', { class: `palette-size-btn${s === modalSize ? ' active' : ''}`, type: 'button' }, s);
     btn.addEventListener('click', () => {
       modalSize = s;
-      modalSizeBar.querySelectorAll('.palette-size-btn').forEach(b => b.classList.toggle('active', b.textContent === s));
+      setPaletteSize(s);
+      sizeRow.querySelectorAll('.palette-size-btn').forEach(b => b.classList.toggle('active', b.textContent === s));
       grid.style.setProperty('--modal-thumb-size', MODAL_SIZES[s]);
     });
-    modalSizeBar.appendChild(btn);
+    sizeRow.appendChild(btn);
   });
-  modal.appendChild(modalSizeBar);
+  const countLabel = el('span', { class: 'picker-modal-count' }, '');
+  sizeRow.appendChild(countLabel);
+  modal.appendChild(sizeRow);
 
+  // Photo grid
   let selected = [...currentIds];
   const grid = el('div', { class: 'photo-picker-grid' });
   grid.style.setProperty('--modal-thumb-size', MODAL_SIZES[modalSize]);
+
+  const updateCount = () => {
+    countLabel.textContent = selected.length > 0 ? `${selected.length} selected` : '';
+  };
+  updateCount();
+
   allPhotos.forEach(photo => {
     const item = el('div', {
       class: `picker-grid-item${selected.includes(photo.photoId) ? ' selected' : ''}`,
@@ -544,19 +557,25 @@ function openPhotoPickerModal(slotKey, stepId, currentIds, allPhotos) {
     } else {
       item.appendChild(el('div', { class: 'picker-grid-placeholder' }, (photo.photoId || '').slice(-4)));
     }
-    item.appendChild(el('div', { class: 'picker-grid-caption' }, photo.caption || photo.photoId));
+    if (photo.caption) {
+      item.appendChild(el('div', { class: 'picker-grid-caption' }, photo.caption));
+    }
     item.addEventListener('click', () => {
       if (item.classList.contains('selected')) {
         selected = selected.filter(id => id !== photo.photoId);
         item.classList.remove('selected');
-      } else if (selected.length < 4) {
+      } else {
         selected.push(photo.photoId);
         item.classList.add('selected');
       }
+      updateCount();
     });
     grid.appendChild(item);
   });
   modal.appendChild(grid);
+
+  // Footer
+  const footer = el('div', { class: 'picker-modal-footer' });
   const doneBtn = el('button', { class: 'picker-done-btn', type: 'button' }, 'Done');
   doneBtn.addEventListener('click', () => {
     saveField(stepId, slotKey, JSON.stringify(selected));
@@ -564,9 +583,10 @@ function openPhotoPickerModal(slotKey, stepId, currentIds, allPhotos) {
     overlay.remove();
     renderPostContentSection(_inspection, false);
   });
-  modal.appendChild(doneBtn);
+  footer.appendChild(doneBtn);
+  modal.appendChild(footer);
+
   overlay.appendChild(modal);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
 }
 
@@ -583,10 +603,6 @@ function renderPostContentSection(insp, locked) {
   const allPhotos = insp.photos || [];
   const assignedSet = getAllSection5AssignedIds(rd);
   const tryParseIds = key => { try { return JSON.parse(rd[key] || '[]'); } catch(e) { return []; } };
-
-  // ---- Photo palette ----
-  const palette = buildPhotoPalette(allPhotos, assignedSet);
-  if (palette) body.appendChild(palette);
 
   // ---- Follow-up Actions ----
   body.appendChild(buildPostSubheading('Follow-Up Actions Needed',
