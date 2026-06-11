@@ -662,6 +662,9 @@ function renderPostContentSection(insp, locked) {
     ]));
   }
 
+  // ---- Photo Library ----
+  renderPhotoLibrary(body, allPhotos, rd);
+
   if (!locked) {
     // Wire up all inputs in this section
     qsa('#post-content-body input, #post-content-body textarea, #post-content-body select').forEach(inp => {
@@ -691,6 +694,94 @@ function renderPhotoFAB(allPhotos, slots, rd) {
   fab.innerHTML = '\uD83D\uDCF7';
   fab.addEventListener('click', () => openFABModal(allPhotos, slots, rd));
   document.body.appendChild(fab);
+}
+
+function renderPhotoLibrary(body, allPhotos, rd) {
+  if (!allPhotos || allPhotos.length === 0) return;
+
+  // Build reverse lookup: photoId → slot label
+  const photoSlotMap = {};
+  const slotDefs = [
+    ...Array.from({length:5}, (_,i) => ({ key: `followUp_${i+1}_photoIds`,    label: `Follow-up ${i+1}` })),
+    ...Array.from({length:6}, (_,i) => ({ key: `actionTaken_${i+1}_photoIds`, label: `Action ${i+1}` })),
+    ...Array.from({length:6}, (_,i) => ({ key: `obs_${i+1}_photoIds`,         label: `Obs ${i+1}` }))
+  ];
+  slotDefs.forEach(({ key, label }) => {
+    let ids = [];
+    try { ids = JSON.parse(rd[key] || '[]'); } catch(e) {}
+    ids.forEach(id => {
+      if (!photoSlotMap[id]) photoSlotMap[id] = [];
+      photoSlotMap[id].push(label);
+    });
+  });
+
+  const assigned   = allPhotos.filter(p => photoSlotMap[p.photoId]);
+  const unassigned = allPhotos.filter(p => !photoSlotMap[p.photoId]);
+
+  const section = el('div', { class: 'photo-library-section' });
+
+  // Header
+  const hdr = el('div', { class: 'photo-library-header' });
+  hdr.appendChild(el('div', { class: 'photo-library-title' }, '\uD83D\uDDBC\uFE0F Photo Library'));
+  const summary = el('div', { class: 'photo-library-summary' });
+  summary.appendChild(el('span', { class: 'lib-badge lib-badge-assigned' }, `${assigned.length} assigned`));
+  if (unassigned.length > 0) {
+    summary.appendChild(el('span', { class: 'lib-badge lib-badge-unassigned' }, `${unassigned.length} not placed`));
+  }
+  hdr.appendChild(summary);
+  section.appendChild(hdr);
+
+  // Size controls
+  const SIZES = { S: '72px', M: '100px', L: '140px' };
+  let libSize = getPaletteSize();
+  const sizeBar = el('div', { class: 'palette-size-bar', style: 'margin-bottom:10px' });
+  sizeBar.appendChild(el('span', {}, 'Size:'));
+  ['S','M','L'].forEach(s => {
+    const btn = el('button', { class: `palette-size-btn${s === libSize ? ' active' : ''}`, type: 'button' }, s);
+    btn.addEventListener('click', () => {
+      libSize = s;
+      setPaletteSize(s);
+      sizeBar.querySelectorAll('.palette-size-btn').forEach(b => b.classList.toggle('active', b.textContent === s));
+      grid.style.setProperty('--lib-thumb-size', SIZES[s]);
+    });
+    sizeBar.appendChild(btn);
+  });
+  section.appendChild(sizeBar);
+
+  // Grid
+  const grid = el('div', { class: 'photo-library-grid' });
+  grid.style.setProperty('--lib-thumb-size', SIZES[libSize]);
+
+  allPhotos.forEach(photo => {
+    const slots = photoSlotMap[photo.photoId];
+    const isAssigned = !!slots;
+    const card = el('div', { class: `lib-card${isAssigned ? ' lib-assigned' : ' lib-unassigned'}` });
+
+    // Photo thumbnail
+    const imgWrap = el('div', { class: 'lib-img-wrap' });
+    if (photo.driveUrl) {
+      imgWrap.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy' }));
+    } else {
+      imgWrap.appendChild(el('div', { class: 'lib-img-placeholder' }, (photo.photoId || '').slice(-4)));
+    }
+    // Status badge
+    if (isAssigned) {
+      imgWrap.appendChild(el('div', { class: 'lib-slot-badge' }, slots.join(', ')));
+    } else {
+      imgWrap.appendChild(el('div', { class: 'lib-unplaced-badge' }, 'Not placed'));
+    }
+    card.appendChild(imgWrap);
+
+    // Caption
+    if (photo.caption) {
+      card.appendChild(el('div', { class: 'lib-caption' }, photo.caption));
+    }
+
+    grid.appendChild(card);
+  });
+
+  section.appendChild(grid);
+  body.appendChild(section);
 }
 
 function openFABModal(allPhotos, slots, rd) {
