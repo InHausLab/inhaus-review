@@ -1623,6 +1623,26 @@ body {
   line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* ── Bonus Clock ────────────────────────────────────── */
+.bonus-clock {
+  border-radius: 14px; border: 2px solid; padding: 16px 18px;
+  margin-top: 12px;
+}
+.bonus-clock-top {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 14px;
+}
+.bonus-clock-label   { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--gray-500); margin-bottom: 4px; }
+.bonus-clock-time    { font-size: 2rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.bonus-clock-sublabel { font-size: 0.68rem; margin-top: 4px; opacity: 0.8; }
+.bonus-clock-right   { text-align: right; }
+.bonus-clock-amount  { font-size: 2.2rem; font-weight: 800; line-height: 1; }
+.bonus-clock-amount-label { font-size: 0.68rem; color: var(--gray-500); margin-top: 4px; }
+.bonus-bar-track { height: 8px; background: rgba(0,0,0,0.08); border-radius: 4px; overflow: hidden; margin-bottom: 5px; }
+.bonus-bar-fill  { height: 100%; border-radius: 4px; transition: width 1s linear; }
+.bonus-bar-labels { display: flex; justify-content: space-between; font-size: 0.6rem; color: var(--gray-400); margin-bottom: 12px; }
+.bonus-clock-msg { font-size: 0.78rem; padding: 10px 12px; background: rgba(255,255,255,0.5); border-radius: 8px; line-height: 1.4; }
+
 /* ── Floating Photo FAB ───────────────────────────────── */
 .photo-fab {
   position: fixed; bottom: 28px; right: 22px; z-index: 900;

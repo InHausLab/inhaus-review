@@ -1776,6 +1776,102 @@ function updateSubmitButton(results) {
    SECTION 6 — SUBMIT TO TANNER
    ============================================================ */
 
+let _bonusClockInterval = null;
+
+function getBonusTier(endedAt) {
+  if (!endedAt) return null;
+  const elapsedMs = Date.now() - new Date(endedAt).getTime();
+  const hrs = elapsedMs / 3600000;
+  if (hrs < 4) return { amount: 75, label: 'Full bonus',     nextAt: 4,  nextAmount: 50,  color: '#16a34a', bg: '#dcfce7', bar: '#16a34a' };
+  if (hrs < 6) return { amount: 50, label: 'Reduced bonus',  nextAt: 6,  nextAmount: 25,  color: '#d97706', bg: '#fef9c3', bar: '#f59e0b' };
+  if (hrs < 8) return { amount: 25, label: 'Minimum bonus',  nextAt: 8,  nextAmount: 0,   color: '#ea580c', bg: '#fff7ed', bar: '#f97316' };
+  return { amount: 0, label: 'Window closed', nextAt: null, nextAmount: null, color: '#9ca3af', bg: '#f5f5f5', bar: '#9ca3af' };
+}
+
+function formatHMS(ms) {
+  if (ms <= 0) return '0:00:00';
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function renderBonusClock(wrap, insp, score) {
+  const endedAt = insp.endedAt || insp.completedAt || null;
+  const tier = getBonusTier(endedAt);
+  if (!tier) return;
+
+  const qualifies = score.total >= 85;
+  const pct = endedAt && tier.nextAt
+    ? Math.max(0, 100 - ((Date.now() - new Date(endedAt).getTime()) / (tier.nextAt * 3600000)) * 100)
+    : (tier.amount > 0 ? 5 : 0);
+
+  const msUntilNext = tier.nextAt
+    ? Math.max(0, new Date(endedAt).getTime() + tier.nextAt * 3600000 - Date.now())
+    : 0;
+
+  wrap.innerHTML = '';
+  const clock = el('div', { class: 'bonus-clock', style: `background:${tier.bg};border-color:${tier.bar}` });
+
+  // Top row: icon + time + amount
+  const top = el('div', { class: 'bonus-clock-top' });
+
+  const left = el('div', { class: 'bonus-clock-left' });
+  left.appendChild(el('div', { class: 'bonus-clock-label' }, '⚡ Same-Day Bonus Window'));
+  const timeEl = el('div', { class: 'bonus-clock-time', style: `color:${tier.color}`, id: 'bonus-clock-time' },
+    tier.nextAt ? formatHMS(msUntilNext) : 'Window closed');
+  left.appendChild(timeEl);
+  left.appendChild(el('div', { class: 'bonus-clock-sublabel', style: `color:${tier.color}` },
+    tier.nextAt ? `until bonus drops to $${tier.nextAmount}` : 'Submit tomorrow for base pay only'));
+  top.appendChild(left);
+
+  const right = el('div', { class: 'bonus-clock-right' });
+  right.appendChild(el('div', { class: 'bonus-clock-amount', style: `color:${tier.color}` },
+    tier.amount > 0 ? `$${tier.amount}` : '$0'));
+  right.appendChild(el('div', { class: 'bonus-clock-amount-label' }, tier.label));
+  top.appendChild(right);
+  clock.appendChild(top);
+
+  // Progress bar
+  const track = el('div', { class: 'bonus-bar-track' });
+  const fill  = el('div', { class: 'bonus-bar-fill', style: `width:${pct}%;background:${tier.bar}` });
+  track.appendChild(fill);
+  clock.appendChild(track);
+  clock.appendChild(el('div', { class: 'bonus-bar-labels' },
+    el('span', {}, '← Less time'),
+    el('span', {}, 'Just left home →')));
+
+  // Status message
+  let msg, msgStyle;
+  if (tier.amount === 0) {
+    msg = 'Bonus window closed. Your score still counts toward monthly performance.';
+    msgStyle = 'color:#9ca3af';
+  } else if (!qualifies) {
+    msg = `Score is ${score.total} — need 85+ to qualify. ${score.total < 85 ? `${85 - score.total} more points needed.` : ''}`;
+    msgStyle = 'color:#dc2626;font-weight:600';
+  } else {
+    msg = `✅ You qualify! Score ${score.total} (${score.grade}). Submit now to earn $${tier.amount}.`;
+    msgStyle = `color:${tier.color};font-weight:700`;
+  }
+  clock.appendChild(el('div', { class: 'bonus-clock-msg', style: msgStyle }, msg));
+  wrap.appendChild(clock);
+
+  // Live tick
+  if (_bonusClockInterval) clearInterval(_bonusClockInterval);
+  if (tier.nextAt && tier.amount > 0) {
+    _bonusClockInterval = setInterval(() => {
+      const newMs = Math.max(0, new Date(endedAt).getTime() + tier.nextAt * 3600000 - Date.now());
+      const el2 = document.getElementById('bonus-clock-time');
+      if (el2) el2.textContent = formatHMS(newMs);
+      if (newMs === 0) {
+        clearInterval(_bonusClockInterval);
+        renderSubmitSection(_inspection, false);
+      }
+    }, 1000);
+  }
+}
+
 function renderSubmitSection(insp, locked) {
   updatePhotoSummary(insp.photos || []);
 
@@ -1784,19 +1880,19 @@ function renderSubmitSection(insp, locked) {
   if (scoreWrap) {
     scoreWrap.innerHTML = '';
     const s = calculateCompletionScore(insp);
-    const today       = new Date().toISOString().slice(0,10);
-    const inspDate    = insp.inspectionDate ? insp.inspectionDate.slice(0,10) : null;
-    const bonusEligible = s.total >= 85 && inspDate && today === inspDate;
-    const bonusBadge = bonusEligible
-      ? '<div style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:#fef9c3;color:#854d0e;padding:6px 12px;border-radius:8px;font-size:0.8rem;font-weight:700">⚡ Same-Day Bonus earned — A grade submitted today!</div>'
-      : '';
-    scoreWrap.innerHTML = `
-      <div class="submit-score-row">
-        <span class="submit-score-num ${s.gradeClass}">${s.total}</span>
-        <span class="submit-score-grade ${s.gradeClass}">${s.grade}</span>
-        <span class="submit-score-label">Inspection Score — used for performance tracking</span>
-      </div>
-      ${bonusBadge}`;
+
+    // Score row
+    const scoreRow = el('div', { class: 'submit-score-row' });
+    scoreRow.innerHTML = `
+      <span class="submit-score-num ${s.gradeClass}">${s.total}</span>
+      <span class="submit-score-grade ${s.gradeClass}">${s.grade}</span>
+      <span class="submit-score-label">Inspection Score — used for performance tracking</span>`;
+    scoreWrap.appendChild(scoreRow);
+
+    // Bonus clock
+    const clockWrap = el('div', { id: 'bonus-clock-wrap' });
+    scoreWrap.appendChild(clockWrap);
+    if (!locked) renderBonusClock(clockWrap, insp, s);
   }
 
   const notesPreview = qs('#notes-preview');
@@ -1825,16 +1921,18 @@ async function submitToTanner() {
 
   // Calculate and save score before submitting
   const finalScore   = _inspection ? calculateCompletionScore(_inspection) : null;
-  const submittedAt   = new Date().toISOString();
-  const inspDate      = _inspection?.inspectionDate || '';
-  const sameDayBonus  = finalScore && finalScore.total >= 85 && inspDate && submittedAt.slice(0,10) === inspDate.slice(0,10);
+  const submittedAt  = new Date().toISOString();
+  const endedAt      = _inspection?.endedAt || _inspection?.completedAt || null;
+  const bonusTier    = getBonusTier(endedAt);
+  const bonusEarned  = finalScore && finalScore.total >= 85 && bonusTier && bonusTier.amount > 0;
 
   try {
     await apiFetch({}, 'POST', { action: 'submit', id, token,
-      completionScore: finalScore ? finalScore.total : null,
-      completionGrade: finalScore ? finalScore.grade : null,
+      completionScore:  finalScore ? finalScore.total : null,
+      completionGrade:  finalScore ? finalScore.grade : null,
       submittedAt,
-      sameDayBonus: sameDayBonus || false
+      sameDayBonus:     bonusEarned || false,
+      sameDayBonusAmt:  bonusEarned ? bonusTier.amount : 0
     });
   } catch (err) {
     showToast(`Submission failed: ${err.message}`, 'error');
