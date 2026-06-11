@@ -147,6 +147,33 @@ function isSameDayBonus(job) {
   return job.date.slice(0,10) === job.submittedAt.slice(0,10);
 }
 
+function getHoursAfterLeaving(job) {
+  if (!job.endedAt || !job.submittedAt) return null;
+  return (new Date(job.submittedAt) - new Date(job.endedAt)) / 3600000;
+}
+
+function calculateMilestoneStreak(jobs) {
+  // Sort oldest to newest
+  const sorted = [...jobs].filter(j => j.submittedAt).sort((a,b) => new Date(a.submittedAt) - new Date(b.submittedAt));
+  let streak = 0;
+  let milestones = 0;
+  let resets = 0;
+  for (const job of sorted) {
+    const hrs = getHoursAfterLeaving(job);
+    if (hrs !== null && hrs >= 8) {
+      // RESET
+      streak = 0;
+      resets++;
+    } else if (hrs !== null && hrs < 4 && job.completionScore >= 85) {
+      // Counts toward milestone
+      streak++;
+      if (streak % 15 === 0) milestones++;
+    }
+    // 4-8 hrs: no change either way
+  }
+  return { streak, milestones, resets, toNext: 15 - (streak % 15) };
+}
+
 function compFromAvg(avg, bonuses) {
   const bonusStr = bonuses > 0 ? ` +⚡${bonuses}` : '';
   if (avg >= 90) return { label: `+5%${bonusStr}`,  cls: 'comp-pos' };
@@ -162,12 +189,12 @@ function initials(name) {
 
 // DEMO data — replaced by real API data when available
 const DEMO_INSPECTIONS = [
-  { id:'INH-20260422-C7KYGW', address:'301 Cemetery Rd, Basalt',    inspector:'Dave Kline',  date:'2026-04-22', submittedAt:'2026-04-22T17:34:00Z', completionScore:91,  completionGrade:'A',  photos:14, status:'Report Complete' },
-  { id:'INH-20260428-DKNSOB', address:'Alpha One Ranch',            inspector:'Dave Kline',  date:'2026-04-28', submittedAt:'2026-04-29T09:12:00Z', completionScore:87,  completionGrade:'A',  photos:57, status:'Submitted to Tanner' },
-  { id:'INH-20260506-DV4MDG', address:'Sunshine Ranch',             inspector:'Dave Kline',  date:'2026-05-06', submittedAt:'2026-05-06T16:55:00Z', completionScore:78,  completionGrade:'B',  photos:8,  status:'Submitted to Tanner' },
-  { id:'INH-20260520-EAYNCM', address:'Meadow Barn Ranch',          inspector:'Dave Kline',  date:'2026-05-20', submittedAt:'2026-05-20T14:22:00Z', completionScore:94,  completionGrade:'A+', photos:0,  status:'In Review' },
-  { id:'INH-20260529-Y0F0KO', address:'12 Elk Trail, Carbondale',   inspector:'Dave Kline',  date:'2026-05-29', submittedAt:null,                   completionScore:63,  completionGrade:'C',  photos:0,  status:'In Review' },
-  { id:'INH-20260601-S0YI8K', address:'88 Aspen Way, Aspen',        inspector:'Dave Kline',  date:'2026-06-01', submittedAt:null,                   completionScore:41,  completionGrade:'F',  photos:0,  status:'In Review' },
+  { id:'INH-20260422-C7KYGW', address:'301 Cemetery Rd, Basalt',    inspector:'Dave Kline', date:'2026-04-22', endedAt:'2026-04-22T14:10:00Z', submittedAt:'2026-04-22T17:34:00Z', completionScore:91, completionGrade:'A',  photos:14, status:'Report Complete'    },
+  { id:'INH-20260428-DKNSOB', address:'Alpha One Ranch',            inspector:'Dave Kline', date:'2026-04-28', endedAt:'2026-04-28T15:00:00Z', submittedAt:'2026-04-29T09:12:00Z', completionScore:87, completionGrade:'A',  photos:57, status:'Submitted to Tanner'},
+  { id:'INH-20260506-DV4MDG', address:'Sunshine Ranch',             inspector:'Dave Kline', date:'2026-05-06', endedAt:'2026-05-06T13:20:00Z', submittedAt:'2026-05-06T16:55:00Z', completionScore:78, completionGrade:'B',  photos:8,  status:'Submitted to Tanner'},
+  { id:'INH-20260520-EAYNCM', address:'Meadow Barn Ranch',          inspector:'Dave Kline', date:'2026-05-20', endedAt:'2026-05-20T11:00:00Z', submittedAt:'2026-05-20T14:22:00Z', completionScore:94, completionGrade:'A+', photos:0,  status:'In Review'         },
+  { id:'INH-20260529-Y0F0KO', address:'12 Elk Trail, Carbondale',   inspector:'Dave Kline', date:'2026-05-29', endedAt:'2026-05-29T09:00:00Z', submittedAt:'2026-05-29T10:45:00Z', completionScore:88, completionGrade:'A',  photos:0,  status:'In Review'         },
+  { id:'INH-20260601-S0YI8K', address:'88 Aspen Way, Aspen',        inspector:'Dave Kline', date:'2026-06-01', endedAt:'2026-06-01T10:00:00Z', submittedAt:'2026-06-01T19:30:00Z', completionScore:41, completionGrade:'F',  photos:0,  status:'In Review'         },
 ];
 
 function buildPerformancePage(inspections, filterMonth, filterInspector) {
@@ -223,6 +250,7 @@ function buildPerformancePage(inspections, filterMonth, filterInspector) {
     const avg         = scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length) : null;
     const bonusJobs   = jobs.filter(j => isSameDayBonus(j));
     const bonusCount  = bonusJobs.length;
+    const milestone   = calculateMilestoneStreak(jobs);
     const g           = avg != null ? gradeFromScore(avg) : { grade:'—', cls:'comp-base', chipCls:'chip-na', bgCls:'green-bg' };
     const comp        = avg != null ? compFromAvg(avg, bonusCount) : { label:'—', cls:'comp-base' };
 
@@ -239,8 +267,12 @@ function buildPerformancePage(inspections, filterMonth, filterInspector) {
 
     const info = document.createElement('div');
     info.className = 'insp-info';
-    const bonusLabel = bonusCount > 0 ? ` · <span style="color:#d97706;font-weight:700">⚡ ${bonusCount} same-day bonus${bonusCount!==1?'es':''}</span>` : '';
-    info.innerHTML = `<div class="insp-name">${name}</div><div class="insp-meta">${jobs.length} inspection${jobs.length!==1?'s':''} · ${scores.length} scored${bonusLabel}</div>`;
+    const bonusLabel = bonusCount > 0 ? ` · <span style="color:#d97706;font-weight:700">⚡ ${bonusCount} bonus${bonusCount!==1?'es':''}</span>` : '';
+    const streakColor = milestone.resets > 0 && milestone.streak === 0 ? '#ef4444' : '#2c3f16';
+    const streakLabel = milestone.streak > 0
+      ? ` · <span style="color:${streakColor};font-weight:700">🔥 ${milestone.streak} streak (${milestone.toNext} to +$150)</span>`
+      : milestone.resets > 0 ? ` · <span style="color:#ef4444;font-weight:700">❌ Streak reset</span>` : '';
+    info.innerHTML = `<div class="insp-name">${name}</div><div class="insp-meta">${jobs.length} inspection${jobs.length!==1?'s':''} · ${scores.length} scored${bonusLabel}${streakLabel}</div>`;
 
     const scoreBlock = document.createElement('div');
     scoreBlock.className = 'insp-score-block';
@@ -269,13 +301,19 @@ function buildPerformancePage(inspections, filterMonth, filterInspector) {
     const tbody = document.createElement('tbody');
 
     jobs.sort((a,b)=>b.date.localeCompare(a.date)).forEach(job => {
-      const jg = job.completionScore != null ? gradeFromScore(job.completionScore) : null;
-      const isBonus = isSameDayBonus(job);
+      const jg       = job.completionScore != null ? gradeFromScore(job.completionScore) : null;
+      const isBonus  = isSameDayBonus(job);
+      const hrs      = getHoursAfterLeaving(job);
+      const isReset  = hrs !== null && hrs >= 8;
+      const isStreak = hrs !== null && hrs < 4 && job.completionScore >= 85;
       const tr = document.createElement('tr');
+      if (isReset) tr.style.background = '#fff5f5';
       tr.innerHTML = `
         <td>
           <a href="review.html?id=${job.id}&token=InHaus2026" style="color:var(--green);text-decoration:none;font-weight:600">${job.address}</a>
-          ${isBonus ? ' <span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:1px 7px;border-radius:8px;font-weight:700">⚡ Same-Day</span>' : ''}
+          ${isBonus  ? ' <span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:1px 7px;border-radius:8px;font-weight:700">⚡ Same-Day</span>' : ''}
+          ${isReset  ? ' <span style="font-size:0.68rem;background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:8px;font-weight:700">❌ Streak Reset</span>' : ''}
+          ${isStreak ? ' <span style="font-size:0.68rem;background:#f0fdf4;color:#166534;padding:1px 7px;border-radius:8px;font-weight:700">🔥 +1 Streak</span>' : ''}
         </td>
         <td>${new Date(job.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</td>
         <td>${jg ? `<span class="score-chip ${jg.chipCls}">${job.completionScore} ${jg.grade}</span>` : '<span class="score-chip chip-na">Not scored</span>'}</td>
@@ -286,6 +324,31 @@ function buildPerformancePage(inspections, filterMonth, filterInspector) {
 
     table.appendChild(tbody);
     jobsDiv.appendChild(table);
+
+    // Milestone streak bar
+    if (milestone.streak > 0 || milestone.milestones > 0) {
+      const streakBar = document.createElement('div');
+      streakBar.style.cssText = 'padding:12px 20px;border-top:1px solid #f5f5f7;background:#fafafa;';
+      const pct = Math.round(((milestone.streak % 15) / 15) * 100);
+      const earned = milestone.milestones * 150;
+      streakBar.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:0.72rem;font-weight:700;color:#1d1d1f">🔥 Milestone Streak: <strong style="color:#2c3f16">${milestone.streak % 15}/15</strong></span>
+          <span style="font-size:0.72rem;color:#9ca3af">${milestone.toNext} more fast A-grades = +$150 &nbsp;···&nbsp; Total milestones earned: <strong style="color:#2c3f16">$${earned}</strong></span>
+        </div>
+        <div style="height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#2c3f16,#22c55e);border-radius:4px;transition:width 0.4s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:0.6rem;color:#9ca3af">
+          <span>0</span><span>5</span><span>10</span><span style="color:#2c3f16;font-weight:700">15 → +$150</span>
+        </div>`;
+      card.appendChild(streakBar);
+    } else if (milestone.resets > 0) {
+      const resetBar = document.createElement('div');
+      resetBar.style.cssText = 'padding:10px 20px;border-top:1px solid #fee2e2;background:#fff5f5;font-size:0.75rem;color:#991b1b;font-weight:600;';
+      resetBar.textContent = `❌ Streak at 0 — reset by a report submitted 8+ hours after leaving. ${milestone.milestones > 0 ? `$${milestone.milestones * 150} in milestone bonuses earned before reset.` : 'Build back up to earn the milestone bonus.'}`;
+      card.appendChild(resetBar);
+    }
 
     // Toggle
     hdr.addEventListener('click', () => {
