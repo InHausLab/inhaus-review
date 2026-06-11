@@ -1816,8 +1816,11 @@ async function submitToTanner() {
   const btn = qs('#submit-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
 
+  // Calculate and save score before submitting
+  const finalScore = _inspection ? calculateCompletionScore(_inspection) : null;
+
   try {
-    await apiFetch({}, 'POST', { action: 'submit', id, token });
+    await apiFetch({}, 'POST', { action: 'submit', id, token, completionScore: finalScore ? finalScore.total : null, completionGrade: finalScore ? finalScore.grade : null });
   } catch (err) {
     showToast(`Submission failed: ${err.message}`, 'error');
     if (btn) { btn.disabled = false; btn.textContent = 'Submit to Tanner →'; }
