@@ -1394,3 +1394,85 @@ body {
 .badge[title] {
   cursor: help;
 }
+
+/* ── Section 5: Photo Palette ──────────────────────────────── */
+.photo-palette-wrap { margin-bottom: 4px; }
+.photo-palette-label { font-size: 0.72rem; color: var(--gray-500); margin-bottom: 6px; }
+.photo-palette { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0 14px; margin-bottom: 16px; border-bottom: 1px solid var(--gray-100); }
+.palette-thumb {
+  width: 52px; height: 52px; flex-shrink: 0; border-radius: 6px; overflow: hidden;
+  cursor: grab; border: 2px solid transparent; transition: border-color 0.15s;
+  background: var(--gray-100); display: flex; align-items: center; justify-content: center;
+}
+.palette-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.palette-thumb-placeholder { font-size: 0.6rem; color: var(--gray-500); text-align: center; padding: 2px; }
+.palette-thumb.assigned-elsewhere { opacity: 0.4; }
+.palette-thumb:hover { border-color: var(--green); }
+.palette-thumb.dragging { opacity: 0.5; }
+
+/* ── Section 5: Photo Picker Field ─────────────────────────── */
+.photo-picker-field { margin-top: 6px; }
+.photo-picker-assigned { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.picker-thumb { position: relative; width: 56px; height: 56px; border-radius: 6px; overflow: visible; }
+.picker-thumb img { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; display: block; }
+.picker-thumb-placeholder {
+  width: 56px; height: 56px; border-radius: 6px; background: var(--gray-100);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem; color: var(--gray-500);
+}
+.picker-rm {
+  position: absolute; top: -6px; right: -6px; width: 18px; height: 18px;
+  border-radius: 50%; background: #ef4444; color: white; border: none;
+  font-size: 0.6rem; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; padding: 0; z-index: 1;
+}
+.picker-add-btn { border: 1.5px dashed var(--gray-200); background: none; border-radius: 6px; padding: 6px 10px; font-size: 0.75rem; color: var(--gray-500); cursor: pointer; }
+.picker-add-btn:hover { border-color: var(--green); color: var(--green); }
+.picker-drop-zone {
+  border: 1.5px dashed var(--gray-200); border-radius: 6px; padding: 5px 10px;
+  font-size: 0.72rem; color: var(--gray-400); text-align: center;
+  margin-bottom: 4px; transition: background 0.15s, border-color 0.15s;
+}
+.picker-drop-zone.drag-over { background: var(--green-pale); border-color: var(--green); color: var(--green); }
+
+/* ── Section 5: Photo Picker Modal ─────────────────────────── */
+.photo-picker-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.photo-picker-modal {
+  background: white; border-radius: 16px; padding: 20px;
+  max-width: 600px; width: 100%; max-height: 80vh; overflow-y: auto;
+}
+.photo-picker-modal h3 { font-size: 1rem; font-weight: 700; margin-bottom: 14px; }
+.photo-picker-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px; margin-bottom: 16px;
+}
+.picker-grid-item {
+  position: relative; border-radius: 8px; overflow: hidden; cursor: pointer;
+  border: 3px solid transparent; transition: border-color 0.15s;
+}
+.picker-grid-item img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.picker-grid-placeholder {
+  width: 100%; aspect-ratio: 1; background: var(--gray-100);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; color: var(--gray-500);
+}
+.picker-grid-caption {
+  font-size: 0.62rem; color: var(--gray-600); padding: 3px 4px;
+  line-height: 1.2; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; background: white;
+}
+.picker-grid-item.selected { border-color: #22c55e; }
+.picker-grid-item.selected::after {
+  content: '\2713'; position: absolute; top: 4px; right: 4px;
+  background: #22c55e; color: white; width: 20px; height: 20px;
+  border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; font-size: 0.7rem; font-weight: 700;
+}
+.picker-done-btn {
+  background: #2c3f16; color: white; border: none; border-radius: 8px;
+  padding: 10px 24px; font-size: 0.9rem; font-weight: 600; cursor: pointer; width: 100%;
+}
+.picker-done-btn:hover { background: var(--green-light); }

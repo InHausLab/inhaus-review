@@ -395,6 +395,139 @@ async function loadInspection() {
 }
 
 /* ============================================================
+   SECTION 5 — POST-INSPECTION CONTENT: PHOTO PICKER HELPERS
+   ============================================================ */
+
+function getAllSection5AssignedIds(rd) {
+  const ids = new Set();
+  const tryParse = key => { try { return JSON.parse(rd[key] || '[]'); } catch(e) { return []; } };
+  for (let i = 1; i <= 5; i++) tryParse(`followUp_${i}_photoIds`).forEach(id => ids.add(id));
+  for (let i = 1; i <= 6; i++) tryParse(`actionTaken_${i}_photoIds`).forEach(id => ids.add(id));
+  for (let i = 1; i <= 6; i++) tryParse(`obs_${i}_photoIds`).forEach(id => ids.add(id));
+  return ids;
+}
+
+function buildPhotoPalette(allPhotos, assignedSet) {
+  if (!allPhotos || allPhotos.length === 0) return null;
+  const wrap = el('div', { class: 'photo-palette-wrap' });
+  wrap.appendChild(el('div', { class: 'photo-palette-label' }, 'Drag photos to assign below, or tap + Add photo'));
+  const strip = el('div', { class: 'photo-palette' });
+  allPhotos.forEach(photo => {
+    const isAssigned = assignedSet.has(photo.photoId);
+    const thumb = el('div', {
+      class: `palette-thumb${isAssigned ? ' assigned-elsewhere' : ''}`,
+      draggable: 'true',
+      'data-photo-id': photo.photoId,
+      title: photo.caption || photo.photoId
+    });
+    if (photo.driveUrl) {
+      thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || '', loading: 'lazy' }));
+    } else {
+      thumb.appendChild(el('div', { class: 'palette-thumb-placeholder' }, (photo.photoId || '').slice(-4)));
+    }
+    thumb.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/photo-id', photo.photoId);
+      thumb.classList.add('dragging');
+    });
+    thumb.addEventListener('dragend', () => thumb.classList.remove('dragging'));
+    strip.appendChild(thumb);
+  });
+  wrap.appendChild(strip);
+  return wrap;
+}
+
+function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) {
+  const wrap = el('div', { class: 'photo-picker-field' });
+  const assigned = el('div', { class: 'photo-picker-assigned' });
+  assignedIds.forEach(pid => {
+    const photo = allPhotos.find(p => p.photoId === pid);
+    if (!photo) return;
+    const thumb = el('div', { class: 'picker-thumb' });
+    if (photo.driveUrl) {
+      thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy' }));
+    } else {
+      thumb.appendChild(el('div', { class: 'picker-thumb-placeholder' }, (pid || '').slice(-4)));
+    }
+    if (!locked) {
+      const rm = el('button', { class: 'picker-rm', title: 'Remove', type: 'button' }, '\u2715');
+      rm.addEventListener('click', () => {
+        const ids = assignedIds.filter(id => id !== pid);
+        saveField(stepId, slotKey, JSON.stringify(ids));
+        debouncedSave(stepId, slotKey, JSON.stringify(ids));
+        renderPostContentSection(_inspection, false);
+      });
+      thumb.appendChild(rm);
+    }
+    assigned.appendChild(thumb);
+  });
+  wrap.appendChild(assigned);
+  if (!locked && assignedIds.length < 4) {
+    const dropZone = el('div', { class: 'picker-drop-zone' }, '\u2193 Drop here');
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const photoId = e.dataTransfer.getData('text/photo-id');
+      if (!photoId || assignedIds.includes(photoId)) return;
+      const ids = [...assignedIds, photoId];
+      saveField(stepId, slotKey, JSON.stringify(ids));
+      debouncedSave(stepId, slotKey, JSON.stringify(ids));
+      renderPostContentSection(_inspection, false);
+    });
+    wrap.appendChild(dropZone);
+    const addBtn = el('button', { class: 'picker-add-btn', type: 'button' }, '+ Add photo');
+    addBtn.addEventListener('click', () => openPhotoPickerModal(slotKey, stepId, assignedIds, allPhotos));
+    wrap.appendChild(addBtn);
+  }
+  return wrap;
+}
+
+function openPhotoPickerModal(slotKey, stepId, currentIds, allPhotos) {
+  const existing = qs('.photo-picker-modal-overlay');
+  if (existing) existing.remove();
+  const overlay = el('div', { class: 'photo-picker-modal-overlay' });
+  const modal = el('div', { class: 'photo-picker-modal' });
+  modal.appendChild(el('h3', {}, 'Assign Photos'));
+  let selected = [...currentIds];
+  const grid = el('div', { class: 'photo-picker-grid' });
+  allPhotos.forEach(photo => {
+    const item = el('div', {
+      class: `picker-grid-item${selected.includes(photo.photoId) ? ' selected' : ''}`,
+      'data-photo-id': photo.photoId
+    });
+    if (photo.driveUrl) {
+      item.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy' }));
+    } else {
+      item.appendChild(el('div', { class: 'picker-grid-placeholder' }, (photo.photoId || '').slice(-4)));
+    }
+    item.appendChild(el('div', { class: 'picker-grid-caption' }, photo.caption || photo.photoId));
+    item.addEventListener('click', () => {
+      if (item.classList.contains('selected')) {
+        selected = selected.filter(id => id !== photo.photoId);
+        item.classList.remove('selected');
+      } else if (selected.length < 4) {
+        selected.push(photo.photoId);
+        item.classList.add('selected');
+      }
+    });
+    grid.appendChild(item);
+  });
+  modal.appendChild(grid);
+  const doneBtn = el('button', { class: 'picker-done-btn', type: 'button' }, 'Done');
+  doneBtn.addEventListener('click', () => {
+    saveField(stepId, slotKey, JSON.stringify(selected));
+    debouncedSave(stepId, slotKey, JSON.stringify(selected));
+    overlay.remove();
+    renderPostContentSection(_inspection, false);
+  });
+  modal.appendChild(doneBtn);
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+/* ============================================================
    SECTION 5 — POST-INSPECTION CONTENT
    ============================================================ */
 
@@ -404,6 +537,13 @@ function renderPostContentSection(insp, locked) {
   body.innerHTML = '';
 
   const rd = insp.reviewedData || {};
+  const allPhotos = insp.photos || [];
+  const assignedSet = getAllSection5AssignedIds(rd);
+  const tryParseIds = key => { try { return JSON.parse(rd[key] || '[]'); } catch(e) { return []; } };
+
+  // ---- Photo palette ----
+  const palette = buildPhotoPalette(allPhotos, assignedSet);
+  if (palette) body.appendChild(palette);
 
   // ---- Follow-up Actions ----
   body.appendChild(buildPostSubheading('Follow-Up Actions Needed',
@@ -416,9 +556,8 @@ function renderPostContentSection(insp, locked) {
       { label: 'Timeframe', stepId: 'post', field: `followUp_${i}_timeframe`,
         type: 'select', options: ['', '1 month', '3 months', '6 months', '1 year', 'As needed'],
         value: rd[`followUp_${i}_timeframe`] || insp.stepData?.['post-assessment']?.[`followUp_${i}_timeframe`] || '', locked },
-      { label: 'Photo reference(s)', stepId: 'post', field: `followUp_${i}_photoRef`,
-        type: 'text', value: rd[`followUp_${i}_photoRef`] || insp.stepData?.['post-assessment']?.[`followUp_${i}_photoRef`] || '', locked,
-        placeholder: 'e.g. Photos #023, #025' }
+      { label: 'Photos', type: 'photopicker', slotKey: `followUp_${i}_photoIds`, stepId: 'post',
+        assignedIds: tryParseIds(`followUp_${i}_photoIds`), allPhotos, locked }
     ]));
   }
 
@@ -432,9 +571,8 @@ function renderPostContentSection(insp, locked) {
       { label: `Action ${i}`, stepId: 'post', field: `actionTaken_${i}_desc`,
         type: 'textarea', value: rd[`actionTaken_${i}_desc`] || insp.stepData?.['post-assessment']?.[`actionTaken_${i}_desc`] || '', locked,
         placeholder: 'e.g. Replaced HVAC filter — 20x20x1 MERV 11, installed new' },
-      { label: 'Photo reference', stepId: 'post', field: `actionTaken_${i}_photoRef`,
-        type: 'text', value: rd[`actionTaken_${i}_photoRef`] || insp.stepData?.['post-assessment']?.[`actionTaken_${i}_photoRef`] || '', locked,
-        placeholder: 'e.g. Photo #045' }
+      { label: 'Photos', type: 'photopicker', slotKey: `actionTaken_${i}_photoIds`, stepId: 'post',
+        assignedIds: tryParseIds(`actionTaken_${i}_photoIds`), allPhotos, locked }
     ]));
   }
 
@@ -451,9 +589,8 @@ function renderPostContentSection(insp, locked) {
       { label: 'Observation', stepId: 'post', field: `obs_${i}_note`,
         type: 'textarea', value: rd[`obs_${i}_note`] || insp.stepData?.['post-assessment']?.[`obs_${i}_note`] || '', locked,
         placeholder: 'e.g. Active moisture staining on drywall below showerhead — no active drip at time of inspection' },
-      { label: 'Photo reference', stepId: 'post', field: `obs_${i}_photoRef`,
-        type: 'text', value: rd[`obs_${i}_photoRef`] || insp.stepData?.['post-assessment']?.[`obs_${i}_photoRef`] || '', locked,
-        placeholder: 'e.g. Photo #023' }
+      { label: 'Photos', type: 'photopicker', slotKey: `obs_${i}_photoIds`, stepId: 'post',
+        assignedIds: tryParseIds(`obs_${i}_photoIds`), allPhotos, locked }
     ]));
   }
 
@@ -484,7 +621,11 @@ function buildPostGroup(fields) {
     const lbl = el('label', { class: 'field-label' }, f.label);
     row.appendChild(lbl);
     let inp;
-    if (f.type === 'textarea') {
+    if (f.type === 'photopicker') {
+      row.appendChild(buildPhotoPickerField(f.slotKey, f.stepId, f.assignedIds || [], f.allPhotos || [], f.locked));
+      wrap.appendChild(row);
+      continue;
+    } else if (f.type === 'textarea') {
       inp = el('textarea', {
         class: 'field-textarea',
         rows: '2',
