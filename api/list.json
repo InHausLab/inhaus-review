@@ -1,43 +1,7 @@
 {
-  "generatedAt": "2026-06-10T21:12:39.000Z",
-  "count": 8,
+  "updatedAt": "2026-06-11T12:00:00.000Z",
+  "count": 6,
   "inspections": [
-    {
-      "inspectionId": "INH-20260506-DV4MDG",
-      "clientName": "Sunshine Ranch",
-      "propertyAddress": "Sunshine Ranch",
-      "inspectionDate": "2026-05-06",
-      "inspectorName": "Dave",
-      "status": "In Review",
-      "photoCount": 8,
-      "missingCount": 0,
-      "reviewToken": "***",
-      "syncedAt": "2026-05-06T00:00:00.000Z"
-    },
-    {
-      "inspectionId": "INH-20260422-C7KYGW",
-      "clientName": "Ryan Marshall",
-      "propertyAddress": "301 Cemetery Rd, Basalt",
-      "inspectionDate": "2026-04-22",
-      "inspectorName": "Dave",
-      "status": "In Review",
-      "photoCount": 14,
-      "missingCount": 0,
-      "reviewToken": "***",
-      "syncedAt": "2026-04-22T00:00:00.000Z"
-    },
-    {
-      "inspectionId": "INH-20260428-DKNSOB",
-      "clientName": "Alpha One",
-      "propertyAddress": "Alpha One (commercial)",
-      "inspectionDate": "2026-04-28",
-      "inspectorName": "Dave",
-      "status": "In Review",
-      "photoCount": 57,
-      "missingCount": 0,
-      "reviewToken": "***",
-      "syncedAt": "2026-04-29T09:44:00Z"
-    },
     {
       "inspectionId": "INH-20260520-EAYNCM",
       "clientName": "David Kline",
@@ -127,6 +91,24 @@
       "submittedAt": "",
       "reportBuilderNotes": "",
       "reviewToken": "L1RLCUEP"
+    },
+    {
+      "inspectionId": "INH-20260610-MY65K4",
+      "clientName": "Cleint test",
+      "propertyAddress": "asdfasd",
+      "inspectionDate": "2026-06-10",
+      "inspectorName": "Matt J",
+      "status": "Needs Review",
+      "photoCount": 0,
+      "missingCount": 0,
+      "spreadsheetId": "1EdUgQU6EM0W8IijNGYfLQiC-B6zYx1hnam-rGgF08gw",
+      "folderId": "14nAJfWDuiWvhQGOgM6WXfrySVq6tlKiz",
+      "syncedAt": "2026-06-10T22:50:56.763Z",
+      "reviewedBy": "",
+      "reviewedAt": "",
+      "submittedAt": "",
+      "reportBuilderNotes": "",
+      "reviewToken": "OO8UJRVY"
     }
   ]
 }
