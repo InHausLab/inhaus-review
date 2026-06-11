@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InHaus — Inspector Performance Dashboard</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; }
+
+/* NAV */
+.nav { background: #2c3f16; padding: 0 20px; height: 52px; display: flex; align-items: center; gap: 14px; }
+.nav-logo { color: white; font-size: 1rem; font-weight: 800; letter-spacing: -0.02em; }
+.nav-logo span { opacity: 0.55; font-weight: 400; }
+.nav-pill { background: rgba(255,255,255,0.15); color: white; font-size: 0.7rem; font-weight: 700; padding: 3px 10px; border-radius: 10px; }
+.nav-right { margin-left: auto; color: rgba(255,255,255,0.6); font-size: 0.75rem; }
+
+/* PAGE */
+.page { max-width: 860px; margin: 0 auto; padding: 28px 16px 80px; }
+.page-title { font-size: 1.4rem; font-weight: 800; color: #2c3f16; margin-bottom: 3px; }
+.page-sub   { font-size: 0.8rem; color: #6e6e73; margin-bottom: 24px; }
+
+/* FILTERS */
+.filter-row { display: flex; gap: 10px; align-items: center; margin-bottom: 22px; flex-wrap: wrap; }
+.filter-label { font-size: 0.75rem; font-weight: 600; color: #6e6e73; }
+.filter-chip {
+  padding: 6px 14px; border-radius: 20px; font-size: 0.78rem; font-weight: 600;
+  border: 1.5px solid #e5e7eb; background: white; cursor: pointer; color: #374151;
+}
+.filter-chip.active { background: #2c3f16; color: white; border-color: #2c3f16; }
+
+/* SUMMARY PILLS */
+.pills { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+.pill { background: white; border-radius: 12px; padding: 14px 18px; flex: 1; min-width: 110px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1.5px solid #f0f0f0; }
+.pill.bonus { border-color: #fcd34d; }
+.pill-num   { font-size: 1.9rem; font-weight: 800; line-height: 1; color: #1d1d1f; }
+.pill.bonus .pill-num { color: #d97706; }
+.pill-label { font-size: 0.68rem; color: #9ca3af; margin-top: 4px; }
+
+/* INSPECTOR CARD */
+.card { background: white; border-radius: 14px; border: 1.5px solid #f0f0f0; margin-bottom: 14px; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,0.05); }
+.card-hdr { display: flex; align-items: center; gap: 14px; padding: 16px 20px; }
+
+.avatar { width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; font-weight: 800; color: white; flex-shrink: 0; }
+.av-green  { background: #16a34a; }
+.av-blue   { background: #3b82f6; }
+.av-amber  { background: #d97706; }
+.av-red    { background: #ef4444; }
+
+.insp-info { flex: 1; }
+.insp-name { font-size: 0.95rem; font-weight: 700; }
+.insp-meta { font-size: 0.72rem; color: #9ca3af; margin-top: 2px; }
+.bonus-tag { color: #d97706; font-weight: 700; }
+
+.score-block { text-align: center; min-width: 58px; }
+.score-big   { font-size: 2.2rem; font-weight: 800; line-height: 1; }
+.score-ltr   { font-size: 0.82rem; font-weight: 700; margin-top: 2px; }
+.green-txt   { color: #16a34a; }
+.blue-txt    { color: #3b82f6; }
+.amber-txt   { color: #d97706; }
+.red-txt     { color: #ef4444; }
+
+.comp-block  { min-width: 72px; text-align: center; }
+.comp-val    { font-size: 1rem; font-weight: 700; }
+.comp-lbl    { font-size: 0.62rem; color: #9ca3af; margin-top: 2px; }
+
+/* JOB TABLE */
+.jobs { padding: 0 20px 16px; border-top: 1px solid #f5f5f7; }
+.jobs table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.jobs th { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #9ca3af; padding: 5px 8px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+.jobs td { font-size: 0.78rem; padding: 9px 8px; border-bottom: 1px solid #fafafa; color: #374151; vertical-align: middle; }
+.jobs tr:last-child td { border-bottom: none; }
+
+.chip { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 10px; font-size: 0.7rem; font-weight: 700; gap: 3px; }
+.chip-a  { background: #dcfce7; color: #166534; }
+.chip-b  { background: #dbeafe; color: #1e40af; }
+.chip-c  { background: #fef9c3; color: #854d0e; }
+.chip-d  { background: #fff7ed; color: #9a3412; }
+.chip-f  { background: #fee2e2; color: #991b1b; }
+
+.bonus-badge { display: inline-block; background: #fef9c3; color: #854d0e; font-size: 0.65rem; font-weight: 700; padding: 1px 7px; border-radius: 8px; margin-left: 6px; }
+
+/* DIVIDER */
+.section-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #9ca3af; margin: 24px 0 10px; }
+
+/* COMP TABLE */
+.comp-table { background: white; border-radius: 14px; overflow: hidden; border: 1.5px solid #f0f0f0; box-shadow: 0 1px 6px rgba(0,0,0,0.05); }
+.comp-table-row { display: grid; grid-template-columns: 1fr 80px 80px 80px 90px; align-items: center; padding: 11px 18px; border-bottom: 1px solid #f5f5f7; }
+.comp-table-row.hdr { background: #fafafa; }
+.comp-table-row.hdr div { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #9ca3af; }
+.comp-table-row:last-child { border-bottom: none; }
+.ct-name  { font-size: 0.85rem; font-weight: 600; }
+.ct-num   { font-size: 0.85rem; font-weight: 700; text-align: center; }
+.ct-comp  { text-align: center; }
+.ct-comp-val { font-size: 0.85rem; font-weight: 700; }
+.pos  { color: #16a34a; }
+.neg  { color: #ef4444; }
+.base { color: #9ca3af; }
+.pip  { color: #ef4444; font-weight: 800; font-size: 0.78rem; background: #fee2e2; padding: 2px 8px; border-radius: 6px; }
+
+/* FOOTER NOTE */
+.footer-note { margin-top: 32px; padding: 14px 18px; background: white; border-radius: 10px; border: 1.5px solid #f0f0f0; font-size: 0.75rem; color: #6e6e73; line-height: 1.6; }
+.footer-note strong { color: #1d1d1f; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <div class="nav-logo">InHaus <span>Lab</span></div>
+  <div class="nav-pill">Inspector Portal</div>
+  <div class="nav-right">June 2026</div>
+</div>
+
+<div class="page">
+
+  <div class="page-title">🏆 Inspector Performance</div>
+  <div class="page-sub">Scores are calculated automatically from photo placement, observations, actions taken, and checklist completion.</div>
+
+  <!-- FILTERS -->
+  <div class="filter-row">
+    <span class="filter-label">Month:</span>
+    <div class="filter-chip active">June 2026</div>
+    <div class="filter-chip">May 2026</div>
+    <div class="filter-chip">April 2026</div>
+    <div class="filter-chip">All Time</div>
+  </div>
+
+  <!-- PILLS -->
+  <div class="pills">
+    <div class="pill"><div class="pill-num">9</div><div class="pill-label">Inspections</div></div>
+    <div class="pill"><div class="pill-num">84</div><div class="pill-label">Avg Score</div></div>
+    <div class="pill"><div class="pill-num">6</div><div class="pill-label">A / A+ Grades</div></div>
+    <div class="pill bonus"><div class="pill-num">⚡ 3</div><div class="pill-label">Same-Day Bonuses</div></div>
+    <div class="pill"><div class="pill-num">1</div><div class="pill-label">Below 65</div></div>
+  </div>
+
+  <div class="section-label">Inspector Breakdown</div>
+
+  <!-- DAVE — A -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="avatar av-green">DK</div>
+      <div class="insp-info">
+        <div class="insp-name">Dave Kline</div>
+        <div class="insp-meta">6 inspections · 6 scored · <span class="bonus-tag">⚡ 2 same-day bonuses</span></div>
+      </div>
+      <div class="score-block">
+        <div class="score-big green-txt">91</div>
+        <div class="score-ltr green-txt">A</div>
+      </div>
+      <div class="comp-block">
+        <div class="comp-val pos">+5% +⚡2</div>
+        <div class="comp-lbl">Comp adj</div>
+      </div>
+    </div>
+    <div class="jobs">
+      <table>
+        <thead><tr><th>Property</th><th>Date</th><th>Score</th><th>Photos</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>301 Cemetery Rd, Basalt</strong> <span class="bonus-badge">⚡ Same-Day</span></td>
+            <td>Jun 3</td><td><span class="chip chip-a">96 A+</span></td><td>54</td>
+            <td style="color:#9ca3af">Report Complete</td>
+          </tr>
+          <tr>
+            <td><strong>Alpha One Ranch</strong> <span class="bonus-badge">⚡ Same-Day</span></td>
+            <td>Jun 5</td><td><span class="chip chip-a">88 A</span></td><td>57</td>
+            <td style="color:#9ca3af">Submitted</td>
+          </tr>
+          <tr>
+            <td><strong>Sunshine Ranch</strong></td>
+            <td>Jun 7</td><td><span class="chip chip-a">91 A</span></td><td>42</td>
+            <td style="color:#9ca3af">Submitted</td>
+          </tr>
+          <tr>
+            <td><strong>Meadow Barn Ranch</strong></td>
+            <td>Jun 9</td><td><span class="chip chip-b">83 B</span></td><td>38</td>
+            <td style="color:#9ca3af">Submitted</td>
+          </tr>
+          <tr>
+            <td><strong>12 Elk Trail, Carbondale</strong></td>
+            <td>Jun 10</td><td><span class="chip chip-a">94 A+</span></td><td>47</td>
+            <td style="color:#16a34a">In Review</td>
+          </tr>
+          <tr>
+            <td><strong>88 Aspen Way</strong></td>
+            <td>Jun 10</td><td><span class="chip chip-b">76 B</span></td><td>29</td>
+            <td style="color:#16a34a">In Review</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- NEW INSPECTOR — B -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="avatar av-blue">NI</div>
+      <div class="insp-info">
+        <div class="insp-name">New Inspector</div>
+        <div class="insp-meta">2 inspections · 2 scored · <span class="bonus-tag">⚡ 1 same-day bonus</span></div>
+      </div>
+      <div class="score-block">
+        <div class="score-big blue-txt">79</div>
+        <div class="score-ltr blue-txt">B</div>
+      </div>
+      <div class="comp-block">
+        <div class="comp-val pos">+2% +⚡1</div>
+        <div class="comp-lbl">Comp adj</div>
+      </div>
+    </div>
+    <div class="jobs">
+      <table>
+        <thead><tr><th>Property</th><th>Date</th><th>Score</th><th>Photos</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Ryland Bacorn Residence</strong> <span class="bonus-badge">⚡ Same-Day</span></td>
+            <td>Jun 6</td><td><span class="chip chip-a">85 A</span></td><td>31</td>
+            <td style="color:#9ca3af">Submitted</td>
+          </tr>
+          <tr>
+            <td><strong>Carbondale Condo</strong></td>
+            <td>Jun 9</td><td><span class="chip chip-b">73 B</span></td><td>18</td>
+            <td style="color:#16a34a">In Review</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PART-TIME — F -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="avatar av-red">PT</div>
+      <div class="insp-info">
+        <div class="insp-name">Part-time Inspector</div>
+        <div class="insp-meta">1 inspection · 1 scored · no same-day bonuses</div>
+      </div>
+      <div class="score-block">
+        <div class="score-big red-txt">41</div>
+        <div class="score-ltr red-txt">F</div>
+      </div>
+      <div class="comp-block">
+        <div class="comp-val"><span class="pip">PIP</span></div>
+        <div class="comp-lbl">Comp adj</div>
+      </div>
+    </div>
+    <div class="jobs">
+      <table>
+        <thead><tr><th>Property</th><th>Date</th><th>Score</th><th>Photos</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>East Glenwood Rental</strong></td>
+            <td>Jun 4</td><td><span class="chip chip-f">41 F</span></td><td>62</td>
+            <td style="color:#9ca3af">Submitted</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- COMP SUMMARY TABLE -->
+  <div class="section-label">Monthly Comp Summary — June 2026</div>
+  <div class="comp-table">
+    <div class="comp-table-row hdr">
+      <div>Inspector</div>
+      <div style="text-align:center">Jobs</div>
+      <div style="text-align:center">Avg Score</div>
+      <div style="text-align:center">Grade</div>
+      <div style="text-align:center">Comp Adj</div>
+    </div>
+    <div class="comp-table-row">
+      <div class="ct-name">Dave Kline</div>
+      <div class="ct-num">6</div>
+      <div class="ct-num green-txt">91</div>
+      <div class="ct-comp"><span class="chip chip-a">A</span></div>
+      <div class="ct-comp"><div class="ct-comp-val pos">+5% +⚡2</div></div>
+    </div>
+    <div class="comp-table-row">
+      <div class="ct-name">New Inspector</div>
+      <div class="ct-num">2</div>
+      <div class="ct-num blue-txt">79</div>
+      <div class="ct-comp"><span class="chip chip-b">B</span></div>
+      <div class="ct-comp"><div class="ct-comp-val pos">+2% +⚡1</div></div>
+    </div>
+    <div class="comp-table-row">
+      <div class="ct-name" style="color:#ef4444">Part-time Inspector</div>
+      <div class="ct-num">1</div>
+      <div class="ct-num red-txt">41</div>
+      <div class="ct-comp"><span class="chip chip-f">F</span></div>
+      <div class="ct-comp"><div class="ct-comp-val"><span class="pip">PIP</span></div></div>
+    </div>
+  </div>
+
+  <!-- FOOTER NOTE -->
+  <div class="footer-note">
+    <strong>How the score works:</strong> Each inspection is scored 0–100 across four categories —
+    <strong>Photos placed</strong> (30 pts), <strong>Observations</strong> (25 pts), <strong>Actions taken</strong> (25 pts), and <strong>Checklist completion</strong> (20 pts).
+    The score is calculated automatically when the inspector submits the report — no manual input from Tanner required.<br><br>
+    <strong>⚡ Same-Day Bonus:</strong> Awarded when an inspector earns an A (85+) and submits the report on the same day as the inspection.
+    Inspectors see the bonus notification before they hit submit.
+  </div>
+
+</div>
+</body>
+</html>
