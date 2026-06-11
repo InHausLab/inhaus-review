@@ -407,18 +407,43 @@ function getAllSection5AssignedIds(rd) {
   return ids;
 }
 
+const PALETTE_SIZES = { S: '64px', M: '88px', L: '130px' };
+function getPaletteSize() { return localStorage.getItem('palette-size') || 'M'; }
+function setPaletteSize(size) { localStorage.setItem('palette-size', size); }
+
 function buildPhotoPalette(allPhotos, assignedSet) {
   if (!allPhotos || allPhotos.length === 0) return null;
   const wrap = el('div', { class: 'photo-palette-wrap' });
-  wrap.appendChild(el('div', { class: 'photo-palette-label' }, 'Drag photos to assign below, or tap + Add photo'));
-  const strip = el('div', { class: 'photo-palette' });
+
+  // Header: label + size buttons
+  const header = el('div', { class: 'photo-palette-header' });
+  header.appendChild(el('div', { class: 'photo-palette-label' }, `All photos (${allPhotos.length}) — tap + Add photo or drag to assign`));
+  const sizeBar = el('div', { class: 'palette-size-bar' });
+  sizeBar.appendChild(el('span', {}, 'Size:'));
+  let currentSize = getPaletteSize();
+  ['S','M','L'].forEach(s => {
+    const btn = el('button', { class: `palette-size-btn${s === currentSize ? ' active' : ''}`, type: 'button' }, s);
+    btn.addEventListener('click', () => {
+      setPaletteSize(s);
+      currentSize = s;
+      sizeBar.querySelectorAll('.palette-size-btn').forEach(b => b.classList.toggle('active', b.textContent === s));
+      grid.style.setProperty('--palette-size', PALETTE_SIZES[s]);
+    });
+    sizeBar.appendChild(btn);
+  });
+  header.appendChild(sizeBar);
+  wrap.appendChild(header);
+
+  const grid = el('div', { class: 'photo-palette' });
+  grid.style.setProperty('--palette-size', PALETTE_SIZES[currentSize]);
+
   allPhotos.forEach(photo => {
     const isAssigned = assignedSet.has(photo.photoId);
     const thumb = el('div', {
       class: `palette-thumb${isAssigned ? ' assigned-elsewhere' : ''}`,
       draggable: 'true',
       'data-photo-id': photo.photoId,
-      title: photo.caption || photo.photoId
+      title: (photo.caption || photo.photoId) + (isAssigned ? ' (assigned)' : '')
     });
     if (photo.driveUrl) {
       thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || '', loading: 'lazy' }));
@@ -430,9 +455,9 @@ function buildPhotoPalette(allPhotos, assignedSet) {
       thumb.classList.add('dragging');
     });
     thumb.addEventListener('dragend', () => thumb.classList.remove('dragging'));
-    strip.appendChild(thumb);
+    grid.appendChild(thumb);
   });
-  wrap.appendChild(strip);
+  wrap.appendChild(grid);
   return wrap;
 }
 
@@ -489,8 +514,26 @@ function openPhotoPickerModal(slotKey, stepId, currentIds, allPhotos) {
   const overlay = el('div', { class: 'photo-picker-modal-overlay' });
   const modal = el('div', { class: 'photo-picker-modal' });
   modal.appendChild(el('h3', {}, 'Assign Photos'));
+
+  // Size controls for modal grid
+  const modalSizeBar = el('div', { class: 'photo-picker-modal-size-bar' });
+  modalSizeBar.appendChild(el('span', {}, 'Photo size:'));
+  const MODAL_SIZES = { S: '80px', M: '110px', L: '150px' };
+  let modalSize = getPaletteSize();
+  ['S','M','L'].forEach(s => {
+    const btn = el('button', { class: `palette-size-btn${s === modalSize ? ' active' : ''}`, type: 'button' }, s);
+    btn.addEventListener('click', () => {
+      modalSize = s;
+      modalSizeBar.querySelectorAll('.palette-size-btn').forEach(b => b.classList.toggle('active', b.textContent === s));
+      grid.style.setProperty('--modal-thumb-size', MODAL_SIZES[s]);
+    });
+    modalSizeBar.appendChild(btn);
+  });
+  modal.appendChild(modalSizeBar);
+
   let selected = [...currentIds];
   const grid = el('div', { class: 'photo-picker-grid' });
+  grid.style.setProperty('--modal-thumb-size', MODAL_SIZES[modalSize]);
   allPhotos.forEach(photo => {
     const item = el('div', {
       class: `picker-grid-item${selected.includes(photo.photoId) ? ' selected' : ''}`,
