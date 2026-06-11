@@ -1498,6 +1498,7 @@ body {
 }
 .picker-modal-size-row span { font-size: 0.75rem; color: var(--gray-500); }
 .picker-modal-count { margin-left: auto; font-size: 0.75rem; font-weight: 600; color: var(--green); }
+.picker-grid-empty { grid-column: 1 / -1; text-align: center; padding: 40px 20px; font-size: 0.85rem; color: var(--gray-400); }
 .photo-picker-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--modal-thumb-size, 115px), 1fr));
   gap: 8px; padding: 16px 20px; overflow-y: auto; flex: 1;

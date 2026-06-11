@@ -482,8 +482,10 @@ function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) 
         const rm = el('button', { class: 'picker-rm', title: 'Remove', type: 'button' }, '\u2715');
         rm.addEventListener('click', () => {
           const ids = assignedIds.filter(id => id !== pid);
-          saveField(stepId, slotKey, JSON.stringify(ids));
-          debouncedSave(stepId, slotKey, JSON.stringify(ids));
+          const jsonValue = JSON.stringify(ids);
+          if (!_inspection.reviewedData) _inspection.reviewedData = {};
+          _inspection.reviewedData[slotKey] = jsonValue;
+          saveField(stepId, slotKey, jsonValue);
           renderPostContentSection(_inspection, false);
         });
         thumb.appendChild(rm);
@@ -547,6 +549,10 @@ function openPhotoPickerModal(slotKey, stepId, currentIds, allPhotos) {
   };
   updateCount();
 
+  if (!allPhotos || allPhotos.length === 0) {
+    grid.appendChild(el('div', { class: 'picker-grid-empty' }, 'No photos in this inspection yet.'));
+  }
+
   allPhotos.forEach(photo => {
     const item = el('div', {
       class: `picker-grid-item${selected.includes(photo.photoId) ? ' selected' : ''}`,
@@ -578,8 +584,10 @@ function openPhotoPickerModal(slotKey, stepId, currentIds, allPhotos) {
   const footer = el('div', { class: 'picker-modal-footer' });
   const doneBtn = el('button', { class: 'picker-done-btn', type: 'button' }, 'Done');
   doneBtn.addEventListener('click', () => {
-    saveField(stepId, slotKey, JSON.stringify(selected));
-    debouncedSave(stepId, slotKey, JSON.stringify(selected));
+    const jsonValue = JSON.stringify(selected);
+    if (!_inspection.reviewedData) _inspection.reviewedData = {};
+    _inspection.reviewedData[slotKey] = jsonValue;
+    saveField(stepId, slotKey, jsonValue);
     overlay.remove();
     renderPostContentSection(_inspection, false);
   });
@@ -587,6 +595,7 @@ function openPhotoPickerModal(slotKey, stepId, currentIds, allPhotos) {
   modal.appendChild(footer);
 
   overlay.appendChild(modal);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
 }
 
