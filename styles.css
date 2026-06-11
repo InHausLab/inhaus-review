@@ -1499,6 +1499,33 @@ body {
 .picker-modal-size-row span { font-size: 0.75rem; color: var(--gray-500); }
 .picker-modal-count { margin-left: auto; font-size: 0.75rem; font-weight: 600; color: var(--green); }
 .picker-grid-empty { grid-column: 1 / -1; text-align: center; padding: 40px 20px; font-size: 0.85rem; color: var(--gray-400); }
+
+/* ── Floating Photo FAB ───────────────────────────────── */
+.photo-fab {
+  position: fixed; bottom: 28px; right: 22px; z-index: 900;
+  width: 58px; height: 58px; border-radius: 50%;
+  background: var(--green); color: white; border: none;
+  font-size: 1.5rem; cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.photo-fab:hover { transform: scale(1.08); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+.photo-fab:active { transform: scale(0.95); }
+
+/* ── FAB Modal: Slot selector row ───────────────────────── */
+.picker-slot-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px; border-bottom: 1px solid var(--gray-100);
+  flex-shrink: 0;
+}
+.picker-slot-label { font-size: 0.8rem; font-weight: 600; color: var(--gray-600); white-space: nowrap; }
+.picker-slot-select {
+  flex: 1; padding: 8px 10px; border-radius: 8px;
+  border: 1.5px solid var(--gray-200); background: white;
+  font-size: 0.85rem; color: var(--gray-900); cursor: pointer;
+  appearance: auto;
+}
 .photo-picker-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--modal-thumb-size, 115px), 1fr));
   gap: 8px; padding: 16px 20px; overflow-y: auto; flex: 1;

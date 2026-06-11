@@ -668,7 +668,165 @@ function renderPostContentSection(insp, locked) {
       inp.addEventListener('blur', () => saveField(inp.dataset.step, inp.dataset.field, inp.value));
       inp.addEventListener('input', () => debouncedSave(inp.dataset.step, inp.dataset.field, inp.value));
     });
+
+    // Build slot list for FAB
+    const slots = [];
+    for (let i = 1; i <= 5; i++) slots.push({ label: `Follow-up ${i}`, slotKey: `followUp_${i}_photoIds` });
+    for (let i = 1; i <= 6; i++) slots.push({ label: `Action Taken ${i}`, slotKey: `actionTaken_${i}_photoIds` });
+    for (let i = 1; i <= 6; i++) slots.push({ label: `Observation ${i}`, slotKey: `obs_${i}_photoIds` });
+    renderPhotoFAB(allPhotos, slots, rd);
+  } else {
+    removePhotoFAB();
   }
+}
+
+function removePhotoFAB() {
+  const existing = document.getElementById('photo-fab');
+  if (existing) existing.remove();
+}
+
+function renderPhotoFAB(allPhotos, slots, rd) {
+  removePhotoFAB();
+  const fab = el('button', { id: 'photo-fab', class: 'photo-fab', type: 'button', title: 'Add photo to a section' });
+  fab.innerHTML = '\uD83D\uDCF7';
+  fab.addEventListener('click', () => openFABModal(allPhotos, slots, rd));
+  document.body.appendChild(fab);
+}
+
+function openFABModal(allPhotos, slots, rd) {
+  const existing = qs('.photo-picker-modal-overlay');
+  if (existing) existing.remove();
+
+  const tryParseIds = key => { try { return JSON.parse(rd[key] || '[]'); } catch(e) { return []; } };
+
+  const overlay = el('div', { class: 'photo-picker-modal-overlay' });
+  const modal = el('div', { class: 'photo-picker-modal' });
+
+  // Header
+  const header = el('div', { class: 'picker-modal-header' });
+  header.appendChild(el('h3', {}, 'Add Photos to Section'));
+  const closeBtn = el('button', { class: 'picker-modal-close', type: 'button' }, '\u2715');
+  closeBtn.addEventListener('click', () => overlay.remove());
+  header.appendChild(closeBtn);
+  modal.appendChild(header);
+
+  // Slot selector
+  const slotRow = el('div', { class: 'picker-slot-row' });
+  slotRow.appendChild(el('label', { class: 'picker-slot-label' }, 'Add to:'));
+  const slotSelect = el('select', { class: 'picker-slot-select' });
+  slots.forEach(s => {
+    const count = tryParseIds(s.slotKey).length;
+    const opt = el('option', { value: s.slotKey }, `${s.label}${count > 0 ? ` (${count})` : ''}`);
+    slotSelect.appendChild(opt);
+  });
+  slotRow.appendChild(slotSelect);
+  modal.appendChild(slotRow);
+
+  // Size controls
+  const MODAL_SIZES = { S: '80px', M: '115px', L: '160px' };
+  let modalSize = getPaletteSize();
+  const sizeRow = el('div', { class: 'picker-modal-size-row' });
+  sizeRow.appendChild(el('span', {}, 'Size:'));
+  ['S','M','L'].forEach(s => {
+    const btn = el('button', { class: `palette-size-btn${s === modalSize ? ' active' : ''}`, type: 'button' }, s);
+    btn.addEventListener('click', () => {
+      modalSize = s;
+      setPaletteSize(s);
+      sizeRow.querySelectorAll('.palette-size-btn').forEach(b => b.classList.toggle('active', b.textContent === s));
+      grid.style.setProperty('--modal-thumb-size', MODAL_SIZES[s]);
+    });
+    sizeRow.appendChild(btn);
+  });
+  const countLabel = el('span', { class: 'picker-modal-count' }, '');
+  sizeRow.appendChild(countLabel);
+  modal.appendChild(sizeRow);
+
+  // Photo grid — initialised for first slot
+  let currentSlotKey = slots[0].slotKey;
+  let selected = [...tryParseIds(currentSlotKey)];
+
+  const updateCount = () => {
+    countLabel.textContent = selected.length > 0 ? `${selected.length} selected` : '';
+  };
+  updateCount();
+
+  const grid = el('div', { class: 'photo-picker-grid' });
+  grid.style.setProperty('--modal-thumb-size', MODAL_SIZES[modalSize]);
+
+  const buildGrid = () => {
+    grid.innerHTML = '';
+    if (!allPhotos || allPhotos.length === 0) {
+      grid.appendChild(el('div', { class: 'picker-grid-empty' }, 'No photos in this inspection yet.'));
+      return;
+    }
+    allPhotos.forEach(photo => {
+      const item = el('div', {
+        class: `picker-grid-item${selected.includes(photo.photoId) ? ' selected' : ''}`,
+        'data-photo-id': photo.photoId
+      });
+      if (photo.driveUrl) {
+        item.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy' }));
+      } else {
+        item.appendChild(el('div', { class: 'picker-grid-placeholder' }, (photo.photoId || '').slice(-4)));
+      }
+      if (photo.caption) {
+        item.appendChild(el('div', { class: 'picker-grid-caption' }, photo.caption));
+      }
+      item.addEventListener('click', () => {
+        if (item.classList.contains('selected')) {
+          selected = selected.filter(id => id !== photo.photoId);
+          item.classList.remove('selected');
+        } else {
+          selected.push(photo.photoId);
+          item.classList.add('selected');
+        }
+        updateCount();
+      });
+      grid.appendChild(item);
+    });
+  };
+  buildGrid();
+
+  // When slot changes, save current selection then load new slot's selection
+  slotSelect.addEventListener('change', () => {
+    // Save current before switching
+    const jsonValue = JSON.stringify(selected);
+    if (!_inspection.reviewedData) _inspection.reviewedData = {};
+    _inspection.reviewedData[currentSlotKey] = jsonValue;
+    saveField('post', currentSlotKey, jsonValue);
+    rd[currentSlotKey] = jsonValue;
+    // Update option label
+    const prevOpt = Array.from(slotSelect.options).find(o => o.value === currentSlotKey);
+    if (prevOpt) {
+      const base = prevOpt.text.replace(/ \(\d+\)$/, '');
+      prevOpt.text = selected.length > 0 ? `${base} (${selected.length})` : base;
+    }
+    // Switch to new slot
+    currentSlotKey = slotSelect.value;
+    selected = [...tryParseIds(currentSlotKey)];
+    updateCount();
+    buildGrid();
+  });
+
+  modal.appendChild(grid);
+
+  // Footer
+  const footer = el('div', { class: 'picker-modal-footer' });
+  const doneBtn = el('button', { class: 'picker-done-btn', type: 'button' }, 'Done');
+  doneBtn.addEventListener('click', () => {
+    const jsonValue = JSON.stringify(selected);
+    if (!_inspection.reviewedData) _inspection.reviewedData = {};
+    _inspection.reviewedData[currentSlotKey] = jsonValue;
+    saveField('post', currentSlotKey, jsonValue);
+    overlay.remove();
+    renderPostContentSection(_inspection, false);
+  });
+  footer.appendChild(doneBtn);
+  modal.appendChild(footer);
+
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
 }
 
 function buildPostSubheading(title, subtitle) {
