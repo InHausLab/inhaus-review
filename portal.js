@@ -407,6 +407,17 @@ function getAllSection5AssignedIds(rd) {
   return ids;
 }
 
+// Returns array of { slotKey, label } for slots that contain this photoId
+function getPhotoSlotAssignments(photoId, rd) {
+  const tryParse = key => { try { return JSON.parse(rd[key] || '[]'); } catch(e) { return []; } };
+  const allSlots = [
+    ...Array.from({length:5}, (_,i) => ({ slotKey: `followUp_${i+1}_photoIds`,    label: `Follow-up ${i+1}` })),
+    ...Array.from({length:6}, (_,i) => ({ slotKey: `actionTaken_${i+1}_photoIds`, label: `Action ${i+1}` })),
+    ...Array.from({length:6}, (_,i) => ({ slotKey: `obs_${i+1}_photoIds`,         label: `Obs ${i+1}` }))
+  ];
+  return allSlots.filter(s => tryParse(s.slotKey).includes(photoId));
+}
+
 const PALETTE_SIZES = { S: '64px', M: '88px', L: '130px' };
 function getPaletteSize() { return localStorage.getItem('palette-size') || 'M'; }
 function setPaletteSize(size) { localStorage.setItem('palette-size', size); }
@@ -1029,6 +1040,100 @@ function openFABModal(allPhotos, slots, rd) {
   document.body.appendChild(overlay);
 }
 
+/* ============================================================
+   SECTION 6 — ASSIGN PHOTO TO SECTION (from photo grid card)
+   ============================================================ */
+
+function openAssignPhotoModal(photo, allPhotos, slots, rd) {
+  const existing = qs('.photo-assign-modal-overlay');
+  if (existing) existing.remove();
+
+  const tryParseIds = key => { try { return JSON.parse(rd[key] || '[]'); } catch(e) { return []; } };
+
+  const overlay = el('div', { class: 'photo-assign-modal-overlay photo-picker-modal-overlay' });
+  const modal = el('div', { class: 'photo-picker-modal photo-assign-modal' });
+
+  // Header
+  const header = el('div', { class: 'picker-modal-header' });
+  const titleWrap = el('div', { class: 'assign-modal-title' });
+  titleWrap.appendChild(el('div', { class: 'assign-modal-photo-name' }, photo.caption || photo.photoId));
+  titleWrap.appendChild(el('div', { class: 'assign-modal-sub' }, `${photo.roomName || ''}${photo.stepName ? ' — ' + photo.stepName : ''}`));
+  header.appendChild(titleWrap);
+  const closeBtn = el('button', { class: 'picker-modal-close', type: 'button' }, '\u2715');
+  closeBtn.addEventListener('click', () => overlay.remove());
+  header.appendChild(closeBtn);
+  modal.appendChild(header);
+
+  // Slot list — each slot shows current count + whether this photo is in it
+  const slotListWrap = el('div', { class: 'assign-slot-list' });
+  slotListWrap.appendChild(el('div', { class: 'assign-slot-hint' }, 'Toggle the slots this photo should appear in:'));
+
+  const slotState = {}; // slotKey → { ids: string[], changed: bool }
+  slots.forEach(s => {
+    slotState[s.slotKey] = { ids: [...tryParseIds(s.slotKey)] };
+  });
+
+  const buildSlotRows = () => {
+    slotListWrap.querySelectorAll('.assign-slot-row').forEach(r => r.remove());
+    slots.forEach(s => {
+      const state = slotState[s.slotKey];
+      const isIn = state.ids.includes(photo.photoId);
+      const row = el('div', { class: `assign-slot-row${isIn ? ' slot-active' : ''}` });
+      const checkIcon = el('span', { class: 'assign-slot-check' }, isIn ? '\u2713' : '');
+      const labelEl = el('span', { class: 'assign-slot-label' }, s.label);
+      const countEl = el('span', { class: 'assign-slot-count' }, state.ids.length > 0 ? `${state.ids.length} photo${state.ids.length !== 1 ? 's' : ''}` : 'empty');
+      row.appendChild(checkIcon);
+      row.appendChild(labelEl);
+      row.appendChild(countEl);
+      row.addEventListener('click', () => {
+        if (isIn) {
+          state.ids = state.ids.filter(id => id !== photo.photoId);
+        } else {
+          state.ids.push(photo.photoId);
+        }
+        buildSlotRows();
+      });
+      slotListWrap.appendChild(row);
+    });
+  };
+  buildSlotRows();
+  modal.appendChild(slotListWrap);
+
+  // Footer
+  const footer = el('div', { class: 'picker-modal-footer' });
+  const cancelBtn = el('button', { class: 'picker-cancel-btn', type: 'button', style: 'margin-right:8px' }, 'Cancel');
+  cancelBtn.addEventListener('click', () => overlay.remove());
+  const doneBtn = el('button', { class: 'picker-done-btn', type: 'button' }, 'Save');
+  doneBtn.addEventListener('click', () => {
+    if (!_inspection.reviewedData) _inspection.reviewedData = {};
+    // Save each slot
+    slots.forEach(s => {
+      const jsonValue = JSON.stringify(slotState[s.slotKey].ids);
+      _inspection.reviewedData[s.slotKey] = jsonValue;
+      saveField('post', s.slotKey, jsonValue);
+    });
+    overlay.remove();
+    // Update badge on the card in Section 6
+    const badge = qs(`#assign-badge-${photo.photoId}`);
+    if (badge) {
+      const newAssignments = slots.filter(s => slotState[s.slotKey].ids.includes(photo.photoId));
+      badge.textContent = newAssignments.length > 0
+        ? `\uD83D\uDCCC ${newAssignments.map(a => a.label).join(', ')}`
+        : '\u2014 Not in any section';
+      badge.className = `photo-assign-badge${newAssignments.length > 0 ? ' is-assigned' : ' not-assigned'}`;
+    }
+    // Refresh Section 5 so photo library + pickers reflect the change
+    if (_inspection) renderPostContentSection(_inspection, false);
+  });
+  footer.appendChild(cancelBtn);
+  footer.appendChild(doneBtn);
+  modal.appendChild(footer);
+
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
 function buildPostSubheading(title, subtitle) {
   const wrap = el('div', { class: 'post-subheading' });
   wrap.appendChild(el('div', { class: 'post-subheading-title' }, title));
@@ -1582,6 +1687,33 @@ function buildPhotoCard(photo, locked) {
       toggleRow.appendChild(btn);
     }
     info.appendChild(toggleRow);
+  }
+
+  // Section assignment badge + button
+  if (!locked) {
+    const rd = _inspection?.reviewedData || {};
+    const assignments = getPhotoSlotAssignments(photo.photoId, rd);
+    const assignRow = el('div', { class: 'photo-assign-row' });
+    const assignBadge = el('div', {
+      class: `photo-assign-badge${assignments.length > 0 ? ' is-assigned' : ' not-assigned'}`,
+      id: `assign-badge-${photo.photoId}`
+    });
+    assignBadge.textContent = assignments.length > 0
+      ? `\uD83D\uDCCC ${assignments.map(a => a.label).join(', ')}`
+      : '\u2014 Not in any section';
+    const assignBtn = el('button', { class: 'photo-assign-btn', type: 'button' }, 'Assign \u2192');
+    assignBtn.addEventListener('click', () => {
+      const allPhotos = _inspection?.photos || [];
+      const allSlots = [
+        ...Array.from({length:5}, (_,i) => ({ label: `Follow-up ${i+1}`, slotKey: `followUp_${i+1}_photoIds` })),
+        ...Array.from({length:6}, (_,i) => ({ label: `Action Taken ${i+1}`, slotKey: `actionTaken_${i+1}_photoIds` })),
+        ...Array.from({length:6}, (_,i) => ({ label: `Observation ${i+1}`, slotKey: `obs_${i+1}_photoIds` }))
+      ];
+      openAssignPhotoModal(photo, allPhotos, allSlots, _inspection.reviewedData || {});
+    });
+    assignRow.appendChild(assignBadge);
+    assignRow.appendChild(assignBtn);
+    info.appendChild(assignRow);
   }
 
   // Timestamp
