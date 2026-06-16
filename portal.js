@@ -422,6 +422,161 @@ const PALETTE_SIZES = { S: '64px', M: '88px', L: '130px' };
 function getPaletteSize() { return localStorage.getItem('palette-size') || 'M'; }
 function setPaletteSize(size) { localStorage.setItem('palette-size', size); }
 
+/* ============================================================
+   VOICE-TO-TEXT ENGINE
+   Uses Web Speech API (instant, on-device) with graceful fallback message.
+   Mic button added to every textarea in Section 5.
+   ============================================================ */
+
+let _activeMicBtn = null; // currently recording button (only one at a time)
+
+function buildMicButton(textarea, stepId, fieldKey) {
+  const btn = el('button', { type: 'button', class: 'mic-btn', title: 'Tap to dictate' }, '🎙');
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    btn.title = 'Voice not supported in this browser';
+    btn.classList.add('mic-btn-unsupported');
+    return btn;
+  }
+
+  let recognition = null;
+
+  btn.addEventListener('click', () => {
+    // If another mic is active, stop it first
+    if (_activeMicBtn && _activeMicBtn !== btn) {
+      _activeMicBtn.click();
+    }
+
+    if (btn.classList.contains('mic-btn-recording')) {
+      // Stop
+      if (recognition) recognition.stop();
+      btn.classList.remove('mic-btn-recording');
+      btn.textContent = '🎙';
+      _activeMicBtn = null;
+      return;
+    }
+
+    // Start
+    recognition = new SpeechRecognition();
+    recognition.continuous    = true;
+    recognition.interimResults = true;
+    recognition.lang           = 'en-US';
+
+    let baseText = textarea.value;
+    if (baseText && !baseText.endsWith(' ')) baseText += ' ';
+
+    recognition.onresult = (e) => {
+      let interim = '';
+      let final   = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) final += t;
+        else interim += t;
+      }
+      if (final) {
+        // Capitalise first letter, ensure space separator
+        const cleaned = final.charAt(0).toUpperCase() + final.slice(1);
+        baseText += cleaned + ' ';
+      }
+      textarea.value = baseText + interim;
+      // Trigger save
+      textarea.dispatchEvent(new Event('input'));
+    };
+
+    recognition.onerror = (e) => {
+      if (e.error === 'not-allowed') showToast('Microphone access denied — check browser permissions', 'error');
+      btn.classList.remove('mic-btn-recording');
+      btn.textContent = '🎙';
+      _activeMicBtn = null;
+    };
+
+    recognition.onend = () => {
+      // Save final value
+      if (!_inspection.reviewedData) _inspection.reviewedData = {};
+      _inspection.reviewedData[fieldKey] = textarea.value;
+      saveField(stepId, fieldKey, textarea.value);
+      if (btn.classList.contains('mic-btn-recording')) {
+        // Browser auto-stopped (timeout) — restart
+        recognition.start();
+      }
+    };
+
+    recognition.start();
+    btn.classList.add('mic-btn-recording');
+    btn.textContent = '⏹';
+    _activeMicBtn = btn;
+  });
+
+  return btn;
+}
+
+/* ============================================================
+   SMART PRE-FILL — extract room notes from stepData
+   ============================================================ */
+
+function buildSmartPrefillSuggestions(insp) {
+  // Returns array of { roomName, note, qtrak, breeze, photos[] }
+  // — one entry per room that has actual notes worth surfacing
+  const suggestions = [];
+  const stepData = insp.stepData || {};
+  const photos   = insp.photos   || [];
+
+  const SKIP_STEPS = new Set(['arrival', 'device-setup', 'debrief', 'post-assessment', 'pre-assessment']);
+
+  for (const [stepId, step] of Object.entries(stepData)) {
+    if (SKIP_STEPS.has(stepId)) continue;
+    const roomName = step.roomName || stepId;
+    const note     = (step.notes || step.aiSummary || '').trim();
+    const qtrak    = (step.qtrakLocation || '').trim();
+    const breeze   = (step.breezeLocation || '').trim();
+    if (!note && !qtrak && !breeze) continue;
+
+    // Photos for this room
+    const roomPhotos = photos.filter(p => p.roomName === roomName || p.stepId === stepId);
+
+    suggestions.push({ stepId, roomName, note, qtrak, breeze, photos: roomPhotos });
+  }
+
+  return suggestions;
+}
+
+function applySmartPrefill(insp) {
+  const suggestions = buildSmartPrefillSuggestions(insp);
+  if (!suggestions.length) { showToast('No room notes found to pre-fill', 'info'); return; }
+
+  const rd = insp.reviewedData || {};
+  if (!insp.reviewedData) insp.reviewedData = {};
+
+  let filled = 0;
+  for (let i = 0; i < Math.min(suggestions.length, 6); i++) {
+    const s = suggestions[i];
+    const locKey  = `obs_${i + 1}_location`;
+    const noteKey = `obs_${i + 1}_note`;
+
+    // Only fill if slot is currently empty
+    if (rd[locKey] || rd[noteKey]) continue;
+
+    const locVal = s.roomName;
+    let noteVal  = s.note;
+    if (s.qtrak)  noteVal += (noteVal ? ' | ' : '') + `Q-Trak: ${s.qtrak}`;
+    if (s.breeze) noteVal += (noteVal ? ' | ' : '') + `Breeze: ${s.breeze}`;
+
+    insp.reviewedData[locKey]  = locVal;
+    insp.reviewedData[noteKey] = noteVal;
+    saveField('post', locKey,  locVal);
+    saveField('post', noteKey, noteVal);
+    filled++;
+  }
+
+  if (filled === 0) {
+    showToast('All observation slots already have content — clear slots to re-fill', 'info');
+  } else {
+    showToast(`Pre-filled ${filled} observation${filled !== 1 ? 's' : ''} from room notes ✓`, 'success');
+    renderPostContentSection(insp, false);
+  }
+}
+
 // Per-slot photo display size (S/M/L) — stored in reviewedData as {slotKey}_size
 // Thumb pixel widths for portal display
 const SLOT_THUMB_SIZES = { S: '60px', M: '90px', L: '140px' };
@@ -720,6 +875,15 @@ function renderPostContentSection(insp, locked) {
   // ---- Assessment Observations ----
   body.appendChild(buildPostSubheading('Assessment Observations',
     'Notable findings for the report. Include location, what you saw, and a photo reference for each.'));
+
+  // Pre-fill button — only show when room notes exist and slots are empty
+  if (!locked) {
+    const prefillBtn = el('button', { type: 'button', class: 'prefill-btn' },
+      '\u2728 Fill from inspection notes');
+    prefillBtn.addEventListener('click', () => applySmartPrefill(insp));
+    body.appendChild(prefillBtn);
+  }
+
   for (let i = 1; i <= 6; i++) {
     body.appendChild(buildPostGroup([
       { label: `Observation ${i} — Room / Location`, stepId: 'post', field: `obs_${i}_location`,
@@ -737,7 +901,7 @@ function renderPostContentSection(insp, locked) {
   renderScoreCard(body, insp);
 
   // ---- Photo Library ----
-  renderPhotoLibrary(body, allPhotos, rd);
+  renderPhotoLibrary(body, allPhotos, rd, insp);
 
   if (!locked) {
     // Wire up all inputs in this section
@@ -876,7 +1040,7 @@ function renderScoreCard(body, insp) {
   body.appendChild(card);
 }
 
-function renderPhotoLibrary(body, allPhotos, rd) {
+function renderPhotoLibrary(body, allPhotos, rd, insp) {
   if (!allPhotos || allPhotos.length === 0) return;
 
   // Build reverse lookup: photoId → slot label
@@ -952,10 +1116,29 @@ function renderPhotoLibrary(body, allPhotos, rd) {
     }
     card.appendChild(imgWrap);
 
-    // Caption
-    if (photo.caption) {
-      card.appendChild(el('div', { class: 'lib-caption' }, photo.caption));
-    }
+    // Caption — editable inline
+    const captionWrap = el('div', { class: 'lib-caption-wrap' });
+    const captionEl = el('input', {
+      type: 'text',
+      class: 'lib-caption-input',
+      value: photo.caption || '',
+      placeholder: 'Add caption…',
+      'data-photo-id': photo.photoId
+    });
+    captionEl.addEventListener('blur', () => {
+      const newCaption = captionEl.value.trim();
+      // Update in-memory photo object
+      const idx = (insp.photos || []).findIndex(p => p.photoId === photo.photoId);
+      if (idx !== -1) {
+        _inspection.photos[idx].caption = newCaption;
+        photo.caption = newCaption;
+      }
+      // Persist to Apps Script
+      saveField('photos', `caption_${photo.photoId}`, newCaption);
+    });
+    captionEl.addEventListener('keydown', e => { if (e.key === 'Enter') captionEl.blur(); });
+    captionWrap.appendChild(captionEl);
+    card.appendChild(captionWrap);
 
     // Move/Assign button — always visible, opens slot-toggle modal
     const allSlots = [
@@ -1233,6 +1416,8 @@ function buildPostGroup(fields) {
       wrap.appendChild(row);
       continue;
     } else if (f.type === 'textarea') {
+      // Wrap textarea + mic button together
+      const taWrap = el('div', { class: 'textarea-mic-wrap' });
       inp = el('textarea', {
         class: 'field-textarea',
         rows: '2',
@@ -1242,6 +1427,13 @@ function buildPostGroup(fields) {
         ...(f.locked ? { readonly: '' } : {})
       });
       inp.value = f.value || '';
+      taWrap.appendChild(inp);
+      if (!f.locked) {
+        taWrap.appendChild(buildMicButton(inp, f.stepId, f.field));
+      }
+      row.appendChild(taWrap);
+      wrap.appendChild(row);
+      continue; // skip the generic row.appendChild(inp) below
     } else if (f.type === 'select') {
       inp = el('select', {
         class: 'field-input',
