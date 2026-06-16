@@ -422,6 +422,18 @@ const PALETTE_SIZES = { S: '64px', M: '88px', L: '130px' };
 function getPaletteSize() { return localStorage.getItem('palette-size') || 'M'; }
 function setPaletteSize(size) { localStorage.setItem('palette-size', size); }
 
+// Per-slot photo display size (S/M/L) — stored in reviewedData as {slotKey}_size
+// Thumb pixel widths for portal display
+const SLOT_THUMB_SIZES = { S: '60px', M: '90px', L: '140px' };
+function getSlotSize(slotKey) {
+  return (_inspection && _inspection.reviewedData && _inspection.reviewedData[slotKey + '_size']) || 'M';
+}
+function setSlotSize(slotKey, size) {
+  if (!_inspection.reviewedData) _inspection.reviewedData = {};
+  _inspection.reviewedData[slotKey + '_size'] = size;
+  saveField('post', slotKey + '_size', size);
+}
+
 function buildPhotoPalette(allPhotos, assignedSet) {
   if (!allPhotos || allPhotos.length === 0) return null;
   const wrap = el('div', { class: 'photo-palette-wrap' });
@@ -476,20 +488,50 @@ function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) 
   const wrap = el('div', { class: 'photo-picker-field' });
 
   if (assignedIds.length > 0) {
-    const row = el('div', { class: 'photo-picker-assigned' });
-    assignedIds.forEach(pid => {
-      const photo = allPhotos.find(p => p.photoId === pid);
-      if (!photo) return;
-      const thumb = el('div', { class: 'picker-thumb' });
-      if (photo.driveUrl) {
-        thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy' }));
-      } else {
-        thumb.appendChild(el('div', { class: 'picker-thumb-placeholder' }, (pid || '').slice(-4)));
-      }
-      if (photo.caption) {
-        thumb.appendChild(el('div', { class: 'picker-thumb-caption' }, photo.caption));
-      }
-      if (!locked) {
+    // Size controls row (S/M/L) — only shown when photos are assigned
+    if (!locked) {
+      let currentSize = getSlotSize(slotKey);
+      const sizeRow = el('div', { class: 'slot-size-row' });
+      sizeRow.appendChild(el('span', { class: 'slot-size-label' }, 'Report size:'));
+      const thumbRow = el('div', { class: 'photo-picker-assigned' }); // forward ref for live update
+
+      ['S','M','L'].forEach(s => {
+        const btn = el('button', {
+          class: `slot-size-btn${s === currentSize ? ' active' : ''}`,
+          type: 'button',
+          title: s === 'S' ? 'Small — 3 per row in report' : s === 'M' ? 'Medium — 2 per row' : 'Large — full width'
+        }, s);
+        btn.addEventListener('click', () => {
+          currentSize = s;
+          setSlotSize(slotKey, s);
+          sizeRow.querySelectorAll('.slot-size-btn').forEach(b => b.classList.toggle('active', b.textContent === s));
+          // Update thumb sizes live
+          thumbRow.querySelectorAll('.picker-thumb').forEach(t => {
+            t.style.width = SLOT_THUMB_SIZES[s];
+            const img = t.querySelector('img');
+            if (img) { img.style.width = SLOT_THUMB_SIZES[s]; img.style.height = SLOT_THUMB_SIZES[s]; }
+            const ph = t.querySelector('.picker-thumb-placeholder');
+            if (ph) { ph.style.width = SLOT_THUMB_SIZES[s]; ph.style.height = SLOT_THUMB_SIZES[s]; }
+          });
+        });
+        sizeRow.appendChild(btn);
+      });
+      wrap.appendChild(sizeRow);
+
+      // Build thumb row with current size applied
+      const sz = SLOT_THUMB_SIZES[currentSize];
+      assignedIds.forEach(pid => {
+        const photo = allPhotos.find(p => p.photoId === pid);
+        if (!photo) return;
+        const thumb = el('div', { class: 'picker-thumb', style: `width:${sz}` });
+        if (photo.driveUrl) {
+          thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy', style: `width:${sz};height:${sz}` }));
+        } else {
+          thumb.appendChild(el('div', { class: 'picker-thumb-placeholder', style: `width:${sz};height:${sz}` }, (pid || '').slice(-4)));
+        }
+        if (photo.caption) {
+          thumb.appendChild(el('div', { class: 'picker-thumb-caption', style: `max-width:${sz}` }, photo.caption));
+        }
         const rm = el('button', { class: 'picker-rm', title: 'Remove', type: 'button' }, '\u2715');
         rm.addEventListener('click', () => {
           const ids = assignedIds.filter(id => id !== pid);
@@ -500,10 +542,28 @@ function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) 
           renderPostContentSection(_inspection, false);
         });
         thumb.appendChild(rm);
-      }
-      row.appendChild(thumb);
-    });
-    wrap.appendChild(row);
+        thumbRow.appendChild(thumb);
+      });
+      wrap.appendChild(thumbRow);
+    } else {
+      // Locked view — no size controls, fixed size
+      const row = el('div', { class: 'photo-picker-assigned' });
+      assignedIds.forEach(pid => {
+        const photo = allPhotos.find(p => p.photoId === pid);
+        if (!photo) return;
+        const thumb = el('div', { class: 'picker-thumb' });
+        if (photo.driveUrl) {
+          thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy' }));
+        } else {
+          thumb.appendChild(el('div', { class: 'picker-thumb-placeholder' }, (pid || '').slice(-4)));
+        }
+        if (photo.caption) {
+          thumb.appendChild(el('div', { class: 'picker-thumb-caption' }, photo.caption));
+        }
+        row.appendChild(thumb);
+      });
+      wrap.appendChild(row);
+    }
   }
 
   if (!locked) {
@@ -896,6 +956,22 @@ function renderPhotoLibrary(body, allPhotos, rd) {
     if (photo.caption) {
       card.appendChild(el('div', { class: 'lib-caption' }, photo.caption));
     }
+
+    // Move/Assign button — always visible, opens slot-toggle modal
+    const allSlots = [
+      ...Array.from({length:5}, (_,i) => ({ label: `Follow-up ${i+1}`,    slotKey: `followUp_${i+1}_photoIds` })),
+      ...Array.from({length:6}, (_,i) => ({ label: `Action ${i+1}`,       slotKey: `actionTaken_${i+1}_photoIds` })),
+      ...Array.from({length:6}, (_,i) => ({ label: `Observation ${i+1}`,  slotKey: `obs_${i+1}_photoIds` }))
+    ];
+    const moveBtn = el('button', {
+      class: `lib-move-btn${isAssigned ? '' : ' lib-move-btn-urgent'}`,
+      type: 'button',
+      id: `assign-badge-${photo.photoId}`
+    }, isAssigned ? `\uD83D\uDCCC ${slots.join(', ')}` : '\u2014 Not in any section');
+    moveBtn.className = `lib-move-btn photo-assign-badge${isAssigned ? ' is-assigned' : ' not-assigned'}`;
+    moveBtn.id = `assign-badge-${photo.photoId}`;
+    moveBtn.addEventListener('click', () => openAssignPhotoModal(photo, allPhotos, allSlots, rd));
+    card.appendChild(moveBtn);
 
     grid.appendChild(card);
   });

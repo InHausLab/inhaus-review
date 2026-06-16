@@ -1594,6 +1594,26 @@ body {
 /* ── Section 5: Photo Picker Field (inline) ─────────────────── */
 .photo-picker-field { margin-top: 8px; }
 .photo-picker-assigned { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+
+/* ── Per-slot photo size controls ───────────────────────────── */
+.slot-size-row {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 8px;
+}
+.slot-size-label {
+  font-size: 0.7rem; color: var(--gray-500); white-space: nowrap;
+}
+.slot-size-btn {
+  padding: 2px 9px; border-radius: 6px; border: 1.5px solid var(--gray-300);
+  background: white; font-size: 0.72rem; font-weight: 600; color: var(--gray-600);
+  cursor: pointer; transition: all 0.12s;
+}
+.slot-size-btn.active {
+  background: #2c3f16; color: white; border-color: #2c3f16;
+}
+.slot-size-btn:hover:not(.active) {
+  border-color: var(--green); color: var(--green);
+}
 .picker-thumb {
   position: relative; width: 80px; flex-shrink: 0;
   border-radius: 8px; overflow: visible;
@@ -1777,6 +1797,24 @@ body {
 .lib-caption {
   font-size: 0.65rem; color: var(--gray-600); padding: 4px 6px;
   line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── Photo Library — Move/Assign button ───────────────────────── */
+.lib-move-btn, .photo-assign-badge {
+  display: block; width: 100%;
+  padding: 4px 6px; border: none; border-radius: 0 0 8px 8px;
+  font-size: 0.62rem; font-weight: 600; cursor: pointer;
+  text-align: center; line-height: 1.3; transition: opacity 0.12s;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.photo-assign-badge.is-assigned {
+  background: rgba(34,197,94,0.13); color: #166534;
+}
+.photo-assign-badge.not-assigned {
+  background: rgba(234,179,8,0.18); color: #92400e;
+}
+.lib-move-btn:hover, .photo-assign-badge:hover {
+  opacity: 0.75;
 }
 
 /* ── Bonus Clock ────────────────────────────────────── */
