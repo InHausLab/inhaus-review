@@ -836,6 +836,34 @@ function renderPostContentSection(insp, locked) {
 
   const rd = insp.reviewedData || {};
   const allPhotos = insp.photos || [];
+
+  // Pre-populate slots from spare photo assignedSlot field (set by inspector in app)
+  // Only applies when the slot is currently empty — never overwrites reviewer's manual assignments
+  if (allPhotos.length > 0) {
+    const SLOT_MAP = {
+      obs_1: 'obs_1_photoIds', obs_2: 'obs_2_photoIds', obs_3: 'obs_3_photoIds',
+      obs_4: 'obs_4_photoIds', obs_5: 'obs_5_photoIds', obs_6: 'obs_6_photoIds',
+      actionTaken_1: 'actionTaken_1_photoIds', actionTaken_2: 'actionTaken_2_photoIds',
+      actionTaken_3: 'actionTaken_3_photoIds', actionTaken_4: 'actionTaken_4_photoIds',
+      actionTaken_5: 'actionTaken_5_photoIds', actionTaken_6: 'actionTaken_6_photoIds',
+      followUp_1: 'followUp_1_photoIds', followUp_2: 'followUp_2_photoIds',
+      followUp_3: 'followUp_3_photoIds', followUp_4: 'followUp_4_photoIds',
+      followUp_5: 'followUp_5_photoIds'
+    };
+    allPhotos.forEach(photo => {
+      if (!photo.assignedSlot) return;
+      const slotKey = SLOT_MAP[photo.assignedSlot];
+      if (!slotKey) return;
+      // Only add if not already in this slot
+      let ids = [];
+      try { ids = JSON.parse(rd[slotKey] || '[]'); } catch(e) {}
+      if (!ids.includes(photo.photoId)) {
+        ids.push(photo.photoId);
+        rd[slotKey] = JSON.stringify(ids);
+      }
+    });
+  }
+
   const assignedSet = getAllSection5AssignedIds(rd);
   const tryParseIds = key => { try { return JSON.parse(rd[key] || '[]'); } catch(e) { return []; } };
 
