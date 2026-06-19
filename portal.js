@@ -1884,47 +1884,37 @@ function renderPhotosSection(insp, locked) {
     });
   });
 
-  // Describe All button
-  if (!locked) {
-    const existingDescribeAll = qs('#describe-all-btn');
-    if (!existingDescribeAll) {
-      const describeAllBtn = el('button', {
-        id: 'describe-all-btn',
-        type: 'button'
-      }, '\u2728 AI Describe All Photos');
-      describeAllBtn.style.cssText = 'margin-bottom:16px;padding:10px 20px;font-size:0.9rem;font-weight:700;background:#1e40af;color:#fff;border:none;border-radius:9px;cursor:pointer;display:block;';
-      describeAllBtn.addEventListener('click', async () => {
-        const photoCards = qsa('.photo-card');
-        let done = 0;
-        const total = photoCards.length;
-        describeAllBtn.disabled = true;
-        describeAllBtn.textContent = `\u23f3 Describing 0 / ${total}...`;
-        for (const card of photoCards) {
-          const aiBtn = card.querySelector('.photo-ai-describe-btn');
-          if (aiBtn && !aiBtn.disabled) {
-            aiBtn.click();
-            // wait for it to finish (poll for state change)
-            await new Promise(resolve => {
-              const check = setInterval(() => {
-                if (aiBtn.textContent.includes('\u2713') || aiBtn.textContent.includes('\u26a0')) {
-                  clearInterval(check);
-                  resolve();
-                }
-              }, 200);
-              setTimeout(() => { clearInterval(check); resolve(); }, 15000); // 15s timeout per photo
-            });
-          }
-          done++;
-          describeAllBtn.textContent = `\u23f3 Describing ${done} / ${total}...`;
+  // Wire up Describe All button
+  const describeAllWrap = qs('#describe-all-wrap');
+  const describeAllBtn = qs('#describe-all-btn');
+  if (describeAllWrap) describeAllWrap.style.display = locked ? 'none' : 'block';
+  if (describeAllBtn && !locked) {
+    describeAllBtn.onclick = async () => {
+      const photoCards = qsa('.photo-card');
+      let done = 0;
+      const total = photoCards.length;
+      describeAllBtn.disabled = true;
+      describeAllBtn.textContent = `\u23f3 Describing 0 / ${total}...`;
+      for (const card of photoCards) {
+        const aiBtn = card.querySelector('.photo-ai-describe-btn');
+        if (aiBtn) {
+          aiBtn.click();
+          await new Promise(resolve => {
+            const check = setInterval(() => {
+              if (aiBtn.textContent.includes('\u2713') || aiBtn.textContent.includes('\u26a0')) {
+                clearInterval(check); resolve();
+              }
+            }, 300);
+            setTimeout(() => { clearInterval(check); resolve(); }, 20000);
+          });
         }
-        describeAllBtn.textContent = '\u2713 All photos described';
-        describeAllBtn.style.background = '#15803d';
-      });
-      const gridContainer = qs('#photo-grid');
-      if (gridContainer && gridContainer.parentNode) {
-        gridContainer.parentNode.insertBefore(describeAllBtn, gridContainer);
+        done++;
+        describeAllBtn.textContent = `\u23f3 Describing ${done} / ${total}...`;
       }
-    }
+      describeAllBtn.textContent = '\u2713 All done';
+      describeAllBtn.style.background = '#15803d';
+      describeAllBtn.disabled = false;
+    };
   }
 
   renderPhotoGrid(photos, locked);
