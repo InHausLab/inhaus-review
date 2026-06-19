@@ -2039,13 +2039,71 @@ function buildPhotoCard(photo, locked) {
         const text = result.content && result.content[0] && result.content[0].text;
         if (!text) throw new Error('Empty response');
         const description = text.trim();
-        captionTA.value = description;
-        photo.caption = description;
-        debouncedSave('photo_' + photo.photoId, 'caption', description);
-        aiBtn.textContent = '\u2713 Done';
-        aiBtn.style.background = '#f0fdf4';
-        aiBtn.style.borderColor = '#86efac';
-        aiBtn.style.color = '#15803d';
+
+        // If caption already has content, show suggestion box instead of overwriting
+        if (captionTA.value.trim()) {
+          // Remove any existing suggestion box
+          const existing = captionWrap.querySelector('.ai-suggestion-box');
+          if (existing) existing.remove();
+
+          const suggBox = el('div', { class: 'ai-suggestion-box' });
+          suggBox.style.cssText = 'margin-top:8px;padding:10px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:8px;font-size:0.82rem;';
+
+          const suggLabel = el('div', {}, '✨ AI suggestion:');
+          suggLabel.style.cssText = 'font-weight:700;color:#92400e;margin-bottom:5px;font-size:0.78rem;';
+
+          const suggText = el('div', {}, description);
+          suggText.style.cssText = 'color:#1c1917;margin-bottom:8px;line-height:1.4;';
+
+          const btnRow = el('div', {});
+          btnRow.style.cssText = 'display:flex;gap:6px;';
+
+          const useBtn = el('button', { type: 'button' }, '✓ Use this');
+          useBtn.style.cssText = 'padding:4px 10px;font-size:0.78rem;font-weight:700;background:#f0fdf4;border:1.5px solid #86efac;border-radius:6px;color:#15803d;cursor:pointer;';
+          useBtn.addEventListener('click', () => {
+            captionTA.value = description;
+            photo.caption = description;
+            debouncedSave('photo_' + photo.photoId, 'caption', description);
+            suggBox.remove();
+            aiBtn.textContent = '✓ Done';
+            aiBtn.style.background = '#f0fdf4';
+            aiBtn.style.borderColor = '#86efac';
+            aiBtn.style.color = '#15803d';
+          });
+
+          const dismissBtn = el('button', { type: 'button' }, '✗ Dismiss');
+          dismissBtn.style.cssText = 'padding:4px 10px;font-size:0.78rem;font-weight:700;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:6px;color:#b91c1c;cursor:pointer;';
+          dismissBtn.addEventListener('click', () => {
+            suggBox.remove();
+            aiBtn.textContent = '✨ Describe';
+            aiBtn.style.background = '#f0f7ff';
+            aiBtn.style.borderColor = '#93c5fd';
+            aiBtn.style.color = '#1e40af';
+            aiBtn.disabled = false;
+          });
+
+          btnRow.appendChild(useBtn);
+          btnRow.appendChild(dismissBtn);
+          suggBox.appendChild(suggLabel);
+          suggBox.appendChild(suggText);
+          suggBox.appendChild(btnRow);
+          captionWrap.appendChild(suggBox);
+
+          aiBtn.textContent = '✨ Describe';
+          aiBtn.style.background = '#f0f7ff';
+          aiBtn.style.borderColor = '#93c5fd';
+          aiBtn.style.color = '#1e40af';
+          aiBtn.disabled = false;
+        } else {
+          // No existing caption — write directly
+          captionTA.value = description;
+          photo.caption = description;
+          debouncedSave('photo_' + photo.photoId, 'caption', description);
+          aiBtn.textContent = '\u2713 Done';
+          aiBtn.style.background = '#f0fdf4';
+          aiBtn.style.borderColor = '#86efac';
+          aiBtn.style.color = '#15803d';
+        }
       } catch (err) {
         aiBtn.textContent = '\u26a0\ufe0f Failed — retry';
         aiBtn.style.background = '#fef2f2';
