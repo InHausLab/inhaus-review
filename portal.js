@@ -1523,8 +1523,8 @@ function renderReviewPage(insp) {
   renderRoomsSection(insp, isSubmitted);
   renderTestsSection(insp, isSubmitted);
   try { renderPostContentSection(insp, isSubmitted); } catch(e) { console.error('renderPostContentSection failed:', e); }
-  renderPhotosSection(insp, isSubmitted);
-  renderSubmitSection(insp, isSubmitted);
+  try { renderPhotosSection(insp, isSubmitted); } catch(e) { console.error('renderPhotosSection failed:', e); }
+  try { renderSubmitSection(insp, isSubmitted); } catch(e) { console.error('renderSubmitSection failed:', e); }
   checkGate();
 }
 
