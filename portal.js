@@ -7,6 +7,7 @@
 
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwsRP4-RBAuldMh_BkNlbAkZyMLDz8ohNM1WwIRfB1ROz9JHGYjYsZdVNbgy98-d4gu8Q/exec';
 const ACCESS_TOKEN    = 'inhaus_review_2026';
+const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 
 const IS_DEMO = (APPS_SCRIPT_URL === 'PLACEHOLDER_URL');
 
@@ -1883,6 +1884,49 @@ function renderPhotosSection(insp, locked) {
     });
   });
 
+  // Describe All button
+  if (!locked) {
+    const existingDescribeAll = qs('#describe-all-btn');
+    if (!existingDescribeAll) {
+      const describeAllBtn = el('button', {
+        id: 'describe-all-btn',
+        type: 'button'
+      }, '\u2728 AI Describe All Photos');
+      describeAllBtn.style.cssText = 'margin-bottom:16px;padding:10px 20px;font-size:0.9rem;font-weight:700;background:#1e40af;color:#fff;border:none;border-radius:9px;cursor:pointer;display:block;';
+      describeAllBtn.addEventListener('click', async () => {
+        const photoCards = qsa('.photo-card');
+        let done = 0;
+        const total = photoCards.length;
+        describeAllBtn.disabled = true;
+        describeAllBtn.textContent = `\u23f3 Describing 0 / ${total}...`;
+        for (const card of photoCards) {
+          const aiBtn = card.querySelector('.photo-ai-describe-btn');
+          if (aiBtn && !aiBtn.disabled) {
+            aiBtn.click();
+            // wait for it to finish (poll for state change)
+            await new Promise(resolve => {
+              const check = setInterval(() => {
+                if (aiBtn.textContent.includes('\u2713') || aiBtn.textContent.includes('\u26a0')) {
+                  clearInterval(check);
+                  resolve();
+                }
+              }, 200);
+              setTimeout(() => { clearInterval(check); resolve(); }, 15000); // 15s timeout per photo
+            });
+          }
+          done++;
+          describeAllBtn.textContent = `\u23f3 Describing ${done} / ${total}...`;
+        }
+        describeAllBtn.textContent = '\u2713 All photos described';
+        describeAllBtn.style.background = '#15803d';
+      });
+      const gridContainer = qs('#photo-grid');
+      if (gridContainer && gridContainer.parentNode) {
+        gridContainer.parentNode.insertBefore(describeAllBtn, gridContainer);
+      }
+    }
+  }
+
   renderPhotoGrid(photos, locked);
 }
 
@@ -1959,6 +2003,67 @@ function buildPhotoCard(photo, locked) {
     });
   }
   captionWrap.appendChild(captionTA);
+
+  // AI describe button (only when photo has a driveUrl and not locked)
+  if (!locked && photo.driveUrl) {
+    const aiBtn = el('button', {
+      class: 'photo-ai-describe-btn',
+      type: 'button',
+      title: 'AI: describe this photo'
+    }, '\u2728 Describe');
+    aiBtn.style.cssText = 'margin-top:6px;padding:5px 12px;font-size:0.78rem;font-weight:700;background:#f0f7ff;border:1.5px solid #93c5fd;border-radius:7px;color:#1e40af;cursor:pointer;width:100%;';
+
+    aiBtn.addEventListener('click', async () => {
+      if (aiBtn.disabled) return;
+      aiBtn.disabled = true;
+      aiBtn.textContent = '\u23f3 Analyzing...';
+      try {
+        // Fetch the image from Drive and convert to base64
+        const imgResp = await fetch(photo.driveUrl);
+        if (!imgResp.ok) throw new Error('Could not fetch image');
+        const blob = await imgResp.blob();
+        const base64 = await new Promise((res, rej) => {
+          const reader = new FileReader();
+          reader.onload = () => res(reader.result.split(',')[1]);
+          reader.onerror = rej;
+          reader.readAsDataURL(blob);
+        });
+        const mimeType = blob.type || 'image/jpeg';
+        const prompt = 'You are a professional home health inspector reviewing a photo taken during a residential inspection.' +
+          (photo.roomName ? ' Room: ' + photo.roomName + '.' : '') +
+          (photo.stepName ? ' Context: ' + photo.stepName + '.' : '') +
+          ' Write one clear, factual sentence describing what is visible in this photo and its condition.' +
+          ' Focus on anything relevant to home health: moisture, mold, damage, equipment condition, test setup.' +
+          ' If nothing of concern: briefly describe what the photo shows.' +
+          ' Plain sentence only — no bullet points, no markdown, no preamble.';
+        const resp = await fetch(VISION_PROXY_URL, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ imageBase64: base64, mimeType, prompt })
+        });
+        if (!resp.ok) throw new Error('API error ' + resp.status);
+        const result = await resp.json();
+        const text = result.content && result.content[0] && result.content[0].text;
+        if (!text) throw new Error('Empty response');
+        const description = text.trim();
+        captionTA.value = description;
+        photo.caption = description;
+        debouncedSave('photo_' + photo.photoId, 'caption', description);
+        aiBtn.textContent = '\u2713 Done';
+        aiBtn.style.background = '#f0fdf4';
+        aiBtn.style.borderColor = '#86efac';
+        aiBtn.style.color = '#15803d';
+      } catch (err) {
+        aiBtn.textContent = '\u26a0\ufe0f Failed — retry';
+        aiBtn.style.background = '#fef2f2';
+        aiBtn.style.borderColor = '#fca5a5';
+        aiBtn.style.color = '#b91c1c';
+        aiBtn.disabled = false;
+      }
+    });
+    captionWrap.appendChild(aiBtn);
+  }
+
   info.appendChild(captionWrap);
 
   // Toggle buttons
