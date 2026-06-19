@@ -1524,6 +1524,9 @@ function renderReviewPage(insp) {
   renderTestsSection(insp, isSubmitted);
   try { renderPostContentSection(insp, isSubmitted); } catch(e) { console.error('renderPostContentSection failed:', e); }
   try { renderPhotosSection(insp, isSubmitted); } catch(e) { console.error('renderPhotosSection failed:', e); }
+  // Keep photos section expanded by default
+  const photosCard = qs('#photos-card');
+  if (photosCard) photosCard.classList.remove('collapsed');
   try { renderSubmitSection(insp, isSubmitted); } catch(e) { console.error('renderSubmitSection failed:', e); }
   checkGate();
 }
