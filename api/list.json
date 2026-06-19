@@ -1,6 +1,6 @@
 {
   "updatedAt": "2026-06-19T12:00:00.000Z",
-  "count": 8,
+  "count": 6,
   "inspections": [
     {
       "inspectionId": "INH-20260520-EAYNCM",
@@ -57,24 +57,6 @@
       "reviewToken": "L4G5MIX3"
     },
     {
-      "inspectionId": "INH-20260601-S0YI8K",
-      "clientName": "Test",
-      "propertyAddress": "test property",
-      "inspectionDate": "2026-06-01",
-      "inspectorName": "Tanner",
-      "status": "Needs Review",
-      "photoCount": 0,
-      "missingCount": 0,
-      "spreadsheetId": "1IT9ulkV6mfA01_jwRXPOXr_iGX87ssO0QOYEGb3N5ag",
-      "folderId": "1Wbk4bkQkoFWFWe-QQQugCRgvta9_i0SG",
-      "syncedAt": "2026-06-01T20:11:46.040Z",
-      "reviewedBy": "",
-      "reviewedAt": "",
-      "submittedAt": "",
-      "reportBuilderNotes": "",
-      "reviewToken": "3PWXYVQZ"
-    },
-    {
       "inspectionId": "INH-20260608-IAH9S9",
       "clientName": "test",
       "propertyAddress": "test",
@@ -117,7 +99,7 @@
       "inspectionDate": "2026-06-18",
       "inspectorName": "Matt Jay",
       "status": "Needs Review",
-      "photoCount": 0,
+      "photoCount": 16,
       "missingCount": 0,
       "spreadsheetId": "1BC9Ww5RYOZkRSBdIO7CehUjbW9OrLTQwYv9aY158048",
       "folderId": "1sInZt5I9rJKyBOjZ3f2H1yTwPNXn7Bee",
@@ -127,24 +109,6 @@
       "submittedAt": "",
       "reportBuilderNotes": "",
       "reviewToken": "PMNCDHR2"
-    },
-    {
-      "inspectionId": "INH-20260618-UQC5BA",
-      "clientName": "Bob Johnson",
-      "propertyAddress": "12345 Test Ave. Basalt, Colorado",
-      "inspectionDate": "2026-06-18",
-      "inspectorName": "Matt Jay",
-      "status": "Needs Review",
-      "photoCount": 0,
-      "missingCount": 0,
-      "spreadsheetId": "1BC9Ww5RYOZkRSBdIO7CehUjbW9OrLTQwYv9aY158048",
-      "folderId": "1sInZt5I9rJKyBOjZ3f2H1yTwPNXn7Bee",
-      "syncedAt": "2026-06-19T06:37:17.656Z",
-      "reviewedBy": "",
-      "reviewedAt": "",
-      "submittedAt": "",
-      "reportBuilderNotes": "",
-      "reviewToken": "6BPWTA84"
     }
   ]
 }

@@ -625,7 +625,7 @@ function buildPhotoPalette(allPhotos, assignedSet) {
       title: (photo.caption || photo.photoId) + (isAssigned ? ' (assigned)' : '')
     });
     if (photo.driveUrl) {
-      thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || '', loading: 'lazy' }));
+      thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || '', loading: 'lazy', referrerpolicy: 'no-referrer' }));
     } else {
       thumb.appendChild(el('div', { class: 'palette-thumb-placeholder' }, (photo.photoId || '').slice(-4)));
     }
@@ -681,7 +681,7 @@ function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) 
         if (!photo) return;
         const thumb = el('div', { class: 'picker-thumb', style: `width:${sz}` });
         if (photo.driveUrl) {
-          thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy', style: `width:${sz};height:${sz}` }));
+          thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy', style: `width:${sz};height:${sz}`, referrerpolicy: 'no-referrer' }));
         } else {
           thumb.appendChild(el('div', { class: 'picker-thumb-placeholder', style: `width:${sz};height:${sz}` }, (pid || '').slice(-4)));
         }
@@ -709,7 +709,7 @@ function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) 
         if (!photo) return;
         const thumb = el('div', { class: 'picker-thumb' });
         if (photo.driveUrl) {
-          thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy' }));
+          thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy', referrerpolicy: 'no-referrer' }));
         } else {
           thumb.appendChild(el('div', { class: 'picker-thumb-placeholder' }, (pid || '').slice(-4)));
         }
@@ -786,7 +786,7 @@ function openPhotoPickerModal(slotKey, stepId, currentIds, allPhotos) {
       'data-photo-id': photo.photoId
     });
     if (photo.driveUrl) {
-      item.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy' }));
+      item.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy', referrerpolicy: 'no-referrer' }));
     } else {
       item.appendChild(el('div', { class: 'picker-grid-placeholder' }, (photo.photoId || '').slice(-4)));
     }
@@ -1133,7 +1133,7 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
     // Photo thumbnail
     const imgWrap = el('div', { class: 'lib-img-wrap' });
     if (photo.driveUrl) {
-      imgWrap.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy' }));
+      imgWrap.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy', referrerpolicy: 'no-referrer' }));
     } else {
       imgWrap.appendChild(el('div', { class: 'lib-img-placeholder' }, (photo.photoId || '').slice(-4)));
     }
@@ -1264,7 +1264,7 @@ function openFABModal(allPhotos, slots, rd) {
         'data-photo-id': photo.photoId
       });
       if (photo.driveUrl) {
-        item.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy' }));
+        item.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy', referrerpolicy: 'no-referrer' }));
       } else {
         item.appendChild(el('div', { class: 'picker-grid-placeholder' }, (photo.photoId || '').slice(-4)));
       }
@@ -1963,7 +1963,7 @@ function buildPhotoCard(photo, locked) {
   // Thumbnail
   const thumbWrap = el('div', { class: 'photo-thumb-wrap' });
   if (photo.driveUrl) {
-    const img = el('img', { src: photo.driveUrl, alt: photo.caption || '', loading: 'lazy' });
+    const img = el('img', { src: photo.driveUrl, alt: photo.caption || '', loading: 'lazy', referrerpolicy: 'no-referrer' });
     thumbWrap.appendChild(img);
     thumbWrap.addEventListener('click', () => openPhotoModal(photo.driveUrl, photo.caption));
   } else {
@@ -2186,7 +2186,7 @@ function openPhotoModal(url, caption) {
   }
   const inner = modal.querySelector('.photo-modal-inner');
   inner.innerHTML = '';
-  const img = el('img', { src: url, alt: caption || '' });
+  const img = el('img', { src: url, alt: caption || '', referrerpolicy: 'no-referrer' });
   inner.appendChild(img);
   if (caption) inner.appendChild(el('p', { style: 'color:white;text-align:center;margin-top:8px;font-size:.85rem' }, caption));
   modal.classList.remove('hidden');
