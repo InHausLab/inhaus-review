@@ -1,0 +1,435 @@
+{
+  "status": "ok",
+  "inspection": {
+    "inspectionId": "INH-20260618-UQC5BA",
+    "propertyAddress": "12345 Test Ave. Basalt, Colorado",
+    "inspectorName": "Matt Jay",
+    "inspectionDate": "2026-06-18",
+    "clientName": "Bob Johnson",
+    "numberOfLevels": "1",
+    "numberOfBedrooms": "1",
+    "numberOfBathrooms": "1",
+    "waterSource": [
+      "Municipal"
+    ],
+    "waterSourceDescription": "",
+    "residenceType": "Single-Family Home",
+    "yearBuilt": 1999,
+    "squareFootage": "3000",
+    "basement": "No",
+    "carpetedRooms": "4",
+    "fireplace": [
+      "Wood Burning"
+    ],
+    "pets": "No pets",
+    "petsOther": "",
+    "smokingVaping": "No",
+    "stoveType": "Gas",
+    "stoveTypeOther": "",
+    "wifiNetwork": "12345 test",
+    "clientConcerns": "Customer is concerned with the age of their home and potential mold",
+    "occupancyDuringInspection": "Occupied - Passive",
+    "weatherConditions": "Sunny",
+    "knownProblemAreas": "",
+    "startedAt": "2026-06-18T16:32:59.177Z",
+    "endedAt": null,
+    "status": "in-progress",
+    "sharedDriveFolderId": "",
+    "boulderBlueSampleId": "Boulder blue test 1234",
+    "boulderBlueTestLocation": "Living room",
+    "boulderBlueStartTime": "18:35",
+    "boulderBlueEndTime": "08:32",
+    "boulderBlueTestDuration": "2 hours",
+    "radonMonitorLocation": "Basement",
+    "secondRadonMonitorLocation": "",
+    "pfasKitNum": "PA test",
+    "exhaustHoodType": "Ceiling mount range hood",
+    "exhaustVented": "Ducted (to outside)",
+    "testsConfirmed": {
+      "testBreeze": true,
+      "testBoulderBlue": true,
+      "testWaterPanel": true,
+      "testPFAS": true,
+      "testMicroplastics": true,
+      "testRadon": true,
+      "testATP": true,
+      "testMoldSwabs": true
+    },
+    "breezeSampleCount": "4",
+    "moldSwabSampleCount": "1",
+    "atpTestCount": "2",
+    "testsNotConducted": "",
+    "postTestLocWater": "",
+    "postTestLocPFAS": "",
+    "postTestLocBoulderBlue": "",
+    "postTestLocBreeze": "",
+    "postTestLocRadon": "",
+    "postTestLocQtrak": "",
+    "postTestLocMold": "",
+    "postTestLocAllergen": "",
+    "preAssessmentChecklist": {
+      "preAssessment": {
+        "reviewConcerns": true,
+        "devicesCharged": true,
+        "reviewHome": true,
+        "corentiumRegistered": true,
+        "boulderBlueRegistered": true,
+        "waterTestsActivated": true,
+        "radonPrepared": true,
+        "qtrakSetup": true
+      }
+    },
+    "arrivalSetup": {
+      "assessmentStartTime": "18:33",
+      "utilityRoomLevel": "Main floor",
+      "homeownerGreeted": true,
+      "tarpPlaced": true,
+      "equipmentUnloaded": true,
+      "equipmentTidy": true,
+      "reviewConcerns": true,
+      "askAdditional": true,
+      "testsExplained": true,
+      "durationExplained": true,
+      "sedentaryAdvised": true,
+      "airthingsPaired": true,
+      "airthingsWifiConnected": true,
+      "airthingsPlaced": true,
+      "filterInserted": true,
+      "fanPluggedIn": true,
+      "allergenPlacement": true,
+      "boulderBlueTestLocation": "Living room",
+      "boulderBlueSampleId": "Boulder blue test 1234",
+      "boulderBlueStartTime": "18:35",
+      "qtrakSensorTest": true
+    },
+    "deviceSetup": {
+      "pfasSetup": "Yes",
+      "pfasKitNum": "PA test",
+      "pfasKitchenFaucet": true
+    },
+    "exteriorAssessment": {
+      "exteriorGuidance": {
+        "visualInspection": true,
+        "leaksStains": true,
+        "poolingWater": true,
+        "foundationCracks": true,
+        "roofDamage": true,
+        "gapsSeals": true
+      },
+      "exteriorPhotos": {},
+      "breezeOutdoor": true,
+      "qtrakOut": true,
+      "flirExt": true,
+      "pumpSetUp": true,
+      "placement": true,
+      "tripodHeight": true,
+      "qtrakOutdoorDone": true,
+      "sidingTypes": [
+        "Stucco",
+        "Fiber Cement",
+        "Stone"
+      ],
+      "moldTestLocations": "Front door"
+    },
+    "radonSetup": {
+      "radonTripod": true,
+      "radonWindowsClosed": true,
+      "radonInitialMeasurement": true,
+      "radonMultipleMonitors": true,
+      "radonLocation": "Basement"
+    },
+    "rooms": [
+      {
+        "roomName": "Bedroom one",
+        "type": "room-test",
+        "level": "lowest",
+        "stepId": "lowest-room-0",
+        "flirGuidance": {},
+        "qtrakFloorplan": false,
+        "labelRooms": true,
+        "roomType": "Bedroom",
+        "breezeDone": "Yes",
+        "breezeLocation": "Bedroom shower wall",
+        "observations": [
+          "Visible mold",
+          "Poor ventilation",
+          "Water staining"
+        ],
+        "notes": "Appears to be molded in the upper corner of the bedroom wall that joins",
+        "followUpNeeded": "Yes",
+        "followUpTimeframe": "6 months",
+        "followUpNote": "Continue to monitor wall to see if the discoloration expands\n"
+      },
+      {
+        "roomName": "Master",
+        "type": "bedroom",
+        "level": "upper",
+        "stepId": "bedroom-0",
+        "flirGuidance": {
+          "flirScanStains": true,
+          "flirStartExterior": true,
+          "flirPhotoAll": true,
+          "flirPhotoNoConcern": true
+        },
+        "breezeRooms": true,
+        "qtrakFloorplan": true,
+        "flirDone": "Yes",
+        "flirConcerns": "Yes",
+        "flirImageLabel": "1235",
+        "flirPhotoNum": "12344",
+        "flirMoisture": 2,
+        "breezeDone": "Yes",
+        "qtrakCaptured": "Yes",
+        "qtrakLocation": "Corner",
+        "qtrakRoomName": "Bed",
+        "observations": [
+          "Water staining",
+          "Condensation"
+        ]
+      },
+      {
+        "roomName": "Master",
+        "type": "bathroom",
+        "level": "upper",
+        "stepId": "bathroom-0",
+        "breezeDone": "Yes",
+        "qtrakLocation": "Batg",
+        "qtrakCaptured": "Yes",
+        "qtrakRoomName": "Bathroom",
+        "bathUnderSink": true,
+        "bathToilet": true,
+        "bathShower": true,
+        "bathGrout": true,
+        "bathLeak": "No",
+        "observations": [
+          "Water staining",
+          "Condensation"
+        ],
+        "notes": "Make sure to come back and check for more mold, and",
+        "followUpNeeded": "Yes",
+        "followUpTimeframe": "3 months",
+        "followUpNote": "Is the mold, discoloration, expanding or staying the same?"
+      },
+      {
+        "roomName": "Main Living Area",
+        "type": "living-area",
+        "level": "main",
+        "stepId": "living-area",
+        "flirGuidance": {
+          "flirScanStains": true,
+          "flirStartExterior": true,
+          "flirPhotoAll": true,
+          "flirPhotoNoConcern": true
+        },
+        "breezeMain": true,
+        "qtrakFloorplan": true,
+        "roomNames": "Dining ",
+        "flirScanned": true,
+        "flirImageLabel1": "6666666",
+        "flirRoom1": "Dining ",
+        "flirImg1": "64445)6",
+        "flirImageLabel2": "Dining",
+        "breezeDone": "Yes",
+        "breezeLocation": "Floor",
+        "qtrakLocation": "Floor",
+        "qtrakCaptured": "Yes",
+        "qtrakRoomName": "Dinning",
+        "followUpNeeded": "Yes",
+        "followUpTimeframe": "3 months",
+        "followUpNote": "Dust watch out for",
+        "aiSummary": "The dining room was scanned with thermal imaging and floor samples were captured for both Breeze and QTrak analysis. A follow-up dust assessment is recommended in 3 months to monitor conditions in this space.",
+        "aiSummaryGeneratedAt": "2026-06-19T06:24:36.726Z"
+      },
+      {
+        "roomName": "Kitchen Inspection",
+        "type": "kitchen-appliance",
+        "level": "main",
+        "stepId": "kitchen-appliance",
+        "breezeKitchen": true,
+        "flirKitchen": true,
+        "qtrakKitchen": true,
+        "atpKitchen": true,
+        "stoveType": [
+          "Gas"
+        ],
+        "exhaustHoodType": "Ceiling mount range hood",
+        "exhaustVented": "Ducted (to outside)",
+        "waterFlushed": "Yes",
+        "fridgeChecked": true,
+        "fridgeCleaned": true,
+        "dishwasherChecked": true,
+        "dishwasherCleaned": true,
+        "dishwasherFilterChecked": true,
+        "dishwasherFilterCleaned": true,
+        "underSinkChecked": true,
+        "underSinkCleaned": true,
+        "iceMakerChecked": true,
+        "iceMakerCleaned": true,
+        "backsplashChecked": true,
+        "stoveVentChecked": true,
+        "stoveVentCleaned": true,
+        "applianceFindings": "Dishwasher filter was very dirty. The vent needed to be cleaned and there was debris underneath the refrigerator.\n",
+        "appliancesCondition": "Fair (10-20 years)",
+        "moldVisible": "No"
+      },
+      {
+        "roomName": "Water Samples",
+        "type": "water-sample",
+        "level": "main",
+        "stepId": "water-sample",
+        "bottlesLabeled": true,
+        "preMadeLabels": true,
+        "chainOfCustody": true,
+        "waterPanelCollected": "Yes",
+        "waterSampleId": "2222222",
+        "waterFaucetLocation": "Sink",
+        "microplasticsStatus": "Collected",
+        "microplasticsSampleId": "66666",
+        "pfasStatus": "Collected",
+        "pfasSampleId": "6262626"
+      },
+      {
+        "roomName": "ATP Testing",
+        "type": "atp-kitchen",
+        "level": "main",
+        "stepId": "atp-kitchen",
+        "atpSurface": "Kitchen counter",
+        "atpPreRLU": 22,
+        "atpPreStatus": "Pass",
+        "atpCleaned": "Yes",
+        "atpPostRLU": 10,
+        "atpPostStatus": "Pass",
+        "notes": "Good testing"
+      },
+      {
+        "roomName": "Kitchen Air Testing",
+        "type": "kitchen-air",
+        "level": "main",
+        "stepId": "kitchen-air",
+        "flirGuidance": {},
+        "qtrakLocation": "Kitchen",
+        "qtrakCaptured": "Yes",
+        "qtrakRoomName": "Kitchen",
+        "observations": [
+          "Condensation"
+        ]
+      }
+    ],
+    "utilityRoom": {
+      "ventilationType": {
+        "bathExhaust": true,
+        "hrv": false
+      },
+      "flirUtil": true,
+      "qtrakUtil": true,
+      "levelLocation": "Basement",
+      "forcedHVAC": "No",
+      "heatingType": "Natural Gas Furnace",
+      "acType": "No Air Conditioning",
+      "airFiltrationPresent": "No",
+      "otherAirPurifierPresent": "No",
+      "uvSystemPresent": "No",
+      "radonMitigationPresent": "No",
+      "waterFiltrationPresent": "No",
+      "waterSofteningPresent": "No",
+      "aiSummary": "No items flagged.",
+      "aiSummaryGeneratedAt": "2026-06-19T06:12:16.501Z"
+    },
+    "wrapUp": {
+      "testsConfirmed": {
+        "testBreeze": true,
+        "testBoulderBlue": true,
+        "testWaterPanel": true,
+        "testPFAS": true,
+        "testMicroplastics": true,
+        "testRadon": true,
+        "testATP": true,
+        "testMoldSwabs": true
+      },
+      "breezeCollected": true,
+      "boulderBlueDone": true,
+      "pfasCollected": true,
+      "waterLabeled": true,
+      "appliancesRestored": true,
+      "doorsLightsRestored": true,
+      "radonLeftInPlace": true,
+      "formComplete": true,
+      "photosUploaded": true,
+      "boulderBlueRegistered": true,
+      "breezeSampleCount": "4",
+      "moldSwabSampleCount": "1",
+      "atpTestCount": "2"
+    },
+    "customerDebrief": {
+      "radonPickupTime": "2026-06-21T00:32",
+      "boulderBlueEndTime": "08:32",
+      "boulderBlueTestDuration": "2 hours",
+      "assessmentEndTime": "08:33",
+      "informComplete": true,
+      "adviseReport": true,
+      "remindRadon": true,
+      "debriefCompleted": "Yes",
+      "radonPickupReminder": "Yes",
+      "reportDateCommunicated": "Yes",
+      "debriefNotes": "Nice family with kids with allergies and specific sensitivity to thinking the have mold",
+      "aiFollowUpPlan": "# HOME HEALTH FOLLOW-UP PLAN\n**Property:** 12345 Test Ave, Basalt, Colorado\n\n---\n\n## IMMEDIATE (30 Days)\n**No immediate actions required.** All utility systems passed inspection without flagged concerns.\n\n---\n\n## 3-6 MONTHS\n**Dining Room Dust Assessment**\n- **What to check:** Air quality and dust accumulation levels in dining room\n- **Why it matters:** Baseline thermal imaging and air quality samples (Breeze and QTrak) were established during this inspection. Reassessment determines if conditions are stable, improving, or deteriorating.\n- **Test needed:** Repeat dust sampling and air quality analysis using same methodology; compare results to current baseline data\n- **Target date:** 3 months from inspection date\n\n---\n\n## 12 MONTHS\n**No scheduled actions.**\n\n---\n\n## ANNUAL\n**No scheduled actions.**\n\n---\n\n## OVERALL HOME HEALTH STATUS\nThe property showed no immediate concerns; the dining room requires follow-up monitoring in 3 months to establish air quality trends before determining if additional interventions are necessary.",
+      "aiFollowUpPlanGeneratedAt": "2026-06-19T06:34:04.307Z"
+    },
+    "postAssessment": {
+      "shipping": {
+        "breezeST": true,
+        "boulderBlueShip": true,
+        "waterPanelShip": true,
+        "pfasShip": true,
+        "microplasticsShip": true,
+        "chainOfCustody": true
+      },
+      "dataManagement": {
+        "qtrakExported": true
+      },
+      "finalCheck": {
+        "allSectionsComplete": true
+      }
+    },
+    "completedAt": null,
+    "ventilationReadable": "Bathroom Exhaust Fan(s)",
+    "windowsOpen": "No",
+    "appliancesCondition": "Fair (10-20 years)",
+    "roomsWithDampness": 4,
+    "roomsWithMustySmell": 0,
+    "roomSummaries": {
+      "utility": {
+        "roomName": "Utility Room",
+        "summary": "No items flagged.",
+        "generatedAt": "2026-06-19T06:12:16.501Z"
+      },
+      "living-area": {
+        "roomName": "Main Living Area",
+        "summary": "The dining room was scanned with thermal imaging and floor samples were captured for both Breeze and QTrak analysis. A follow-up dust assessment is recommended in 3 months to monitor conditions in this space.",
+        "generatedAt": "2026-06-19T06:24:36.726Z"
+      }
+    },
+    "aiFollowUpPlan": "# HOME HEALTH FOLLOW-UP PLAN\n**Property:** 12345 Test Ave, Basalt, Colorado\n\n---\n\n## IMMEDIATE (30 Days)\n**No immediate actions required.** All utility systems passed inspection without flagged concerns.\n\n---\n\n## 3-6 MONTHS\n**Dining Room Dust Assessment**\n- **What to check:** Air quality and dust accumulation levels in dining room\n- **Why it matters:** Baseline thermal imaging and air quality samples (Breeze and QTrak) were established during this inspection. Reassessment determines if conditions are stable, improving, or deteriorating.\n- **Test needed:** Repeat dust sampling and air quality analysis using same methodology; compare results to current baseline data\n- **Target date:** 3 months from inspection date\n\n---\n\n## 12 MONTHS\n**No scheduled actions.**\n\n---\n\n## ANNUAL\n**No scheduled actions.**\n\n---\n\n## OVERALL HOME HEALTH STATUS\nThe property showed no immediate concerns; the dining room requires follow-up monitoring in 3 months to establish air quality trends before determining if additional interventions are necessary.",
+    "aiFollowUpPlanGeneratedAt": "2026-06-19T06:34:04.307Z",
+    "flirImageLog": [
+      {
+        "room": "Master",
+        "label": "1235",
+        "imgNum": "12344"
+      },
+      {
+        "room": "Dining ",
+        "label": "6666666",
+        "imgNum": "64445)6"
+      },
+      {
+        "room": "Main Living Area (2)",
+        "label": "Dining",
+        "imgNum": ""
+      }
+    ],
+    "waterSourceReadable": "Municipal",
+    "petsReadable": "No pets",
+    "stoveTypeReadable": "Gas"
+  }
+}
