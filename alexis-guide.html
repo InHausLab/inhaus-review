@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home Health Action Guide — Alexis Kaufman</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.6; }
+  .header { background: #1e293b; color: white; padding: 32px 24px; }
+  .header .logo { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #94a3b8; margin-bottom: 8px; }
+  .header h1 { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+  .header .meta { font-size: 13px; color: #94a3b8; }
+  .urgent-banner { background: #dc2626; color: white; padding: 16px 24px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .container { max-width: 860px; margin: 0 auto; padding: 24px 16px; }
+  .intro { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; border-left: 4px solid #f59e0b; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .intro h2 { font-size: 18px; font-weight: 700; margin-bottom: 12px; }
+  .intro p { font-size: 15px; color: #374151; margin-bottom: 10px; }
+  .step { background: white; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .step-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
+  .step-num { background: #1e293b; color: white; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; flex-shrink: 0; }
+  .step-num.urgent { background: #dc2626; }
+  .step-num.high { background: #f59e0b; }
+  .step-num.medium { background: #3b82f6; }
+  .step-title { flex: 1; }
+  .step-title h3 { font-size: 17px; font-weight: 700; margin-bottom: 2px; }
+  .step-meta { font-size: 12px; color: #64748b; }
+  .step-meta span { margin-right: 12px; }
+  .checklist { list-style: none; margin: 12px 0; }
+  .checklist li { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
+  .checklist li:last-child { border-bottom: none; }
+  .checklist input[type=checkbox] { margin-top: 3px; flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; }
+  .tell-contractor { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; margin-top: 12px; font-size: 13px; color: #166534; }
+  .tell-contractor strong { display: block; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #15803d; }
+  .license-badge { display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600; margin-top: 8px; }
+  .timeline { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .timeline h2 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+  .timeline-row { display: flex; gap: 16px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+  .timeline-row:last-child { border-bottom: none; }
+  .timeline-week { font-weight: 700; color: #1e293b; min-width: 90px; }
+  .moisture-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 12px; }
+  .moisture-table th { background: #1e293b; color: white; padding: 10px 12px; text-align: left; }
+  .moisture-table td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; }
+  .moisture-table tr:nth-child(even) td { background: #f8fafc; }
+  .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin: 24px 0 12px; }
+  .verify-list { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .verify-list h2 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+  .footer { text-align: center; font-size: 12px; color: #94a3b8; padding: 24px; border-top: 1px solid #e2e8f0; margin-top: 32px; }
+  @media print {
+    .urgent-banner { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .step-num { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">InHaus Lab</div>
+  <h1>Your Home Health Action Guide</h1>
+  <div class="meta">Alexis Kaufman &nbsp;·&nbsp; 10450 SW 140th Rd, Miami FL 33176 &nbsp;·&nbsp; Based on licensed assessment by Jonathan Dickler, MRSA #3550</div>
+</div>
+
+<div class="urgent-banner">
+  🚨 URGENT: Black mold (Stachybotrys) confirmed in the nursery. Baby due in approximately 2 months. Start with Step 1 immediately.
+</div>
+
+<div class="container">
+
+  <div class="intro">
+    <h2>What's Going On</h2>
+    <p>A licensed mold assessment of your home found confirmed mold growth and bacteria throughout both of your HVAC systems. Every time your AC runs, it's circulating mold spores into every room in the house.</p>
+    <p>The most important thing: <strong>Stachybotrys — black mold — was detected in your baby's future room.</strong> Follow-up testing found the duct insulation feeding that room had an extremely high concentration of mold spores. With your baby arriving in approximately two months, this needs to be your first priority.</p>
+    <p>The rest of the home showed relatively low airborne mold levels — which is good news. The problem is concentrated in the HVAC system, not hidden throughout your walls. <strong>Fix the system, fix the house.</strong></p>
+    <p><strong>You have time to do this right — but you need to start now.</strong></p>
+  </div>
+
+  <div class="section-title">Your Action Checklist — Work Through In Order</div>
+
+  <!-- Step 1 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num urgent">1</div>
+      <div class="step-title">
+        <h3>Baby's Room — Do This First</h3>
+        <div class="step-meta">
+          <span>👷 Licensed Mold Remediator (MRSR)</span>
+          <span>⏱ This week — before anything else</span>
+        </div>
+      </div>
+    </div>
+    <ul class="checklist">
+      <li><input type="checkbox"> Remove and dispose of all duct insulation feeding the nursery</li>
+      <li><input type="checkbox"> Clean and disinfect the duct register and surrounding area under proper containment</li>
+      <li><input type="checkbox"> Run a HEPA air purifier in the nursery on HIGH continuously until all work is complete</li>
+      <li><input type="checkbox"> Do not use the room as a nursery until clearance testing confirms it is clean</li>
+    </ul>
+    <div class="tell-contractor">
+      <strong>What to tell the contractor</strong>
+      "I need the duct insulation removed from the nursery as a priority. Stachybotrys was confirmed in this room. I need this done under proper containment with negative air pressure."
+    </div>
+    <div class="license-badge">⚠️ Verify: Florida MRSR License — required by law</div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num urgent">2</div>
+      <div class="step-title">
+        <h3>Replace All Ductwork — Both HVAC Systems</h3>
+        <div class="step-meta">
+          <span>👷 MRSR Contractor + HVAC Contractor</span>
+          <span>⏱ Within 2–3 weeks</span>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Mold in flexible ductwork cannot be cleaned — it must be fully replaced.</p>
+    <ul class="checklist">
+      <li><input type="checkbox"> Remove and dispose of ALL existing flexible ductwork on both systems</li>
+      <li><input type="checkbox"> Replace all supply plenums on both units</li>
+      <li><input type="checkbox"> Install R-8 antimicrobial ductwork (ask specifically — carries 10-year mold warranty)</li>
+      <li><input type="checkbox"> Remove and replace all duct insulation in the attic area</li>
+      <li><input type="checkbox"> Restoration-grade cleanup of all work areas</li>
+    </ul>
+    <div class="tell-contractor">
+      <strong>What to tell the contractor</strong>
+      "I need full duct replacement on both systems — not cleaning, replacement. I want R-8 antimicrobial ductwork. The existing ductwork has confirmed mold and needs to be bagged and removed properly."
+    </div>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num urgent">3</div>
+      <div class="step-title">
+        <h3>Remediate Both HVAC Units</h3>
+        <div class="step-meta">
+          <span>👷 Licensed MRSR Contractor</span>
+          <span>⏱ Same time as duct replacement</span>
+        </div>
+      </div>
+    </div>
+    <ul class="checklist">
+      <li><input type="checkbox"> Professional cleaning and disinfection of both evaporator coils</li>
+      <li><input type="checkbox"> Clean and disinfect both blower assemblies</li>
+      <li><input type="checkbox"> Clean and disinfect both drain pans</li>
+      <li><input type="checkbox"> Inspect and treat UV light components on both units</li>
+      <li><input type="checkbox"> Inspect drywall behind HVAC Unit 2 — remove any mold-damaged material</li>
+    </ul>
+    <div class="tell-contractor">
+      <strong>What to tell the contractor</strong>
+      "Both units need full remediation — blower, coil, and drain pan. There is also mold and moisture damage on the drywall behind Unit 2. I need that assessed and removed if affected."
+    </div>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num high">4</div>
+      <div class="step-title">
+        <h3>Fix All Bathroom Ventilation</h3>
+        <div class="step-meta">
+          <span>👷 Licensed Electrician or HVAC Contractor</span>
+          <span>⏱ Before or during duct work</span>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Your exhaust fans are currently venting into the attic — pumping warm humid air directly into the space where your HVAC equipment lives. This is one of the main reasons the attic is a mold problem.</p>
+    <ul class="checklist">
+      <li><input type="checkbox"> Reroute ALL bathroom exhaust fans to vent through the roof to the outside</li>
+      <li><input type="checkbox"> Verify every bathroom has a working exhaust fan — install where missing</li>
+      <li><input type="checkbox"> Install Panasonic-grade quiet exhaust fans</li>
+      <li><input type="checkbox"> Confirm all vent runs terminate outside with a proper exterior vent cap — not into attic</li>
+    </ul>
+    <div class="tell-contractor">
+      <strong>What to tell the contractor</strong>
+      "Every exhaust fan in every bathroom needs to vent directly outside through the roof. None should terminate in the attic. Verify all existing runs and re-route any that don't exit the building."
+    </div>
+  </div>
+
+  <!-- Step 5 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num high">5</div>
+      <div class="step-title">
+        <h3>Re-Caulk All Bathrooms and Kitchen</h3>
+        <div class="step-meta">
+          <span>👷 Plumber (leak check first) + Handyman</span>
+          <span>⏱ After plumbing confirmed watertight</span>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Gaps in caulking allow water to seep into walls and floors — creating hidden moisture and future mold. The bathtub access panel showed staining that may indicate a slow leak — check that first.</p>
+    <ul class="checklist">
+      <li><input type="checkbox"> Plumber inspects bathtub access panel for slow leak — fix before caulking</li>
+      <li><input type="checkbox"> Remove all old caulk from every shower (floor edges, wall seams, door frames, fixtures)</li>
+      <li><input type="checkbox"> Remove and replace caulk around all bathtubs</li>
+      <li><input type="checkbox"> Re-caulk all sink countertops, backsplashes, and faucet bases in every bathroom and kitchen</li>
+      <li><input type="checkbox"> Check under all sinks for drips or moisture — repair before caulking</li>
+      <li><input type="checkbox"> Use mold-resistant caulk throughout</li>
+    </ul>
+    <div class="tell-contractor">
+      <strong>What to tell the contractor</strong>
+      "I need all bathroom and kitchen caulking replaced with mold-resistant caulk. Before starting, have a plumber check the bathtub access panel — there was staining suggesting a possible slow leak."
+    </div>
+  </div>
+
+  <!-- Step 6 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num high">6</div>
+      <div class="step-title">
+        <h3>Install Whole-Home Dehumidification</h3>
+        <div class="step-meta">
+          <span>👷 HVAC Contractor</span>
+          <span>⏱ As part of HVAC work</span>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">In Miami, humidity is your biggest enemy. Mold will return after remediation if humidity isn't actively controlled. Portable units are not enough.</p>
+    <ul class="checklist">
+      <li><input type="checkbox"> Install a whole-home central dehumidifier integrated with your HVAC system</li>
+      <li><input type="checkbox"> Set to run continuously — do NOT use auto mode</li>
+      <li><input type="checkbox"> Install a separate attic dehumidifier (HVAC equipment lives in your attic)</li>
+      <li><input type="checkbox"> Target indoor humidity: 45–50% or below at all times</li>
+    </ul>
+    <div class="tell-contractor">
+      <strong>What to tell the contractor</strong>
+      "I need a whole-home dehumidifier integrated with my HVAC, plus a separate attic dehumidifier sized for my attic square footage. Both run continuously."
+    </div>
+  </div>
+
+  <!-- Step 7 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num high">7</div>
+      <div class="step-title">
+        <h3>Attic — Roof Repair, Mold Remediation & Insulation Replacement</h3>
+        <div class="step-meta">
+          <span>👷 Roofer + MRSR Contractor + Insulation Contractor</span>
+          <span>⏱ Must be done in sequence — roof first</span>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Three separate contractors, done in order. Do not skip the sequence — if the roof isn't fixed first, new moisture will undo the remediation work.</p>
+    <strong style="font-size:13px;color:#374151;display:block;margin-bottom:6px;">Step A — Roofer goes first:</strong>
+    <ul class="checklist">
+      <li><input type="checkbox"> Inspect roof at chimney — previous leak confirmed, damaged materials still present</li>
+      <li><input type="checkbox"> Water-test chimney flashing and surrounding area</li>
+      <li><input type="checkbox"> Repair all identified leak points before attic work begins</li>
+    </ul>
+    <strong style="font-size:13px;color:#374151;display:block;margin:12px 0 6px;">Step B — Mold remediator second:</strong>
+    <ul class="checklist">
+      <li><input type="checkbox"> Remove ALL mold-contaminated insulation (do not clean it — remove it)</li>
+      <li><input type="checkbox"> Treat and clean all affected wood components (rafters, decking, framing)</li>
+      <li><input type="checkbox"> Remove 2 feet past any visible mold or staining</li>
+      <li><input type="checkbox"> Proper containment and negative air pressure throughout</li>
+      <li><input type="checkbox"> HEPA vacuum all surfaces after remediation</li>
+    </ul>
+    <strong style="font-size:13px;color:#374151;display:block;margin:12px 0 6px;">Step C — Insulation contractor last (after clearance testing passes):</strong>
+    <ul class="checklist">
+      <li><input type="checkbox"> Replace all removed insulation with moisture-resistant Florida-appropriate product</li>
+      <li><input type="checkbox"> Do not install until written clearance from independent MRSA assessor</li>
+    </ul>
+  </div>
+
+  <!-- Step 8 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num medium">8</div>
+      <div class="step-title">
+        <h3>Fix Exterior Drainage</h3>
+        <div class="step-meta">
+          <span>👷 Landscaper or General Contractor</span>
+          <span>⏱ Lower priority — but don't skip</span>
+        </div>
+      </div>
+    </div>
+    <ul class="checklist">
+      <li><input type="checkbox"> Regrade soil so ground slopes away from foundation (6-inch drop over 10 feet minimum)</li>
+      <li><input type="checkbox"> Repair or replace compromised drainage pans</li>
+      <li><input type="checkbox"> Extend all downspouts at least 6 feet from foundation</li>
+      <li><input type="checkbox"> Clear gutters and confirm water moves away from the home</li>
+    </ul>
+  </div>
+
+  <!-- Step 9 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num urgent">9</div>
+      <div class="step-title">
+        <h3>Post-Remediation Clearance Testing — Required Final Step</h3>
+        <div class="step-meta">
+          <span>👷 Independent MRSA Licensed Assessor (NOT the remediation company)</span>
+          <span>⏱ After all work complete — before baby arrives</span>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Do not accept a contractor's word that work is done. Independent clearance testing is the only way to confirm your home is safe for your baby.</p>
+    <ul class="checklist">
+      <li><input type="checkbox"> Air samples in all rooms including nursery</li>
+      <li><input type="checkbox"> Surface swab samples in all remediated areas</li>
+      <li><input type="checkbox"> Attic clearance testing after insulation replacement</li>
+      <li><input type="checkbox"> Written clearance report from licensed MRSA assessor</li>
+      <li><input type="checkbox"> Indoor levels at or below outdoor levels</li>
+    </ul>
+    <div class="tell-contractor">
+      <strong>What to tell the assessor</strong>
+      "I need post-remediation clearance testing following HVAC remediation, duct replacement, and attic mold remediation. I have a baby due in approximately 2 months and need written clearance before the nursery is used."
+    </div>
+    <div class="license-badge">⚠️ Must be a different company from your remediator</div>
+  </div>
+
+  <!-- Timeline -->
+  <div class="timeline">
+    <h2>📅 Your 8-Week Timeline</h2>
+    <div class="timeline-row"><div class="timeline-week">This week</div><div>Baby's room duct insulation removed. HEPA purifier running. Get contractor quotes.</div></div>
+    <div class="timeline-row"><div class="timeline-week">Weeks 2–3</div><div>HVAC remediation + full duct replacement. Bathroom ventilation rerouted.</div></div>
+    <div class="timeline-row"><div class="timeline-week">Weeks 3–4</div><div>Roof inspection. Attic remediation begins. Caulking done. Dehumidifiers installed.</div></div>
+    <div class="timeline-row"><div class="timeline-week">Weeks 5–6</div><div>Attic insulation replacement. Exterior drainage fixed.</div></div>
+    <div class="timeline-row"><div class="timeline-week">Week 7</div><div>Post-remediation clearance testing.</div></div>
+    <div class="timeline-row"><div class="timeline-week">Week 8</div><div>Review clearance results. Nursery confirmed clean. ✅</div></div>
+  </div>
+
+  <!-- Moisture table -->
+  <div class="step">
+    <h3 style="margin-bottom:12px;">Why All of This Is Connected</h3>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Every item on this list addresses one piece of the same problem: <strong>moisture getting in and staying in.</strong> If any piece is skipped, the conditions for mold growth will return.</p>
+    <table class="moisture-table">
+      <tr><th>Moisture Source</th><th>Fix</th></tr>
+      <tr><td>HVAC system contamination</td><td>Remediate + replace ductwork</td></tr>
+      <tr><td>Bathroom humidity</td><td>Exhaust fans venting outside</td></tr>
+      <tr><td>Water intrusion at surfaces</td><td>Re-caulk showers, sinks, tubs</td></tr>
+      <tr><td>Attic humidity</td><td>Attic dehumidifier</td></tr>
+      <tr><td>Indoor humidity</td><td>Whole-home dehumidifier</td></tr>
+      <tr><td>Roof leak</td><td>Roof repair at chimney</td></tr>
+      <tr><td>Ground water</td><td>Exterior drainage grading</td></tr>
+    </table>
+  </div>
+
+  <!-- Verify before hiring -->
+  <div class="verify-list">
+    <h2>✅ Verify Before Hiring Any Contractor</h2>
+    <ul class="checklist" style="margin-top:8px;">
+      <li><input type="checkbox"> Florida MRSR license (required for all mold remediation)</li>
+      <li><input type="checkbox"> Florida MRSA license (required for assessment and clearance testing)</li>
+      <li><input type="checkbox"> Proof of liability insurance</li>
+      <li><input type="checkbox"> Written scope of work before work begins</li>
+      <li><input type="checkbox"> Containment plan — negative air pressure required</li>
+      <li><input type="checkbox"> Disposal plan — contaminated materials properly bagged and removed</li>
+      <li><input type="checkbox"> Written completion report after work is done</li>
+      <li><input type="checkbox"> Do NOT use the same company for remediation AND clearance testing</li>
+    </ul>
+  </div>
+
+</div>
+
+<div class="footer">
+  Prepared by InHaus Lab &nbsp;·&nbsp; Based on licensed mold assessment by Jonathan Dickler, MRSA #3550, Mold Testing Live, May 24, 2026 &nbsp;·&nbsp; Eurofins Built Environment Testing<br>
+  This guide is not a substitute for professional medical or legal advice. All remediation work in Florida requires licensed contractors.
+</div>
+
+</body>
+</html>
