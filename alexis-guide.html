@@ -3,62 +3,75 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Home Health Action Guide - Alexis Kaufman</title>
+<title>Home Health Action Guide — Alexis Kaufman</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.6; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.7; font-size: 15px; }
   .header { background: #1e293b; color: white; padding: 32px 24px; }
-  .header .logo { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #94a3b8; margin-bottom: 8px; }
-  .header h1 { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
-  .header .meta { font-size: 13px; color: #94a3b8; }
-  .urgent-banner { background: #dc2626; color: white; padding: 16px 24px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
-  .container { max-width: 860px; margin: 0 auto; padding: 24px 16px; }
+  .header .logo { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #94a3b8; margin-bottom: 8px; }
+  .header h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+  .header .meta { font-size: 12px; color: #94a3b8; }
+  .container { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
   .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-  .card h2 { font-size: 18px; font-weight: 700; margin-bottom: 14px; }
-  .card p { font-size: 15px; color: #374151; margin-bottom: 10px; }
+  .card h2 { font-size: 17px; font-weight: 700; margin-bottom: 14px; color: #1e293b; }
+  .card p { color: #374151; margin-bottom: 10px; }
   .card p:last-child { margin-bottom: 0; }
-  .good-news { border-left: 4px solid #22c55e; }
-  .urgent-card { border-left: 4px solid #dc2626; }
-  .warning-card { border-left: 4px solid #f59e0b; }
-  .info-card { border-left: 4px solid #3b82f6; }
-  .data-table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 12px 0; }
-  .data-table th { background: #1e293b; color: white; padding: 10px 12px; text-align: left; font-size: 13px; }
-  .data-table td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
-  .data-table tr:nth-child(even) td { background: #f8fafc; }
-  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-left: 6px; }
-  .tag-red { background: #fee2e2; color: #dc2626; }
-  .tag-yellow { background: #fef3c7; color: #92400e; }
+  .border-green { border-left: 4px solid #22c55e; }
+  .border-red { border-left: 4px solid #dc2626; }
+  .border-amber { border-left: 4px solid #f59e0b; }
+  .border-blue { border-left: 4px solid #3b82f6; }
+  .border-gray { border-left: 4px solid #94a3b8; }
+  .priority-box { background: #1e293b; color: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  .priority-box h2 { font-size: 17px; font-weight: 800; margin-bottom: 14px; color: #f1f5f9; }
+  .priority-box p { color: #cbd5e1; margin-bottom: 10px; font-size: 14px; }
+  .priority-box p:last-child { margin-bottom: 0; }
+  .priority-box strong { color: white; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 14px 0; }
+  table th { background: #1e293b; color: white; padding: 10px 12px; text-align: left; font-size: 12px; letter-spacing: 0.3px; }
+  table td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  table tr:last-child td { border-bottom: none; }
+  table tr:nth-child(even) td { background: #f8fafc; }
+  .tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .tag-red { background: #fee2e2; color: #b91c1c; }
+  .tag-amber { background: #fef3c7; color: #92400e; }
   .tag-green { background: #dcfce7; color: #166534; }
   .tag-blue { background: #dbeafe; color: #1d4ed8; }
-  .step { background: white; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-  .step-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
-  .step-num { border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; flex-shrink: 0; }
-  .step-num.red { background: #dc2626; color: white; }
-  .step-num.amber { background: #f59e0b; color: white; }
-  .step-num.blue { background: #3b82f6; color: white; }
-  .step-num.gray { background: #64748b; color: white; }
-  .step-title h3 { font-size: 17px; font-weight: 700; margin-bottom: 2px; }
+  .tag-gray { background: #f1f5f9; color: #475569; }
+  .finding-label { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-right: 6px; }
+  .confirmed { background: #fee2e2; color: #b91c1c; }
+  .investigate { background: #fef3c7; color: #92400e; }
+  .reassuring { background: #dcfce7; color: #166534; }
+  .step { background: white; border-radius: 12px; padding: 24px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
+  .step-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 14px; }
+  .step-badge { border-radius: 8px; padding: 4px 10px; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+  .badge-now { background: #dc2626; color: white; }
+  .badge-soon { background: #f59e0b; color: white; }
+  .badge-later { background: #3b82f6; color: white; }
+  .step-title h3 { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
   .step-meta { font-size: 12px; color: #64748b; }
-  .checklist { list-style: none; margin: 12px 0; }
-  .checklist li { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
-  .checklist li:last-child { border-bottom: none; }
-  .checklist input[type=checkbox] { margin-top: 3px; flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; }
-  .tell-contractor { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; margin-top: 14px; font-size: 13px; color: #166534; }
-  .tell-contractor strong { display: block; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
-  .warn-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 14px; margin-top: 14px; font-size: 13px; color: #92400e; }
-  .warn-box strong { display: block; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
-  .license-badge { display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600; margin-top: 8px; }
-  .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
-  .photo-item img { width: 100%; border-radius: 8px; object-fit: cover; height: 160px; }
-  .photo-item .caption { font-size: 12px; color: #64748b; margin-top: 6px; line-height: 1.4; }
-  .timeline-row { display: flex; gap: 16px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+  ul.checklist { list-style: none; margin: 12px 0; }
+  ul.checklist li { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; font-size: 14px; border-bottom: 1px solid #f8fafc; color: #374151; }
+  ul.checklist li:last-child { border-bottom: none; }
+  ul.checklist input[type=checkbox] { margin-top: 3px; flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; accent-color: #1e293b; }
+  .script-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; margin-top: 12px; font-size: 13px; color: #166534; }
+  .script-box strong { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; color: #15803d; }
+  .note-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 14px; margin-top: 12px; font-size: 13px; color: #78350f; }
+  .note-box strong { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .license-note { display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 6px; padding: 3px 9px; font-size: 12px; font-weight: 600; margin-top: 10px; }
+  .section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #94a3b8; margin: 28px 0 12px; }
+  .flag-item { padding: 12px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; display: flex; align-items: flex-start; gap: 12px; color: #374151; }
+  .flag-item:last-child { border-bottom: none; }
+  .flag-item strong { display: block; margin-bottom: 3px; color: #1e293b; }
+  .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 14px 0; }
+  .photo-item img { width: 100%; border-radius: 8px; object-fit: cover; height: 150px; border: 1px solid #e2e8f0; }
+  .photo-item .cap { font-size: 12px; color: #64748b; margin-top: 5px; line-height: 1.4; }
+  .timeline-row { display: flex; gap: 16px; padding: 11px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; align-items: flex-start; }
   .timeline-row:last-child { border-bottom: none; }
-  .timeline-week { font-weight: 700; min-width: 90px; color: #1e293b; }
-  .section-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin: 28px 0 12px; }
-  .upsell-item { padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; display: flex; align-items: flex-start; gap: 10px; }
-  .upsell-item:last-child { border-bottom: none; }
-  .footer { text-align: center; font-size: 12px; color: #94a3b8; padding: 32px 24px; border-top: 1px solid #e2e8f0; margin-top: 32px; }
-  @media (max-width: 600px) { .photo-grid { grid-template-columns: 1fr 1fr; } }
+  .timeline-week { font-weight: 700; min-width: 88px; color: #1e293b; padding-top: 1px; }
+  .assumptions-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-top: 16px; font-size: 13px; color: #475569; }
+  .assumptions-box strong { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; color: #64748b; }
+  .footer { text-align: center; font-size: 12px; color: #94a3b8; padding: 32px 24px; border-top: 1px solid #e2e8f0; margin-top: 24px; line-height: 1.8; }
+  @media (max-width: 600px) { .photo-grid { grid-template-columns: 1fr 1fr; } .timeline-week { min-width: 70px; } }
   @media print { * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style>
 </head>
@@ -66,58 +79,74 @@
 
 <div class="header">
   <div class="logo">InHaus Lab</div>
-  <h1>Your Home Health Action Guide</h1>
-  <div class="meta">Alexis Kaufman &nbsp;·&nbsp; 10450 SW 140th Rd, Miami FL 33176 &nbsp;·&nbsp; Assessment: Jonathan Dickler, MRSA #3550, Mold Testing Live, May 24 2026</div>
-</div>
-
-<div class="urgent-banner">
-  🚨 Active mold growth confirmed in both HVAC systems and duct insulation. Trace Stachybotrys detected in baby's room - absent outdoors. Baby due in ~2 months. Start this week.
+  <h1>Home Health Action Guide</h1>
+  <div class="meta">Alexis Kaufman &nbsp;·&nbsp; 10450 SW 140th Rd, Miami FL 33176 &nbsp;·&nbsp; Based on licensed assessment by Jonathan Dickler, MRSA #3550, Mold Testing Live, May 24 2026 &nbsp;·&nbsp; Follow-up lab: Eurofins, June 9 2026</div>
 </div>
 
 <div class="container">
 
-  <!-- THE REAL PICTURE -->
-  <div class="section-label">What the data actually shows</div>
-
-  <div class="card good-news">
-    <h2>✅ The Good News First</h2>
-    <p>The living-space air quality is mostly fine. The outdoor control measured 270 spores/m3, and most rooms came in <strong>below that</strong> - some as low as 27/m3. You do not have a whole-house airborne mold crisis. The family is not breathing heavily contaminated air throughout the home.</p>
-    <p>The problem is concentrated and identifiable: <strong>the HVAC systems, the ductwork, and the wall cavities around the baby bath.</strong> Fix those, and this house is in good shape.</p>
+  <!-- PRIORITY SUMMARY -->
+  <div class="priority-box">
+    <h2>Priority Summary</h2>
+    <p>The open-room air samples do not show a whole-house airborne mold problem at the time of sampling. Most rooms tested at or below outdoor levels — that is reassuring.</p>
+    <p>However, the HVAC system and duct insulation have <strong>confirmed mold growth</strong> from lab-tested surface samples. The baby bath outlet and duct insulation follow-up samples show <strong>elevated and concerning findings</strong> in the nursery area. Trace Stachybotrys was detected in the baby's room and was absent outdoors — a signal that warrants investigation before the room is used as a nursery.</p>
+    <p><strong>Because the baby is due in approximately two months, the nursery area and HVAC/duct work should begin this week.</strong> The nursery should not be occupied until the duct insulation and wall cavity are addressed and independent clearance testing confirms the area is clean.</p>
   </div>
 
-  <div class="card urgent-card">
-    <h2>🚨 The HVAC System - This Is Confirmed, Not Borderline</h2>
-    <p>The surface swabs are the strong signal here. Lab results from Eurofins show active mold growth - not settled dust - on both air handlers, the duct insulation, coils, and drain pans:</p>
-    <table class="data-table" style="margin-top:14px;">
-      <tr><th>Sample Location</th><th>Finding</th><th>Status</th></tr>
-      <tr><td>HVAC Unit 2 - Blower</td><td>Cladosporium, hyphal fragments, elevated spores</td><td><span class="tag tag-red">Active growth</span></td></tr>
-      <tr><td>HVAC Unit 2 - UV Light</td><td>Cladosporium cladosporioides 320,000 CFU, Penicillium chrysogenum, bacteria</td><td><span class="tag tag-red">Active growth</span></td></tr>
-      <tr><td>HVAC Unit 2 - Coil/Insulation</td><td>Mold + bacteria confirmed</td><td><span class="tag tag-red">Active growth</span></td></tr>
-      <tr><td>Attic Duct Exterior</td><td>Mold + bacteria confirmed</td><td><span class="tag tag-red">Active growth</span></td></tr>
-      <tr><td>Guest Bedroom 1 - Duct Register Insulation</td><td>Mold + bacteria confirmed</td><td><span class="tag tag-red">Active growth</span></td></tr>
-      <tr><td>HVAC Unit 1 - Drain Pan</td><td>Mold + bacteria confirmed</td><td><span class="tag tag-red">Active growth</span></td></tr>
-    </table>
-    <p style="margin-top:14px;">Counts of 250,000-620,000 spores/cm2 with high hyphal fragments mean <strong>active, living growth</strong> - not old contamination. Every time the AC runs, both systems are distributing this throughout your home. The ductwork and both units need to come out and be replaced/remediated. This is not optional.</p>
+  <!-- ASSUMPTIONS BOX -->
+  <div class="assumptions-box" style="margin-bottom:20px;">
+    <strong>Scope & Assumptions</strong>
+    This guide is based on lab results, moisture readings, visual inspection findings, and photographs from the licensed mold assessment (May 24 2026) and Eurofins follow-up lab analysis (June 9 2026). Not all areas of the home were sampled. Contractor inspection may identify additional affected areas not covered here. Scope of remediation work should be determined by licensed contractors based on their on-site findings, not solely on this guide.
   </div>
 
-  <div class="card urgent-card">
-    <h2>🚨 The Baby's Room & Master Bedroom - Where the Flags Are</h2>
-    <p>The baby's room air on May 24 measured 93/m3 - <em>below</em> the outdoor baseline of 270. That's reassuring for general room air. But Stachybotrys was detected at trace level (13/m3) and was completely absent outdoors - a signal that water-damaged material exists somewhere in the structure. The June 9 follow-up confirmed it: 5,100/m3 at the outlet and 150,000 spores/cm2 on the duct insulation. The duct insulation is where the active growth lives.</p>
-    <table class="data-table" style="margin-top:14px;">
-      <tr><th>Location</th><th>Total Spores/m3</th><th>Key Finding</th></tr>
-      <tr><td>Outdoor control</td><td>270</td><td>Baseline</td></tr>
-      <tr><td>Living/Dining</td><td>93/m3</td><td><span class="tag tag-green">Below outdoor - fine</span></td></tr>
-      <tr><td>Guest Bedrooms 1 &amp; 2</td><td>27-130/m3</td><td><span class="tag tag-green">Below outdoor - fine</span></td></tr>
-      <tr><td>Play Room</td><td>230/m3 (Pen/Asp 93)</td><td><span class="tag tag-yellow">Pen/Asp 7x outdoor</span></td></tr>
-      <tr><td>Master Bedroom</td><td>230/m3 (Pen/Asp 200)</td><td><span class="tag tag-red">Pen/Asp 15x outdoor - hidden source</span></td></tr>
-      <tr><td>Baby's Room (May 24)</td><td>93/m3 + Stachybotrys 13/m3</td><td><span class="tag tag-yellow">Below outdoor - Stachybotrys absent outdoors</span></td></tr>
-      <tr><td>Baby Outlet (June 9 follow-up)</td><td>5,100/m3</td><td><span class="tag tag-red">19x outdoor - source at wall/duct</span></td></tr>
-      <tr><td>Baby Bath Closet Cavity (June 9)</td><td>520/m3 + Stachybotrys</td><td><span class="tag tag-yellow">Elevated - inspect cavity</span></td></tr>
-      <tr><td>Baby Bath Duct Insulation swab (June 9)</td><td>150,000/cm2 total</td><td><span class="tag tag-red">Active growth confirmed - remove</span></td></tr>
+  <!-- FINDINGS -->
+  <div class="section-label">What the data shows — confirmed vs. investigate</div>
+
+  <div class="card border-red">
+    <h2>🔬 Confirmed Findings — Lab-Verified</h2>
+    <p style="font-size:13px;color:#64748b;margin-bottom:14px;">These findings are directly supported by Eurofins laboratory analysis (AIHA LAP, LLC accredited).</p>
+    <table>
+      <tr><th>Location</th><th>Finding</th><th>Spores/cm² or CFU</th><th>Status</th></tr>
+      <tr><td>HVAC Unit 2 — Coil/Insulation</td><td>Cladosporium + bacteria</td><td>620,000/cm²</td><td><span class="tag tag-red">Confirmed growth</span></td></tr>
+      <tr><td>HVAC Unit 2 — UV Light</td><td>Cladosporium cladosporioides + Penicillium chrysogenum + bacteria</td><td>490,000/cm²</td><td><span class="tag tag-red">Confirmed growth</span></td></tr>
+      <tr><td>Guest Bed 1 — Duct Register Insulation</td><td>Cladosporium + bacteria</td><td>510,000/cm²</td><td><span class="tag tag-red">Confirmed growth</span></td></tr>
+      <tr><td>Attic Duct — Exterior</td><td>Cladosporium + bacteria</td><td>250,000/cm²</td><td><span class="tag tag-red">Confirmed growth</span></td></tr>
+      <tr><td>HVAC Unit 2 — Blower</td><td>Cladosporium, hyphal fragments</td><td>63,000/cm²</td><td><span class="tag tag-red">Confirmed growth</span></td></tr>
+      <tr><td>HVAC Unit 1 — Drain Pan</td><td>Cladosporium + bacteria</td><td>35,000/cm²</td><td><span class="tag tag-red">Confirmed growth</span></td></tr>
+      <tr><td>Baby Bath Duct Insulation</td><td>Cladosporium + bacteria (follow-up, June 9)</td><td>150,000/cm² total</td><td><span class="tag tag-red">Confirmed growth</span></td></tr>
     </table>
-    <p style="margin-top:14px;">The outlet sample at the baby bath registered 5,100/m3 - dramatically higher than the open room air - which points to a concentrated source at or behind the wall and duct penetration. The duct insulation swab confirmed heavy active growth: <strong>150,000 spores/cm² total (99,000 Cladosporium + 51,000 other spores + bacteria)</strong>. That’s the confirmed problem.</p>
-    <p style="margin-top:10px;"><strong>Stachybotrys</strong> was detected at trace level - a single spore at the lab's minimum detectable floor - in the baby's room and closet cavity air, absent outdoors. Stachybotrys spores are heavy and don't travel easily in air, so even a trace indoor detection when it's absent outside is a signal that water-damaged material exists somewhere in the structure. The wall cavity should be opened and inspected to confirm.</p>
-    <p style="margin-top:10px;"><strong>Talk to your pediatrician about this before the baby arrives.</strong> Show them the lab results.</p>
+    <p style="margin-top:14px;font-size:14px;">High spore counts combined with elevated hyphal/fungal fragments indicate active living growth — not historical contamination. Because these materials are in or adjacent to the HVAC/duct system, operation of the system could distribute spores or fragments into occupied spaces. <strong>The HVAC system should be evaluated and remediated under containment before normal use continues.</strong></p>
+  </div>
+
+  <div class="card border-amber">
+    <h2>⚠️ High-Priority Signals — Require Contractor Investigation</h2>
+    <p style="font-size:13px;color:#64748b;margin-bottom:14px;">These findings are significant and warrant prompt investigation, but scope of remediation should be determined by licensed contractors based on on-site assessment.</p>
+    <table>
+      <tr><th>Location</th><th>Finding</th><th>Value</th><th>Status</th></tr>
+      <tr><td>Baby's Room (open air, May 24)</td><td>Trace Stachybotrys — 1 raw count at lab minimum detectable floor. Absent outdoors.</td><td>13/m³</td><td><span class="tag tag-amber">Investigate</span></td></tr>
+      <tr><td>Baby Outlet — wall/duct penetration (June 9)</td><td>Elevated spore count at outlet vs. open room air</td><td>5,100/m³</td><td><span class="tag tag-amber">Investigate</span></td></tr>
+      <tr><td>Baby Bath Closet Cavity (June 9)</td><td>Trace Stachybotrys — 1 raw count. Absent outdoors.</td><td>520/m³ + Stachybotrys 13/m³</td><td><span class="tag tag-amber">Investigate</span></td></tr>
+      <tr><td>Master Bedroom (open air, May 24)</td><td>Pen/Asp elevated vs. outdoor at genus level</td><td>200/m³ Pen/Asp (15x outdoor)</td><td><span class="tag tag-amber">Investigate</span></td></tr>
+      <tr><td>Attic wood framing</td><td>Visible staining + fuzzy growth noted in photos. 72.7% RH confirmed.</td><td>72.7% RH</td><td><span class="tag tag-amber">Investigate</span></td></tr>
+      <tr><td>Bathtub access panel</td><td>Staining noted — possible slow plumbing leak</td><td>—</td><td><span class="tag tag-amber">Investigate</span></td></tr>
+      <tr><td>Bathroom walls near toilet</td><td>Moisture readings 91–100 recorded</td><td>91–100 (meter)</td><td><span class="tag tag-amber">Investigate</span></td></tr>
+    </table>
+    <p style="margin-top:14px;font-size:14px;">On Stachybotrys specifically: trace detection at the lab's minimum detectable floor does not by itself prove active growth in the room air. However, Stachybotrys spores are heavy and do not travel easily in air — detecting any indoors when absent outdoors is a meaningful signal of possible water-damaged material nearby. <strong>Given the baby's imminent arrival, this should be treated as a high-priority signal and confirmed before the nursery is used.</strong></p>
+  </div>
+
+  <div class="card border-green">
+    <h2>✅ Reassuring Findings</h2>
+    <table>
+      <tr><th>Location</th><th>Total Spores/m³</th><th>vs. Outdoor (270/m³)</th><th>Interpretation</th></tr>
+      <tr><td>Outdoor control</td><td>270</td><td>— Baseline</td><td>Normal Miami outdoor air</td></tr>
+      <tr><td>Living/Dining</td><td>93</td><td><span class="tag tag-green">Below outdoor</span></td><td>Reassuring at time of sampling</td></tr>
+      <tr><td>Guest Bedroom 1</td><td>27</td><td><span class="tag tag-green">Below outdoor</span></td><td>Reassuring at time of sampling</td></tr>
+      <tr><td>Guest Bedroom 2</td><td>130</td><td><span class="tag tag-green">Below outdoor</span></td><td>Reassuring at time of sampling</td></tr>
+      <tr><td>Kitchen</td><td>230</td><td><span class="tag tag-green">Near outdoor</span></td><td>Basidio dominant — likely outdoor-derived</td></tr>
+      <tr><td>Play Room</td><td>230 (Pen/Asp 93)</td><td><span class="tag tag-amber">Pen/Asp 7x outdoor</span></td><td>Moderate Pen/Asp elevation — monitor</td></tr>
+      <tr><td>Baby's Room (open air)</td><td>93</td><td><span class="tag tag-green">Below outdoor</span></td><td>Open-room air reassuring — but see signal above</td></tr>
+    </table>
+    <p style="margin-top:14px;font-size:14px;"><strong>Note:</strong> Indoor levels below outdoor are generally reassuring, but they do not rule out hidden localized sources — especially when HVAC components, wall cavities, or moisture readings point to a problem. These results reflect conditions at the time of sampling only.</p>
   </div>
 
   <!-- PHOTOS -->
@@ -127,56 +156,56 @@
     <h2>HVAC & Ductwork</h2>
     <div class="photo-grid">
       <div class="photo-item">
-        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/01-hvac-duct-interior-mold.jpg" alt="HVAC duct interior mold">
-        <div class="caption">Interior of HVAC duct showing rust, dark discoloration and mold growth on surfaces</div>
+        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/01-hvac-duct-interior-mold.jpg" alt="HVAC duct interior">
+        <div class="cap">HVAC duct interior — dark discoloration and mold growth on surfaces</div>
       </div>
       <div class="photo-item">
-        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/02-hvac-exterior-deterioration.jpg" alt="HVAC exterior deterioration">
-        <div class="caption">Exterior AC lines with deteriorated insulation jacket, organic growth, and debris at base</div>
+        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/02-hvac-exterior-deterioration.jpg" alt="HVAC exterior">
+        <div class="cap">Exterior AC lines — deteriorated insulation jacket with organic growth at base</div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h2>Attic - Mold Growth & Moisture</h2>
+    <h2>Attic — Moisture & Visual Findings</h2>
     <div class="photo-grid">
       <div class="photo-item">
-        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/07-attic-mold-growth-on-framing.jpg" alt="Attic mold on framing">
-        <div class="caption">Visible fuzzy mold growth on attic framing lumber - confirmed active growth</div>
+        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/07-attic-mold-growth-on-framing.jpg" alt="Attic framing">
+        <div class="cap">Attic framing — visible discoloration and suspected growth on lumber</div>
       </div>
       <div class="photo-item">
-        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/08-attic-mold-growth-insulation.jpg" alt="Attic mold on insulation">
-        <div class="caption">White mold growth and dark staining above disturbed insulation in attic</div>
+        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/08-attic-mold-growth-insulation.jpg" alt="Attic insulation">
+        <div class="cap">Attic — visible discoloration above disturbed insulation</div>
       </div>
       <div class="photo-item">
         <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/09-attic-water-staining-framing.jpg" alt="Attic water staining">
-        <div class="caption">Water staining on framing from previous roof leak - damaged materials remain</div>
+        <div class="cap">Attic framing — water staining from previous roof leak; damaged materials remain</div>
       </div>
       <div class="photo-item">
-        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/10-attic-humidity-reading-72pct.jpg" alt="Attic humidity 72%">
-        <div class="caption">Attic humidity reading: 72.7% RH at 83°F - well above the 60% threshold for mold growth</div>
+        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/10-attic-humidity-reading-72pct.jpg" alt="Attic humidity">
+        <div class="cap">Attic RH reading: 72.7% at 83°F — above the 60% threshold at which mold growth is supported</div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h2>Moisture Readings & Water Damage</h2>
+    <h2>Moisture Readings</h2>
     <div class="photo-grid">
       <div class="photo-item">
-        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/04-baseboard-moisture-reading-100.jpg" alt="Baseboard moisture reading 100">
-        <div class="caption">Moisture meter at baseboard reading ~100 - active or recent wetting in wall</div>
+        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/04-baseboard-moisture-reading-100.jpg" alt="Baseboard moisture">
+        <div class="cap">Baseboard moisture reading ~100 — active or recent wetting in wall</div>
       </div>
       <div class="photo-item">
-        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/05-bathroom-tile-moisture-reading-100.jpg" alt="Bathroom tile moisture 100">
-        <div class="caption">Bathroom tile moisture reading 100 near plumbing - significant active leak source</div>
+        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/05-bathroom-tile-moisture-reading-100.jpg" alt="Bathroom tile moisture">
+        <div class="cap">Bathroom tile moisture reading 100 near plumbing — warrants plumbing inspection</div>
       </div>
       <div class="photo-item">
-        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/06-toilet-wall-moisture-reading-91.jpg" alt="Toilet wall moisture 91">
-        <div class="caption">Moisture reading of 91.7 behind toilet - likely active plumbing leak</div>
+        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/06-toilet-wall-moisture-reading-91.jpg" alt="Toilet wall moisture">
+        <div class="cap">Moisture reading 91.7 behind toilet — possible plumbing leak source</div>
       </div>
       <div class="photo-item">
-        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/03-wall-moisture-paint-blistering.jpg" alt="Wall moisture paint blistering">
-        <div class="caption">Paint blistering near plumbing connection - classic sign of moisture behind the wall</div>
+        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/03-wall-moisture-paint-blistering.jpg" alt="Paint blistering">
+        <div class="cap">Paint blistering near plumbing — consistent with moisture behind the wall</div>
       </div>
     </div>
   </div>
@@ -185,158 +214,124 @@
     <h2>Exterior & Drainage</h2>
     <div class="photo-grid">
       <div class="photo-item">
-        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/12-exterior-ground-slope-toward-home.jpg" alt="Ground slope toward home">
-        <div class="caption">Ground slopes toward the foundation - water runs toward the house instead of away</div>
+        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/12-exterior-ground-slope-toward-home.jpg" alt="Ground slope">
+        <div class="cap">Ground slopes toward foundation — water runs toward the home</div>
       </div>
       <div class="photo-item">
-        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/11-exterior-drainage-downspout.jpg" alt="Exterior drainage">
-        <div class="caption">Downspout draining close to foundation - needs to be extended further from home</div>
+        <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/11-exterior-drainage-downspout.jpg" alt="Drainage">
+        <div class="cap">Downspout terminating close to foundation</div>
       </div>
       <div class="photo-item">
         <img src="https://inhauslab.github.io/inhaus-review/alexis-photos/13-bathroom-poor-ventilation-condensation.jpg" alt="Bathroom condensation">
-        <div class="caption">Heavy condensation on shower glass indicates poor bathroom ventilation - fans currently vent into attic, not outside</div>
+        <div class="cap">Heavy condensation on shower glass — poor bathroom ventilation; fans currently vent into attic</div>
       </div>
     </div>
   </div>
 
-  <!-- INDOOR OUTDOOR EXPLAINER -->
-  <div class="section-label">Understanding the air sample results</div>
-
-  <div class="card info-card">
-    <h2>🌬️ Indoor vs. Outdoor Spore Counts - Why It Matters</h2>
-    <p>When measuring indoor air quality for mold, the outdoor reading is your baseline - it tells you what the air naturally contains in your environment before it enters the home. In Miami, outdoor air always contains some mold spores. That's normal. The question is: <strong>is the indoor air significantly worse than outside?</strong></p>
-    <p style="margin-top:10px;">The outdoor control in this assessment measured <strong>270 spores/m3</strong>. Here's what that means room by room:</p>
-    <table class="data-table" style="margin-top:12px;">
-      <tr><th>Location</th><th>Spores/m3</th><th>vs. Outdoor</th><th>What It Means</th></tr>
-      <tr><td>Outdoor control</td><td>270</td><td>- Baseline</td><td>Normal Miami outdoor air</td></tr>
-      <tr><td>Living/Dining</td><td>93/m3</td><td><span class="tag tag-green">Below outdoor</span></td><td>Air is clean - no indoor source</td></tr>
-      <tr><td>Guest Bedroom 1</td><td>27/m3</td><td><span class="tag tag-green">Below outdoor</span></td><td>Air is clean - no indoor source</td></tr>
-      <tr><td>Guest Bedroom 2</td><td>130/m3</td><td><span class="tag tag-green">Below outdoor</span></td><td>Air is clean - no indoor source</td></tr>
-      <tr><td>Kitchen</td><td>230/m3</td><td><span class="tag tag-green">Near outdoor</span></td><td>Basidio dominant - likely outdoor-derived, not concerning</td></tr>
-      <tr><td>Play Room</td><td>230/m3 (Pen/Asp 93)</td><td><span class="tag tag-yellow">Pen/Asp 7x outdoor</span></td><td>⚠️ Moderate elevation for Pen/Asp - worth monitoring</td></tr>
-      <tr><td>Master Bedroom</td><td>230/m3 (Pen/Asp 200)</td><td><span class="tag tag-red">Pen/Asp 15x outdoor</span></td><td>🚨 Hidden source nearby - investigate wall cavities</td></tr>
-      <tr><td>Baby's Room (May 24)</td><td>93/m3 + Stachybotrys 13/m3</td><td><span class="tag tag-yellow">Below outdoor total - Stachybotrys absent outdoors</span></td><td>⚠️ Room air reassuring; Stachybotrys trace signals hidden water damage</td></tr>
-      <tr><td>Baby Outlet (June 9)</td><td>5,100/m3</td><td><span class="tag tag-red">19x outdoor</span></td><td>🚨 Concentrated source at wall/duct penetration</td></tr>
-      <tr><td>Baby Bath Closet Cavity (June 9)</td><td>520/m3 + Stachybotrys 13/m3</td><td><span class="tag tag-yellow">Elevated</span></td><td>⚠️ Stachybotrys confirmed - inspect cavity</td></tr>
-      <tr><td>Baby Bath Duct Insulation swab (June 9)</td><td>150,000/cm2<br><small>99k Clado + 51k other + bacteria</small></td><td><span class="tag tag-red">Active growth confirmed</span></td><td>🚨 Must be removed</td></tr>
-    </table>
-    <p style="margin-top:14px;"><strong>The key insight:</strong> When indoor air is <em>lower</em> than outdoor, it means there is no significant mold source in that room. When indoor air is dramatically <em>higher</em> than outdoor - especially for a specific mold genus - it points to an active source growing somewhere in that space.</p>
-    <p style="margin-top:10px;">Two rooms stand out. The master bedroom had Pen/Asp at 200/m3 vs. 13/m3 outdoors - 15x amplification for that genus, pointing to a hidden source. The baby's room total (93/m3) was below outdoor, which is reassuring - but Stachybotrys was detected at 13/m3 and was completely absent outdoors. Stachybotrys spores are heavy and sticky - they don't travel easily in air - so finding any indoors when there's none outside is a near-certain indicator of water-damaged material somewhere in the structure.</p>
-    <p style="margin-top:10px;">Stachybotrys was detected at trace level - a single spore, at the lab's minimum detectable floor - in the baby's room and closet cavity air, and was absent outdoors. Stachybotrys spores are heavy and don't travel easily through air, so even a trace indoor detection when it's absent outside suggests water-damaged material somewhere in the structure. It's a signal worth taking seriously, but it's a trace detection - not confirmed active surface growth in those samples.
-    <p style="margin-top:10px;">This is also why the HVAC contamination is so serious even though the room air looks relatively normal: the surface swabs on the HVAC components showed counts of 250,000-620,000 spores/cm2. The mold is concentrated on those surfaces right now. If left untreated, those counts will keep building and the room air numbers will follow.</p>
-  </div>
-
   <!-- ROOT CAUSES -->
-  <div class="section-label">Root causes - fix these or it comes back</div>
+  <div class="section-label">Moisture sources — fix these or findings may recur</div>
 
-  <div class="card warning-card">
-    <h2>⚠️ Fix Moisture First - Everything Else Depends On This</h2>
-    <p>Mold is a symptom. Moisture is the disease. The assessor documented the sources clearly:</p>
-    <table class="data-table" style="margin-top:12px;">
-      <tr><th>Moisture Source</th><th>What to do</th></tr>
-      <tr><td>Roof/chimney leak - damaged materials still in attic</td><td>Roof inspection + repair before attic remediation</td></tr>
-      <tr><td>HVAC closet leak</td><td>Plumber - fix before HVAC work begins</td></tr>
-      <tr><td>Attic condensation - no ridge vents, blocked soffits</td><td>Attic ventilation improvement + attic dehumidifier</td></tr>
-      <tr><td>Bathroom fans venting into attic</td><td>Reroute all fans to vent outside through roof</td></tr>
-      <tr><td>Gaps in caulking - showers, sinks, tubs</td><td>Re-caulk all wet areas with mold-resistant caulk</td></tr>
-      <tr><td>Ground slopes toward foundation</td><td>Regrade + extend downspouts</td></tr>
-      <tr><td>No whole-home dehumidification - Miami climate</td><td>Central dehumidifier integrated with HVAC</td></tr>
+  <div class="card border-amber">
+    <h2>⚠️ Address Moisture Sources First</h2>
+    <p>Mold requires moisture to grow. If moisture sources are not addressed before or alongside remediation, conditions for recurrence will remain. The following were documented by the assessor:</p>
+    <table style="margin-top:14px;">
+      <tr><th>Moisture Source</th><th>Recommended Action</th></tr>
+      <tr><td>Roof/chimney — previous leak, damaged materials remain in attic</td><td>Roof inspection and repair before attic remediation begins</td></tr>
+      <tr><td>HVAC area — possible water intrusion</td><td>Plumber to inspect before HVAC work begins</td></tr>
+      <tr><td>Attic — no ridge vents, blocked soffits, 72.7% RH</td><td>HVAC contractor to evaluate ventilation and humidity control options</td></tr>
+      <tr><td>Bathroom exhaust fans venting into attic</td><td>Reroute all fans to vent outside through roof</td></tr>
+      <tr><td>Gaps in caulking — showers, sinks, tubs</td><td>Re-caulk all wet surfaces with mold-resistant caulk</td></tr>
+      <tr><td>Ground slopes toward foundation; drainage pans compromised</td><td>Regrade + extend downspouts away from foundation</td></tr>
+      <tr><td>No active dehumidification — Miami climate</td><td>Evaluate whole-home dehumidification with HVAC contractor</td></tr>
     </table>
   </div>
 
   <!-- ACTION CHECKLIST -->
-  <div class="section-label">Your action checklist - work through in order</div>
+  <div class="section-label">Action checklist — do first / do next / do later</div>
 
   <!-- Step 1 -->
   <div class="step">
     <div class="step-header">
-      <div class="step-num red">1</div>
+      <div class="step-badge badge-now">DO FIRST</div>
       <div class="step-title">
-        <h3>Baby's Room - This Week</h3>
-        <div class="step-meta">👷 Licensed MRSR Mold Remediator &nbsp;·&nbsp; ⏱ Immediately</div>
+        <h3>Nursery Area — Duct Insulation & Wall Cavity</h3>
+        <div class="step-meta">👷 Licensed MRSR mold remediator &nbsp;·&nbsp; ⏱ This week</div>
       </div>
     </div>
-    <p style="font-size:14px;color:#374151;margin-bottom:12px;">150,000 spores/cm² total (99,000 Cladosporium + bacteria) confirmed on the duct insulation feeding this room. Trace Stachybotrys detected in the baby’s room air on May 24 — absent outdoors — signals hidden water-damaged material in the structure. The June 9 follow-up outlet sample at 5,100/m³ confirms the source is at the wall/duct penetration. This is the highest-urgency item. Your baby should not sleep in this room until clearance testing confirms it is clean.</p>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">The baby bath duct insulation returned 150,000 spores/cm² with confirmed active Cladosporium and bacteria. Trace Stachybotrys was detected in the room air, absent outdoors. The outlet sample at 5,100/m³ is significantly elevated relative to the open room. Given the baby's arrival in approximately two months, this area should be addressed before the room is used as a nursery.</p>
     <ul class="checklist">
-      <li><input type="checkbox"> Remove and dispose of all duct insulation feeding the nursery under proper containment</li>
-      <li><input type="checkbox"> Open and inspect the baby bath wall cavity - remove all mold-affected material</li>
-      <li><input type="checkbox"> Run a HEPA air purifier in the nursery on HIGH continuously until all work is complete</li>
-      <li><input type="checkbox"> Talk to your pediatrician - show them the Stachybotrys finding and lab results</li>
-      <li><input type="checkbox"> Do not use as nursery until written clearance from independent assessor</li>
+      <li><input type="checkbox"> Remove and dispose of contaminated duct insulation feeding the nursery under proper containment</li>
+      <li><input type="checkbox"> Have the contractor inspect and assess the baby bath wall cavity — scope of removal to be determined on-site</li>
+      <li><input type="checkbox"> Run a HEPA air purifier in the nursery on HIGH until all work is complete and clearance testing passes</li>
+      <li><input type="checkbox"> Talk to your pediatrician — share the Stachybotrys finding and lab results</li>
+      <li><input type="checkbox"> Do not use the room as a nursery until written clearance from an independent MRSA assessor</li>
     </ul>
-    <div class="tell-contractor">
+    <div class="script-box">
       <strong>What to tell the contractor</strong>
-      "The baby bath duct insulation confirmed 150,000 spores/cm2 total including 99,000 Cladosporium plus bacteria. Stachybotrys was detected at trace level in the closet cavity air, absent outdoors. I need the duct insulation removed and the wall/closet cavity inspected under proper containment with negative air pressure. This is the first priority."
+      "The baby bath duct insulation confirmed 150,000 spores/cm² of active mold. Trace Stachybotrys was detected in the room air and was absent outdoors. I need the duct insulation removed and the wall cavity inspected under proper containment. The baby is due in two months — this is the first priority."
     </div>
-    <div class="license-badge">⚠️ Verify: Florida MRSR License - required by law</div>
+    <div class="license-note">⚠️ Verify Florida MRSR license before hiring — required by law</div>
   </div>
 
   <!-- Step 2 -->
   <div class="step">
     <div class="step-header">
-      <div class="step-num red">2</div>
+      <div class="step-badge badge-now">DO FIRST</div>
       <div class="step-title">
-        <h3>Master Bedroom - Hidden Source Investigation</h3>
-        <div class="step-meta">👷 Licensed MRSR Mold Remediator &nbsp;·&nbsp; ⏱ Same time as Step 1</div>
+        <h3>HVAC System — Stop Normal Operation, Begin Remediation</h3>
+        <div class="step-meta">👷 MRSR contractor + HVAC contractor &nbsp;·&nbsp; ⏱ Weeks 1–3</div>
       </div>
     </div>
-    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Pen/Asp in the master bedroom measured 200/m³ vs. 13/m³ outdoors — 15x above outdoor levels for that genus — pointing to a hidden growth source nearby. This needs to be found and addressed - likely in a wall cavity, under a window, or near a plumbing penetration.</p>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">All six HVAC surface swabs confirmed active mold growth. Because these materials are in the duct system, operation could distribute spores or fragments into occupied spaces. The EPA states: <em>"Do not run the HVAC system if you know or suspect it is contaminated with mold — it could spread mold throughout the building."</em> The HVAC remediation and duct/insulation work should be done simultaneously under one containment setup.</p>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;font-weight:600;">Contaminated porous duct insulation and flex duct should be removed and replaced. Air handlers, coils, blower assemblies, drain pans, and adjacent affected materials should be professionally evaluated and remediated or replaced as determined by the licensed contractors based on their on-site findings.</p>
     <ul class="checklist">
-      <li><input type="checkbox"> Inspect walls around master bedroom - especially below windows and near plumbing</li>
-      <li><input type="checkbox"> Use moisture meter to identify active wet spots</li>
-      <li><input type="checkbox"> Open any identified wet wall cavities and remove mold-affected material</li>
-      <li><input type="checkbox"> Fix the moisture source before closing up walls</li>
+      <li><input type="checkbox"> Do not operate the HVAC system normally until remediation is complete</li>
+      <li><input type="checkbox"> Contractor to assess full extent of contamination — scope of duct replacement based on inspection findings</li>
+      <li><input type="checkbox"> Remove and replace all lab-confirmed and visibly contaminated porous duct insulation/flex duct</li>
+      <li><input type="checkbox"> Remediate both HVAC units: coils, blower assemblies, drain pans, UV light components</li>
+      <li><input type="checkbox"> Assess and address mold-damaged drywall behind HVAC Unit 2</li>
+      <li><input type="checkbox"> All work under proper containment — sealed work area, negative air pressure, HEPA filtration</li>
+      <li><input type="checkbox"> Restore-grade cleanup before containment is removed</li>
     </ul>
+    <div class="script-box">
+      <strong>What to tell the contractor</strong>
+      "All six HVAC surface swabs confirmed active mold. I need the HVAC units remediated and contaminated duct insulation removed and replaced — done simultaneously under one containment setup. Please assess the full extent and advise on scope of duct replacement based on what you find on-site."
+    </div>
   </div>
 
   <!-- Step 3 -->
   <div class="step">
     <div class="step-header">
-      <div class="step-num red">3</div>
+      <div class="step-badge badge-now">DO FIRST</div>
       <div class="step-title">
-        <h3>HVAC Remediation + Full Duct Replacement - Done Together</h3>
-        <div class="step-meta">👷 MRSR Contractor + HVAC Contractor &nbsp;·&nbsp; ⏱ Weeks 2-3</div>
+        <h3>Master Bedroom — Investigate Hidden Source</h3>
+        <div class="step-meta">👷 MRSR contractor &nbsp;·&nbsp; ⏱ Same time as Step 1–2</div>
       </div>
     </div>
-    <p style="font-size:14px;color:#374151;margin-bottom:12px;">These two jobs must happen simultaneously under one containment setup. Remediating the units and replacing the ductwork is one operation - you don't replace clean ducts and then blow mold through them cleaning the units, and you don't clean the units with old contaminated ducts still attached.</p>
-    <strong style="font-size:13px;display:block;margin-bottom:6px;">HVAC Unit Remediation:</strong>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Master bedroom Pen/Asp measured 200/m³ vs. 13/m³ outdoors — 15x above outdoor levels for that genus. This is a meaningful signal of a localized source nearby, likely a wall cavity, window leak, or plumbing penetration. The contractor should inspect and assess.</p>
     <ul class="checklist">
-      <li><input type="checkbox"> Professional cleaning and disinfection of both evaporator coils</li>
-      <li><input type="checkbox"> Clean and disinfect both blower assemblies</li>
-      <li><input type="checkbox"> Clean and disinfect both drain pans</li>
-      <li><input type="checkbox"> Inspect and treat UV light components on both units</li>
-      <li><input type="checkbox"> Remove mold-damaged drywall behind HVAC Unit 2</li>
+      <li><input type="checkbox"> Inspect walls, window sills, and plumbing areas in master bedroom with moisture meter</li>
+      <li><input type="checkbox"> Identify and address any active wet areas found</li>
+      <li><input type="checkbox"> Scope of remediation to be determined by contractor based on findings</li>
     </ul>
-    <strong style="font-size:13px;display:block;margin:12px 0 6px;">Duct Replacement (same job, same containment):</strong>
-    <ul class="checklist">
-      <li><input type="checkbox"> Remove and dispose of ALL existing flexible ductwork on both systems</li>
-      <li><input type="checkbox"> Replace all supply plenums on both units</li>
-      <li><input type="checkbox"> Install new R-8 ductwork (antimicrobial is a reasonable upgrade - see note on upsells below)</li>
-      <li><input type="checkbox"> Remove and replace all duct insulation in attic area</li>
-      <li><input type="checkbox"> Restoration-grade cleanup before containment is removed</li>
-    </ul>
-    <div class="tell-contractor">
-      <strong>What to tell the contractor</strong>
-      "I need HVAC remediation and full duct replacement done at the same time under one containment setup. Not cleaning - replacement. Do not replace ducts before the units are remediated, and do not remediate the units with old ductwork still in place."
-    </div>
   </div>
 
   <!-- Step 4 -->
   <div class="step">
     <div class="step-header">
-      <div class="step-num amber">4</div>
+      <div class="step-badge badge-soon">DO NEXT</div>
       <div class="step-title">
         <h3>Fix All Bathroom Ventilation</h3>
-        <div class="step-meta">👷 Licensed Electrician or HVAC Contractor &nbsp;·&nbsp; ⏱ Weeks 2-3</div>
+        <div class="step-meta">👷 Licensed electrician or HVAC contractor &nbsp;·&nbsp; ⏱ Weeks 2–3</div>
       </div>
     </div>
-    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Your bathroom fans currently vent into the attic - pumping warm humid air straight into the space where your HVAC equipment lives. This is a major driver of the attic humidity problem (72% RH confirmed).</p>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Bathroom exhaust fans are currently venting into the attic — pumping humid air directly into the space where HVAC equipment lives. The attic measured 72.7% RH; this is a contributing factor. Fans must vent to the outside.</p>
     <ul class="checklist">
       <li><input type="checkbox"> Reroute ALL bathroom exhaust fans to vent through the roof to the outside</li>
-      <li><input type="checkbox"> Verify every bathroom has a working exhaust fan - install where missing</li>
-      <li><input type="checkbox"> All vent runs must terminate outside with an exterior vent cap - not into the attic</li>
+      <li><input type="checkbox"> Verify every bathroom has a working exhaust fan — install where missing</li>
+      <li><input type="checkbox"> All vent runs must terminate outside with an exterior cap — not into the attic</li>
     </ul>
-    <div class="tell-contractor">
+    <div class="script-box">
       <strong>What to tell the contractor</strong>
       "Every bathroom exhaust fan must vent directly outside through the roof. None should terminate in the attic. Check all existing runs and re-route any that don't exit the building."
     </div>
@@ -345,94 +340,91 @@
   <!-- Step 5 -->
   <div class="step">
     <div class="step-header">
-      <div class="step-num amber">5</div>
+      <div class="step-badge badge-soon">DO NEXT</div>
       <div class="step-title">
-        <h3>Re-Caulk All Bathrooms and Kitchen</h3>
-        <div class="step-meta">👷 Plumber first, then handyman &nbsp;·&nbsp; ⏱ Weeks 2-3</div>
+        <h3>Check for Plumbing Leaks & Re-Caulk All Wet Surfaces</h3>
+        <div class="step-meta">👷 Plumber first, then handyman/contractor &nbsp;·&nbsp; ⏱ Weeks 2–3</div>
       </div>
     </div>
-    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Moisture readings of 91-100 were recorded near the toilet and bathroom tile - likely an active plumbing leak. Fix the leak first, then seal everything. This step is not cosmetic - failed caulking is one of the most common reasons mold returns after remediation. Water gets into the wall through a hairline gap, sits behind tile or drywall, and starts growing all over again. Every wet surface in this home needs to be properly sealed.</p>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Moisture readings of 91–100 were recorded near the toilet and bathroom tile. The bathtub access panel showed staining consistent with a slow leak. Fix any active leaks before caulking — sealing over an active leak traps moisture and accelerates damage.</p>
     <ul class="checklist">
-      <li><input type="checkbox"> Plumber inspects bathtub access panel and toilet base - moisture readings of 91-100 indicate active leak. Fix before any caulking.</li>
-      <li><input type="checkbox"> Check under every sink in every bathroom and kitchen for slow drips or staining</li>
-      <li><input type="checkbox"> Remove ALL old caulk from every shower - floor edges, wall seams, corners, door frames, fixtures, faucet bases</li>
-      <li><input type="checkbox"> Remove and replace caulk around all bathtubs - full perimeter, including where tub meets wall and floor</li>
-      <li><input type="checkbox"> Re-caulk all sink countertops, backsplashes, and faucet bases in every bathroom and kitchen</li>
-      <li><input type="checkbox"> Re-caulk around any window sills in bathrooms - moisture readings flagged a window at 73% moisture</li>
-      <li><input type="checkbox"> Inspect toilet bases - re-caulk or replace wax seal if moisture is present</li>
-      <li><input type="checkbox"> Use mold-resistant, 100% silicone caulk throughout - not standard white caulk</li>
-      <li><input type="checkbox"> Allow all caulk to fully cure before running water over it (typically 24 hours)</li>
+      <li><input type="checkbox"> Plumber inspects bathtub access panel, toilet base, and any areas with high moisture readings</li>
+      <li><input type="checkbox"> Fix any identified leaks before caulking</li>
+      <li><input type="checkbox"> Remove and replace all caulk in every shower — floor edges, wall seams, corners, door frames, faucet bases</li>
+      <li><input type="checkbox"> Re-caulk all bathtub perimeters, sink countertops, backsplashes, and faucet bases</li>
+      <li><input type="checkbox"> Re-caulk bathroom window sills where moisture was flagged</li>
+      <li><input type="checkbox"> Check under all sinks for slow drips — repair before caulking</li>
+      <li><input type="checkbox"> Use 100% silicone mold-resistant caulk throughout</li>
     </ul>
-    <div class="warn-box">
+    <div class="note-box">
       <strong>Why this matters</strong>
-      In Miami's humidity, any gap where water contacts a porous surface is a future mold site. Tile grout and caulk degrade over time - in a home with confirmed moisture problems, treat every bathroom and kitchen as a potential leak point until proven otherwise. This is cheap work that has an outsized impact on preventing recurrence.
+      Gaps in caulking are one of the most common reasons mold returns after remediation. Water enters through a hairline gap, sits behind tile or drywall, and creates a new moisture source. Every wet surface in this home should be confirmed watertight.
     </div>
   </div>
 
   <!-- Step 6 -->
   <div class="step">
     <div class="step-header">
-      <div class="step-num amber">6</div>
+      <div class="step-badge badge-soon">DO NEXT</div>
       <div class="step-title">
-        <h3>Attic - Roof Repair, Mold Remediation & Insulation Replacement</h3>
-        <div class="step-meta">👷 Roofer + MRSR Contractor + Insulation Contractor &nbsp;·&nbsp; ⏱ Weeks 3-5, in sequence</div>
+        <h3>Evaluate Whole-Home Dehumidification</h3>
+        <div class="step-meta">👷 HVAC contractor &nbsp;·&nbsp; ⏱ As part of HVAC work</div>
       </div>
     </div>
-    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Three separate contractors, done in strict order. The roof must be fixed before attic remediation begins - otherwise new moisture will undo the work. Insulation goes back in only after clearance testing passes.</p>
-    <strong style="font-size:13px;display:block;margin-bottom:6px;">Step A - Roofer first:</strong>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">EPA guidance states indoor RH should be kept below 60%, ideally 30–50%. The attic measured 72.7%. In Miami's climate, active dehumidification is important for long-term mold prevention. Have your HVAC contractor evaluate the right approach for this home's layout.</p>
     <ul class="checklist">
-      <li><input type="checkbox"> Inspect and water-test chimney flashing and surrounding roof</li>
-      <li><input type="checkbox"> Repair all identified leak points - get written confirmation before attic work begins</li>
+      <li><input type="checkbox"> HVAC contractor evaluates whole-home dehumidification options — goal is to maintain indoor RH below 60%, ideally 30–50%</li>
+      <li><input type="checkbox"> Evaluate attic humidity control options — may include dehumidification, ventilation improvements, or both depending on attic type (vented/unvented)</li>
+      <li><input type="checkbox"> If whole-home system is installed, set to run continuously — not on auto mode</li>
     </ul>
-    <strong style="font-size:13px;display:block;margin:12px 0 6px;">Step B - Mold remediator:</strong>
-    <ul class="checklist">
-      <li><input type="checkbox"> Remove ALL mold-contaminated insulation - do not clean it, remove it</li>
-      <li><input type="checkbox"> Treat all affected wood components (rafters, decking, framing)</li>
-      <li><input type="checkbox"> Remove 2 feet past any visible mold or staining</li>
-      <li><input type="checkbox"> Proper containment and negative air pressure throughout</li>
-      <li><input type="checkbox"> Improve attic ventilation - address blocked soffits and lack of ridge vents</li>
-    </ul>
-    <strong style="font-size:13px;display:block;margin:12px 0 6px;">Step C - Insulation contractor (after clearance testing passes):</strong>
-    <ul class="checklist">
-      <li><input type="checkbox"> Replace all removed insulation with moisture-resistant product appropriate for Florida climate</li>
-      <li><input type="checkbox"> Do not install until written clearance from independent MRSA assessor</li>
-    </ul>
+    <div class="note-box">
+      <strong>On interim measures</strong>
+      Portable HEPA air purifiers can be a useful temporary risk-reduction measure while remediation is underway. They are not a substitute for source removal, moisture correction, HVAC remediation, or clearance testing — but running one in the nursery on high until work is complete is a reasonable precaution.
+    </div>
   </div>
 
   <!-- Step 7 -->
   <div class="step">
     <div class="step-header">
-      <div class="step-num amber">7</div>
+      <div class="step-badge badge-soon">DO NEXT</div>
       <div class="step-title">
-        <h3>Install Whole-Home Dehumidification</h3>
-        <div class="step-meta">👷 HVAC Contractor &nbsp;·&nbsp; ⏱ As part of HVAC work</div>
+        <h3>Attic — Roof Repair, Remediation & Insulation Replacement</h3>
+        <div class="step-meta">👷 Roofer → MRSR contractor → Insulation contractor &nbsp;·&nbsp; ⏱ Weeks 3–5 in sequence</div>
       </div>
     </div>
-    <p style="font-size:14px;color:#374151;margin-bottom:12px;">In Miami, humidity is permanent and relentless. Without active dehumidification, mold will return. A central whole-home unit integrated with your HVAC is the right long-term solution.</p>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Three contractors, done in strict order. IICRC S520 standard requires moisture sources to be corrected before remediation begins — if the roof isn't fixed first, new moisture will undermine the work. Insulation goes back only after clearance testing passes.</p>
+    <strong style="font-size:13px;display:block;margin-bottom:6px;">Step A — Roofer first:</strong>
     <ul class="checklist">
-      <li><input type="checkbox"> Central whole-home dehumidifier integrated with HVAC - run continuously, not on auto</li>
-      <li><input type="checkbox"> Separate attic dehumidifier - HVAC equipment lives up there and needs its own moisture control</li>
-      <li><input type="checkbox"> Target: 45-50% RH or below at all times indoors</li>
+      <li><input type="checkbox"> Inspect and water-test chimney flashing and surrounding roof area</li>
+      <li><input type="checkbox"> Repair all identified leak points — written confirmation before attic remediation begins</li>
     </ul>
-    <div class="warn-box">
-      <strong>💡 Note on upsells</strong>
-      A couple of portable HEPA air purifiers and a standalone dehumidifier will cover the interim period cheaply while the remediation work is underway. You don't need to buy the whole-home HEPA system or REME Halo units immediately - those are nice-to-haves, not the fix. See the section below on the remediation proposal.
-    </div>
+    <strong style="font-size:13px;display:block;margin:12px 0 6px;">Step B — MRSR remediator:</strong>
+    <ul class="checklist">
+      <li><input type="checkbox"> Remove all mold-contaminated and moisture-affected insulation</li>
+      <li><input type="checkbox"> Treat affected wood components (rafters, decking, framing) — scope per contractor assessment</li>
+      <li><input type="checkbox"> Proper containment and negative air pressure throughout</li>
+      <li><input type="checkbox"> Evaluate and address attic ventilation (blocked soffits, ridge vents)</li>
+    </ul>
+    <strong style="font-size:13px;display:block;margin:12px 0 6px;">Step C — Insulation contractor (after clearance passes):</strong>
+    <ul class="checklist">
+      <li><input type="checkbox"> Replace removed insulation — moisture-resistant product appropriate for Florida climate</li>
+      <li><input type="checkbox"> Do not install until written clearance from independent MRSA assessor</li>
+    </ul>
   </div>
 
   <!-- Step 8 -->
   <div class="step">
     <div class="step-header">
-      <div class="step-num blue">8</div>
+      <div class="step-badge badge-later">DO LATER</div>
       <div class="step-title">
-        <h3>Fix Exterior Drainage</h3>
-        <div class="step-meta">👷 Landscaper or GC &nbsp;·&nbsp; ⏱ Lower priority but don't skip</div>
+        <h3>Exterior Drainage</h3>
+        <div class="step-meta">👷 Landscaper or GC &nbsp;·&nbsp; ⏱ Lower priority — don't skip</div>
       </div>
     </div>
     <ul class="checklist">
-      <li><input type="checkbox"> Regrade soil so ground slopes away from foundation (6-inch drop over 10 feet minimum)</li>
+      <li><input type="checkbox"> Regrade soil so ground slopes away from foundation (min. 6-inch drop over 10 feet)</li>
       <li><input type="checkbox"> Repair or replace compromised drainage pans</li>
-      <li><input type="checkbox"> Extend all downspouts at least 6 feet from foundation</li>
+      <li><input type="checkbox"> Extend downspouts at least 6 feet from foundation</li>
       <li><input type="checkbox"> Clear gutters and confirm water moves away from the home</li>
     </ul>
   </div>
@@ -440,223 +432,181 @@
   <!-- Step 9 -->
   <div class="step">
     <div class="step-header">
-      <div class="step-num red">9</div>
+      <div class="step-badge badge-now">REQUIRED</div>
       <div class="step-title">
-        <h3>Post-Remediation Clearance Testing - Required</h3>
-        <div class="step-meta">👷 Independent MRSA Assessor - NOT the remediation company &nbsp;·&nbsp; ⏱ After all work is complete</div>
+        <h3>Post-Remediation Clearance Testing — Independent MRSA Assessor</h3>
+        <div class="step-meta">👷 Independent licensed MRSA assessor — NOT the remediation company &nbsp;·&nbsp; ⏱ After all work complete</div>
       </div>
     </div>
-    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Florida law (Statute 468.8419) requires that assessment and remediation be performed by separate licensed parties. The company that did the work cannot clear their own work. Hire an independent assessor.</p>
+    <p style="font-size:14px;color:#374151;margin-bottom:12px;">Florida law restricts the same party from performing both mold assessment and mold remediation on the same structure within the restricted period, subject to limited exceptions. For this project, use an independent licensed MRSA assessor for clearance — not the company that performed the remediation work.</p>
     <ul class="checklist">
-      <li><input type="checkbox"> Air samples in all rooms - including nursery and master bedroom</li>
+      <li><input type="checkbox"> Air samples in all rooms — including nursery and master bedroom</li>
       <li><input type="checkbox"> Surface swab samples in all remediated areas</li>
-      <li><input type="checkbox"> Attic clearance after insulation replacement</li>
-      <li><input type="checkbox"> Written clearance report - indoor levels at or below outdoor levels</li>
-      <li><input type="checkbox"> Do not let insulation go back into attic until this passes</li>
+      <li><input type="checkbox"> Attic clearance testing after insulation replacement</li>
+      <li><input type="checkbox"> Written clearance report — indoor levels at or below outdoor levels</li>
+      <li><input type="checkbox"> Do not return insulation to attic until attic clearance passes</li>
+      <li><input type="checkbox"> Do not use nursery until nursery clearance passes</li>
     </ul>
-    <div class="tell-contractor">
+    <div class="script-box">
       <strong>What to tell the assessor</strong>
-      "I need post-remediation clearance testing. I have a baby due in approximately 2 months and need written clearance before the nursery is occupied. Please include the baby bath wall cavity and master bedroom in the scope."
+      "I need post-remediation clearance testing following HVAC remediation, duct insulation removal, and attic remediation. The baby is due in approximately two months. Please include the nursery, master bedroom, and attic in the scope."
     </div>
-    <div class="license-badge">⚠️ Must be a different company from your remediator - Florida law requires it</div>
+    <div class="license-note">⚠️ Must be a different company from your remediator — Florida law restricts the same party from doing both</div>
   </div>
 
   <!-- ON THE PROPOSAL -->
-  <div class="section-label">A note on the remediation proposal you received</div>
+  <div class="section-label">A note on the remediation proposal received</div>
 
-  <div class="card info-card">
-    <h2>📋 The AQC Proposal - What's Needed vs. What's an Upsell</h2>
-    <p>Air Quality Control Environmental's proposal includes the legitimate work - duct replacement, coil and blower cleaning, removing moldy material under containment. That core scope is real and necessary. But it also bundles in a number of high-margin add-ons that are not part of the remediation and are not what fixes your problem.</p>
+  <div class="card border-blue">
+    <h2>📋 The AQC Proposal — Core Work vs. Optional Upgrades</h2>
+    <p>The AQC proposal includes the core remediation scope — duct replacement, coil and blower cleaning, removing contaminated material under containment. That work is real and necessary. The proposal also includes optional indoor air quality upgrades that should be evaluated separately from the remediation.</p>
 
-    <p style="margin-top:14px;font-weight:700;font-size:14px;">✅ What you need from any remediator:</p>
-    <ul style="margin:8px 0 14px 20px;font-size:14px;color:#374151;">
-      <li>Full duct replacement on both systems</li>
+    <p style="margin-top:14px;font-weight:600;font-size:14px;">✅ Core remediation scope (prioritize this):</p>
+    <ul style="margin:8px 0 14px 20px;font-size:14px;color:#374151;line-height:2;">
+      <li>Duct insulation removal and replacement in contaminated areas</li>
       <li>HVAC unit remediation (coil, blower, drain pan)</li>
-      <li>Baby bath wall cavity - open and remediate</li>
+      <li>Baby bath duct insulation and wall cavity assessment</li>
       <li>Attic mold remediation (after roof is fixed)</li>
-      <li>Mold-damaged drywall removal</li>
       <li>Proper containment, negative air pressure, documented disposal</li>
     </ul>
 
-    <p style="font-weight:700;font-size:14px;">⚠️ What to think carefully about before adding on:</p>
-    <div class="upsell-item">
+    <p style="font-weight:600;font-size:14px;">⚠️ Optional upgrades — evaluate separately:</p>
+
+    <div class="flag-item">
       <span>🟡</span>
-      <div><strong>REME Halo Air Purification ($3,000)</strong> - An in-duct air purifier. Nice to have, but not remediation. It doesn't fix the contaminated ducts or the moisture sources. Get the core work done first.</div>
+      <div><strong>REME Halo Air Purification</strong> — An in-duct air purifier. May be a useful long-term addition, but it is not remediation and does not address contaminated duct materials or moisture sources. Not a priority item.</div>
     </div>
-    <div class="upsell-item">
+    <div class="flag-item">
       <span>🟡</span>
-      <div><strong>Whole-Home HEPA Filtration ($4,500)</strong> - Good for long-term air quality but not urgent. Two portable HEPA purifiers (~$200-300 each) will cover you during and after remediation. Revisit this later.</div>
+      <div><strong>Whole-Home HEPA Filtration</strong> — A good long-term air quality measure, but not urgent remediation. Portable HEPA units can reduce airborne particulates as an interim measure during and after remediation work.</div>
     </div>
-    <div class="upsell-item">
+    <div class="flag-item">
       <span>🔴</span>
       <div>
-        <strong>Antimicrobial Coating + 10-Year Mold Warranty - Not Supported by Governing Agencies</strong>
-        <p style="margin-top:6px;">The EPA, NADCA (National Air Duct Cleaners Association), and the CDC do not recommend or endorse the use of biocide sprays or antimicrobial coatings inside HVAC ductwork as a substitute for proper remediation. The EPA explicitly states: <em>"The use of a biocide... is not routinely recommended."</em></p>
-        <p style="margin-top:6px;">A "10-year warranty against mold growth" sounds reassuring but is not backed by any regulatory standard. It does not protect you if the roof leaks again, if humidity isn't controlled, or if a new moisture source develops. The warranty is only as good as the conditions it assumes - and mold doesn't read warranties.</p>
-        <p style="margin-top:6px;"><strong>What actually prevents mold from returning:</strong> fixing the moisture sources. Not a coating.</p>
-        <p style="margin-top:6px;">The R-8 ductwork upgrade itself (better insulation value) is a reasonable choice. The antimicrobial coating sold on top of it is the upsell. Ask your contractor to separate the two in their quote.</p>
+        <strong>Antimicrobial Coating + 10-Year Mold Warranty — Not Supported by Governing Standards</strong>
+        <p style="margin-top:6px;font-size:13px;">The EPA, NADCA (National Air Duct Cleaners Association), and IICRC do not recommend biocide sprays or antimicrobial coatings as a substitute for proper remediation. The NADCA ACR 2021 standard states: <em>"Biocides should not be used for cleaning ductwork. They do not remove allergens and other metabolites from mold, do not kill all mold spores, and may pose health risks to some individuals."</em> The EPA adds that dead mold can still be allergenic — removal, not treatment, is the standard.</p>
+        <p style="margin-top:6px;font-size:13px;">A 10-year warranty against mold growth is not backed by any regulatory standard. It does not protect against new moisture sources, roof leaks, or uncontrolled humidity. The R-8 ductwork itself (better insulation value) is a reasonable material choice. Ask the contractor to separate the duct material upgrade from the coating in their quote.</p>
       </div>
     </div>
-    <div class="upsell-item">
+    <div class="flag-item">
       <span>🔴</span>
-      <div><strong>AQC doing their own clearance testing</strong> - Florida Statute 468.8419 prohibits the same party from doing both remediation and clearance assessment. AQC should not be clearing their own work. You need an independent licensed MRSA assessor for clearance.</div>
-    </div>
-    <div class="upsell-item">
-      <span>🔴</span>
-      <div><strong>The proposal doesn't clearly address the roof leak or attic ventilation</strong> - these are the actual root causes. Make sure any remediator you hire coordinates with your roofer and addresses attic ventilation as part of the scope.</div>
+      <div><strong>AQC performing their own clearance testing</strong> — Florida law restricts the same party from performing both assessment and remediation on the same structure within the restricted period. Use an independent MRSA-licensed assessor for clearance.</div>
     </div>
 
-    <p style="margin-top:16px;font-size:14px;color:#374151;">Get at least one more quote from another licensed MRSR contractor. Present them with this guide and ask them to walk through each item. A good contractor will add their own observations - that's what you want.</p>
+    <p style="margin-top:16px;font-size:14px;color:#374151;">Get at least one additional quote from another licensed MRSR contractor. Present them with this guide and the original assessment report. A good contractor will review the findings and advise on scope based on what they see on-site.</p>
   </div>
 
-  <!-- PRESENT TO CONTRACTOR -->
-  <div class="card warning-card">
+  <!-- HOW TO USE -->
+  <div class="card border-gray">
     <h2>🤝 How to Use This Guide With Your Contractors</h2>
-    <p>Share this document with every contractor who walks through your door. Ask them to review each section relevant to their trade and tell you:</p>
-    <ul style="margin:10px 0 0 20px;font-size:14px;color:#374151;">
-      <li style="margin-bottom:6px;">Do they agree with the scope? Is anything missing?</li>
-      <li style="margin-bottom:6px;">Do they have additional observations based on what they see on-site?</li>
-      <li style="margin-bottom:6px;">What is their specific plan for containment and moisture source remediation?</li>
-      <li style="margin-bottom:6px;">Can they coordinate timing with the other trades involved?</li>
-      <li>Who will handle the post-remediation clearance testing - and confirm it's an independent party?</li>
+    <p>Share this document with every contractor who walks through. Ask them to review each section relevant to their trade and tell you:</p>
+    <ul style="margin:10px 0 0 20px;font-size:14px;color:#374151;line-height:2.2;">
+      <li>Do they agree with the scope, or do they see something different on-site?</li>
+      <li>What is their specific containment and moisture correction plan?</li>
+      <li>Can they coordinate timing with the other trades involved?</li>
+      <li>Who will perform post-remediation clearance testing — and confirm it is an independent party?</li>
     </ul>
-    <p style="margin-top:12px;font-size:14px;">A good contractor will welcome this conversation. Anyone who dismisses your questions or pressures you to skip steps is a red flag.</p>
+    <p style="margin-top:12px;font-size:14px;">A good contractor welcomes these questions. Scope may change based on what they find on-site — that is expected and appropriate. This guide sets the direction; licensed contractors determine the final scope.</p>
   </div>
 
   <!-- RED FLAGS -->
-  <div class="card urgent-card">
-    <h2>🚩 Red Flags - If a Contractor Says This, Walk Away</h2>
-    <p style="font-size:14px;color:#374151;margin-bottom:16px;">A good contractor welcomes questions and explains their reasoning. Anyone who pressures, rushes, or dismisses you is telling you something. Here's what to listen for.</p>
+  <div class="card border-red">
+    <h2>🚩 Red Flags — If a Contractor Says This, Get a Second Opinion</h2>
 
-    <div class="upsell-item">
+    <div class="flag-item">
       <span>🔴</span>
-      <div><strong>"We can do the clearance testing for you too."</strong><br>Illegal in Florida. Statute 468.8419 requires the company that removes the mold and the company that verifies it's gone to be separate parties. A contractor offering both either doesn't know the law or is hoping you don't. Decline and hire an independent MRSA assessor for clearance.</div>
+      <div><strong>"We can do the clearance testing for you too."</strong><br>Florida law restricts the same party from performing both mold assessment/clearance and mold remediation on the same structure within the restricted period, subject to limited exceptions. Best practice: use an independent licensed MRSA assessor for clearance. If a contractor offers both, ask them to confirm in writing which Florida exception applies.</div>
     </div>
-    <div class="upsell-item">
+    <div class="flag-item">
       <span>🔴</span>
-      <div><strong>"You don't really need to fix the roof / attic ventilation first - our coating handles it."</strong><br>No coating, spray, or antimicrobial treatment stops water. If the moisture source isn't fixed first, the mold comes back - usually within months. A remediator who skips the moisture conversation is selling you a temporary result.</div>
+      <div><strong>"You don't need to fix the roof/ventilation first — our coating handles it."</strong><br>No coating, spray, or antimicrobial treatment stops water. IICRC S520 standard requires moisture sources to be corrected before remediation begins. A contractor who skips moisture correction is not following the standard of care.</div>
     </div>
-    <div class="upsell-item">
+    <div class="flag-item">
       <span>🔴</span>
-      <div><strong>"We can just clean the ductwork, no need to replace it."</strong><br>The lab confirmed active growth on the duct insulation (150,000 spores/cm2 total, including 99,000 Cladosporium plus bacteria) and inside both HVAC systems. Porous insulation that's grown mold cannot be cleaned back to safe - it has to come out. Cleaning contaminated flex duct is a band-aid.</div>
+      <div><strong>"We can just clean the ductwork — no need to replace it."</strong><br>The lab confirmed active growth on porous duct insulation (150,000 spores/cm²). The EPA states contaminated porous materials in HVAC systems should be bagged and removed, not cleaned. Porous insulation that has grown mold cannot be restored to a clean condition by surface treatment alone.</div>
     </div>
-    <div class="upsell-item">
+    <div class="flag-item">
       <span>🔴</span>
-      <div><strong>"This needs to happen today - we can start right now."</strong><br>Real remediation requires a written scope, containment setup, and usually a moisture fix first. High-pressure "sign now" tactics are a sales move, not an emergency response. You have time to get a second quote. Take it.</div>
+      <div><strong>"This needs to happen today — sign now."</strong><br>Legitimate remediation requires a written scope, a containment plan, and usually moisture correction first. High-pressure same-day signing is a sales tactic. You have time to get a second quote and review the written scope.</div>
     </div>
-    <div class="upsell-item">
+    <div class="flag-item">
       <span>🔴</span>
-      <div><strong>"Containment isn't necessary for a job this size."</strong><br>Disturbing mold without containment spreads spores through the whole house - including into rooms that currently test clean. Negative air pressure and sealed barriers are standard for all mold work. If they're skipping it, they're cutting a corner that contaminates your home.</div>
+      <div><strong>"Containment isn't necessary for a job this size."</strong><br>Disturbing mold without containment can spread spores into rooms that currently test clean. Negative air pressure and sealed barriers are standard for mold work per EPA and IICRC guidance. This is not optional.</div>
     </div>
-    <div class="upsell-item">
+    <div class="flag-item">
       <span>🔴</span>
-      <div><strong>They can't or won't show you a Florida MRSR license.</strong><br>"We've been doing this for years" is not a license. Mold remediation in Florida legally requires an MRSR license. Verify it yourself at <strong>myfloridalicense.com</strong> before any work begins.</div>
+      <div><strong>They can't show you a Florida MRSR license.</strong><br>Mold remediation in Florida legally requires an MRSR license. Verify at <strong>myfloridalicense.com</strong> before work begins. "We've been doing this for years" is not a license.</div>
     </div>
-    <div class="upsell-item">
+    <div class="flag-item">
       <span>🔴</span>
-      <div><strong>The quote is dramatically cheaper than everyone else's.</strong><br>A lowball usually means skipped containment, no disposal documentation, or no moisture remediation. In mold work, the cheapest bid is often the one that costs you twice - once now, and again when it comes back.</div>
-    </div>
-
-    <div class="warn-box" style="margin-top:16px;">
-      <strong>The pattern to watch for</strong>
-      Anyone steering you toward a fast, cheap, coating-based "fix" while avoiding the moisture sources is optimizing for their margin, not your home. The contractors worth hiring will slow you down, not speed you up.
+      <div><strong>Their quote is dramatically cheaper than everyone else's.</strong><br>A low bid often means skipped containment, no proper disposal documentation, or no moisture remediation. In mold work, the lowest bid is often the one that needs to be redone.</div>
     </div>
   </div>
 
   <!-- INDUSTRY STANDARDS -->
   <div class="section-label">Industry standards & governing guidance</div>
 
-  <div class="card info-card">
+  <div class="card border-blue">
     <h2>📖 What the Governing Bodies Say</h2>
-    <p style="font-size:14px;color:#374151;margin-bottom:16px;">The recommendations in this guide are not InHaus opinions — they reflect the published standards of the agencies that govern indoor air quality and mold remediation. Here’s the source material:</p>
+    <p style="font-size:14px;color:#374151;margin-bottom:16px;">The recommendations in this guide reflect published standards from the agencies that govern indoor air quality and mold remediation in the United States.</p>
 
-    <div class="upsell-item">
-      <span>🟦</span>
-      <div>
-        <strong>U.S. EPA — Mold Remediation in Schools and Commercial Buildings (EPA 402-K-01-001)</strong><br>
-        <em>“Do not run the HVAC system if you know or suspect that it is contaminated with mold — it could spread mold throughout the building.”</em><br>
-        The EPA also states: <em>“Contaminated porous materials in the HVAC system should be bagged and removed.”</em> This is why duct insulation cannot be cleaned — it must come out.
-      </div>
+    <div class="flag-item">
+      <span>🔵</span>
+      <div><strong>U.S. EPA — Mold Remediation in Schools and Commercial Buildings (EPA 402-K-01-001)</strong><br><em>"Do not run the HVAC system if you know or suspect that it is contaminated with mold — it could spread mold throughout the building."</em> The EPA also states: <em>"Contaminated porous materials in the HVAC system should be bagged and removed."</em></div>
     </div>
-
-    <div class="upsell-item">
-      <span>🟦</span>
-      <div>
-        <strong>NADCA ACR 2021 — Assessment, Cleaning and Restoration of HVAC Systems</strong><br>
-        The National Air Duct Cleaners Association standard specifies that when mold contamination reaches Condition 2 or Condition 3, full remediation is required — not routine cleaning. It also states: <em>“Biocides should not be used for cleaning ductwork. Biocides are not recommended for remediation because they do not remove allergens and other metabolites from mold, do not kill all mold spores, and may pose health risks to some individuals.”</em><br>
-        This directly contradicts any contractor claiming that spraying antimicrobial coating inside ducts is an adequate solution.
-      </div>
+    <div class="flag-item">
+      <span>🔵</span>
+      <div><strong>NADCA ACR 2021 — Assessment, Cleaning and Restoration of HVAC Systems</strong><br><em>"Biocides should not be used for cleaning ductwork. Biocides are not recommended for remediation because they do not remove allergens and other metabolites from mold, do not kill all mold spores, and may pose health risks to some individuals."</em></div>
     </div>
-
-    <div class="upsell-item">
-      <span>🟦</span>
-      <div>
-        <strong>IICRC S520 — Standard for Professional Mold Remediation</strong><br>
-        The Institute of Inspection Cleaning and Restoration Certification S520 standard requires that <em>“the cause(s) of mold growth must be identified and corrective action taken before remediation of either the building or the HVAC system is undertaken.”</em><br>
-        This is why fixing the roof leak and moisture sources before remediating the HVAC is not optional — it’s the standard of care.
-      </div>
+    <div class="flag-item">
+      <span>🔵</span>
+      <div><strong>IICRC S520 — Standard for Professional Mold Remediation</strong><br><em>"The cause(s) of mold growth must be identified and corrective action taken before remediation of either the building or the HVAC system is undertaken."</em> Fixing the roof and moisture sources before remediating is the published standard of care, not a preference.</div>
     </div>
-
-    <div class="upsell-item">
-      <span>🟦</span>
-      <div>
-        <strong>Industry standard for indoor air quality interpretation</strong><br>
-        The published guideline for interpreting indoor air samples is: <em>“indoor levels of mold spores should be less than outdoors, and the biodiversity of fungal spores indoors should be similar to outdoors.”</em> (NADCA / industry consensus)<br>
-        This is the framework used throughout this guide. Rooms below the outdoor baseline are reassuring. Rooms significantly above — especially for specific genera like Pen/Asp — indicate an indoor source.
-      </div>
+    <div class="flag-item">
+      <span>🔵</span>
+      <div><strong>EPA — Indoor Humidity Guidance</strong><br><em>"Keep indoor relative humidity below 60%; ideally between 30% and 50%."</em> The attic in this home measured 72.7% RH — well above the threshold at which mold growth is actively supported.</div>
     </div>
-
-    <div class="upsell-item">
-      <span>🟦</span>
-      <div>
-        <strong>Relative humidity target — industry consensus</strong><br>
-        <em>“Relative humidity in occupied spaces should be maintained below 60% and ideally 30–50%.”</em> (NADCA / ASHRAE Standard 55)<br>
-        Your attic measured 72.7% RH at 83°F. That’s well above the threshold at which mold actively grows. Dehumidification is not a lifestyle choice in this home — it’s a remediation requirement.
-      </div>
-    </div>
-
-    <div class="upsell-item">
-      <span>🟦</span>
-      <div>
-        <strong>Florida Statute 468.8419 — Mold-Related Services</strong><br>
-        Florida law prohibits the same licensed party from performing both mold assessment and mold remediation on the same project. The company that removes the mold cannot clear their own work. An independent licensed MRSA assessor is legally required for post-remediation verification — this is not a recommendation, it’s the law.
-      </div>
+    <div class="flag-item">
+      <span>🔵</span>
+      <div><strong>Florida Statute 468.8419 — Mold-Related Services</strong><br>Florida law restricts the same licensed party from performing both mold assessment and mold remediation on the same structure within the restricted period. For this project, use an independent licensed MRSA assessor for post-remediation clearance.</div>
     </div>
   </div>
 
   <!-- TIMELINE -->
   <div class="card">
-    <h2>📅 Your 8-Week Timeline</h2>
-    <div class="timeline-row"><div class="timeline-week">This week</div><div>Baby's room duct insulation + wall cavity - hire MRSR contractor now. HEPA purifier running. Talk to pediatrician.</div></div>
-    <div class="timeline-row"><div class="timeline-week">Weeks 2-3</div><div>HVAC remediation + full duct replacement under containment. Bathroom fans rerouted outside. Plumber checks toilet/tub leak.</div></div>
-    <div class="timeline-row"><div class="timeline-week">Weeks 3-4</div><div>Roof inspection. Re-caulk all bathrooms and kitchen. Dehumidifiers installed. Master bedroom wall cavity addressed.</div></div>
-    <div class="timeline-row"><div class="timeline-week">Weeks 4-5</div><div>Attic mold remediation (after roof is confirmed repaired).</div></div>
-    <div class="timeline-row"><div class="timeline-week">Week 6</div><div>Attic insulation replacement (after clearance testing passes).</div></div>
-    <div class="timeline-row"><div class="timeline-week">Week 7</div><div>Post-remediation clearance testing - all areas including nursery and master bedroom.</div></div>
-    <div class="timeline-row"><div class="timeline-week">Week 8</div><div>Review clearance results. Nursery confirmed clean. ✅</div></div>
+    <h2>📅 8-Week Timeline</h2>
+    <div class="timeline-row"><div class="timeline-week">This week</div><div>Hire MRSR contractor for nursery duct insulation. HEPA purifier running in nursery. Talk to pediatrician. Do not operate HVAC normally.</div></div>
+    <div class="timeline-row"><div class="timeline-week">Weeks 2–3</div><div>HVAC remediation + contaminated duct/insulation removal under containment. Bathroom fans rerouted outside. Plumber checks high-moisture areas.</div></div>
+    <div class="timeline-row"><div class="timeline-week">Weeks 3–4</div><div>Roof inspection and repair. Re-caulk all bathrooms and kitchen. Evaluate and install dehumidification. Master bedroom investigation.</div></div>
+    <div class="timeline-row"><div class="timeline-week">Weeks 4–5</div><div>Attic remediation (after roof is confirmed repaired).</div></div>
+    <div class="timeline-row"><div class="timeline-week">Week 6</div><div>Attic insulation replacement (after clearance passes).</div></div>
+    <div class="timeline-row"><div class="timeline-week">Week 7</div><div>Post-remediation clearance testing — all areas including nursery, master bedroom, and attic.</div></div>
+    <div class="timeline-row"><div class="timeline-week">Week 8</div><div>Review clearance results. Nursery confirmed clean before baby arrives. ✅</div></div>
   </div>
 
-  <!-- CONTRACTOR CHECKLIST -->
+  <!-- CONTRACTOR VERIFY -->
   <div class="card">
     <h2>✅ Before Hiring Any Contractor</h2>
     <ul class="checklist">
-      <li><input type="checkbox"> Florida MRSR license - required for all mold remediation work (verify at myflorida.com)</li>
-      <li><input type="checkbox"> Florida MRSA license - required for assessment and clearance testing</li>
+      <li><input type="checkbox"> Florida MRSR license — required for mold remediation (verify at myfloridalicense.com)</li>
+      <li><input type="checkbox"> Florida MRSA license — required for assessment and clearance testing</li>
       <li><input type="checkbox"> Proof of liability insurance</li>
-      <li><input type="checkbox"> Written scope of work before any work begins</li>
-      <li><input type="checkbox"> Containment plan - negative air pressure required for all mold work</li>
-      <li><input type="checkbox"> Disposal plan - contaminated materials must be properly bagged and removed</li>
+      <li><input type="checkbox"> Written scope of work before work begins</li>
+      <li><input type="checkbox"> Containment plan — negative air pressure required</li>
+      <li><input type="checkbox"> Disposal plan — contaminated materials properly bagged and removed from property</li>
       <li><input type="checkbox"> Written completion report after work is done</li>
-      <li><input type="checkbox"> Do NOT use the same company for remediation AND clearance testing</li>
-      <li><input type="checkbox"> Get at least 2 quotes - present this guide to each contractor</li>
+      <li><input type="checkbox"> Clearance testing by an independent licensed MRSA assessor — not the remediation company</li>
+      <li><input type="checkbox"> Get at least two quotes — present this guide and the original assessment to each contractor</li>
     </ul>
   </div>
 
 </div>
 
 <div class="footer">
-  Prepared by InHaus Lab &nbsp;·&nbsp; Based on licensed mold assessment by Jonathan Dickler, MRSA #3550, Mold Testing Live, May 24 2026 &nbsp;·&nbsp; Lab analysis by Eurofins Built Environment Testing (EML 4549567, Batch 4570963)<br>
-  This guide is not a substitute for professional medical or legal advice. All remediation work in Florida requires licensed contractors (FL MRSR/MRSA).
+  Prepared by InHaus Lab &nbsp;·&nbsp; Based on licensed mold assessment by Jonathan Dickler, MRSA #3550, Mold Testing Live, May 24 2026<br>
+  Laboratory analysis by Eurofins Built Environment Testing East, LLC — EML ID 4549567 (May 24 2026) and Batch 4570963 (June 9 2026) — AIHA LAP, LLC accredited, Lab ID #173067<br>
+  This guide is based on lab results, moisture readings, visual inspection, and photographs from the assessments listed above. Invasive findings by contractors may change the scope of recommended work.<br>
+  This document is not a substitute for professional medical or legal advice. All mold remediation work in Florida requires licensed contractors (FL MRSR/MRSA).
 </div>
 
 </body>
