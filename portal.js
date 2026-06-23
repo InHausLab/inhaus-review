@@ -1992,7 +1992,7 @@ function buildPhotoCard(photo, locked) {
   if (!locked) {
     captionTA.addEventListener('blur', () => {
       photo.caption = captionTA.value;
-      debouncedSave('photo_' + photo.photoId, 'caption', captionTA.value);
+      try { debouncedSave('photo_' + photo.photoId, 'caption', captionTA.value); } catch(e) {}
     });
   }
   captionWrap.appendChild(captionTA);
@@ -2054,7 +2054,7 @@ function buildPhotoCard(photo, locked) {
           useBtn.addEventListener('click', () => {
             captionTA.value = description;
             photo.caption = description;
-            debouncedSave('photo_' + photo.photoId, 'caption', description);
+            try { debouncedSave('photo_' + photo.photoId, 'caption', description); } catch(e) {}
             suggBox.remove();
             aiBtn.textContent = '✓ Done';
             aiBtn.style.background = '#f0fdf4';
@@ -2089,7 +2089,7 @@ function buildPhotoCard(photo, locked) {
           // No existing caption — write directly
           captionTA.value = description;
           photo.caption = description;
-          debouncedSave('photo_' + photo.photoId, 'caption', description);
+          try { debouncedSave('photo_' + photo.photoId, 'caption', description); } catch(e) {}
           aiBtn.textContent = '\u2713 Done';
           aiBtn.style.background = '#f0fdf4';
           aiBtn.style.borderColor = '#86efac';
