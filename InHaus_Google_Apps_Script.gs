@@ -242,7 +242,7 @@ function processPhotoUpload(data) {
       driveFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
       var fileId = driveFile.getId();
       // Use direct embeddable URL (renders in <img> tags without auth)
-      var embedUrl = 'https://drive.google.com/uc?export=view&id=' + fileId;
+      var embedUrl = 'https://drive.usercontent.google.com/download?id=' + fileId + '&export=view';
       photoResults.push({
         filename: filename,
         room: photo.roomName || '',
@@ -325,7 +325,7 @@ function uploadPhotosToFolder(folder, data) {
         
         driveFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
         var fileId = driveFile.getId();
-        var embedUrl = 'https://drive.google.com/uc?export=view&id=' + fileId;
+        var embedUrl = 'https://drive.usercontent.google.com/download?id=' + fileId + '&export=view';
         results.push({
           filename: filename,
           room: photo.roomName || section.name,
