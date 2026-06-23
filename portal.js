@@ -2011,7 +2011,6 @@ function buildPhotoCard(photo, locked) {
       aiBtn.disabled = true;
       aiBtn.textContent = '\u23f3 Analyzing...';
       try {
-        // Send image URL directly to proxy — avoids CORS issues fetching Drive URLs in browser
         const prompt = 'You are a professional home health inspector reviewing a photo taken during a residential inspection.' +
           (photo.roomName ? ' Room: ' + photo.roomName + '.' : '') +
           (photo.stepName ? ' Context: ' + photo.stepName + '.' : '') +
@@ -2019,10 +2018,47 @@ function buildPhotoCard(photo, locked) {
           ' Focus on anything relevant to home health: moisture, mold, damage, equipment condition, test setup.' +
           ' If nothing of concern: briefly describe what the photo shows.' +
           ' Plain sentence only — no bullet points, no markdown, no preamble.';
+
+        // Get base64 by drawing the already-loaded <img> onto a canvas (avoids CORS fetch)
+        const imgEl = card.querySelector('img');
+        let base64 = null;
+        let mimeType = 'image/jpeg';
+        if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = imgEl.naturalWidth;
+            canvas.height = imgEl.naturalHeight;
+            canvas.getContext('2d').drawImage(imgEl, 0, 0);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            base64 = dataUrl.split(',')[1];
+            mimeType = 'image/jpeg';
+          } catch(canvasErr) {
+            // Canvas tainted — fall back to direct fetch
+            base64 = null;
+          }
+        }
+        if (!base64) {
+          // Fallback: try fetching with no-cors won't give bytes, so try regular fetch
+          try {
+            const imgResp = await fetch(photo.driveUrl);
+            if (imgResp.ok) {
+              const blob = await imgResp.blob();
+              base64 = await new Promise((res, rej) => {
+                const reader = new FileReader();
+                reader.onload = () => res(reader.result.split(',')[1]);
+                reader.onerror = rej;
+                reader.readAsDataURL(blob);
+              });
+              mimeType = blob.type || 'image/jpeg';
+            }
+          } catch(fetchErr) { /* ignore */ }
+        }
+        if (!base64) throw new Error('Could not extract image data');
+
         const resp = await fetch(VISION_PROXY_URL, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ imageUrl: photo.driveUrl, prompt })
+          body: JSON.stringify({ imageBase64: base64, mimeType, prompt })
         });
         if (!resp.ok) throw new Error('API error ' + resp.status);
         const result = await resp.json();
