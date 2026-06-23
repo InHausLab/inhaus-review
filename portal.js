@@ -5,7 +5,7 @@
  * Configuration: swap these two constants when Apps Script is deployed
  */
 
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwsRP4-RBAuldMh_BkNlbAkZyMLDz8ohNM1WwIRfB1ROz9JHGYjYsZdVNbgy98-d4gu8Q/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxh6xtKg3FKjoHzi6jbJ_8RmjIgihgvcgeG8jGrFWweGcD3iwjV9voLVj0cmy5VeczuPw/exec';
 const ACCESS_TOKEN    = 'inhaus_review_2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 
