@@ -391,14 +391,14 @@ async function loadInspection() {
     }
   }
 
-  // Load saved review data and merge into inspection
+  // Load saved review data from localStorage and merge
   if (!IS_DEMO && id) {
     try {
-      const reviewResp = await apiFetch({ action: 'getReview', id, token });
-      if (reviewResp && reviewResp.reviewedData && Object.keys(reviewResp.reviewedData).length > 0) {
-        insp.reviewedData = Object.assign(insp.reviewedData || {}, reviewResp.reviewedData);
+      const saved = JSON.parse(localStorage.getItem('inhaus_review_' + id) || '{}');
+      if (Object.keys(saved).length > 0) {
+        insp.reviewedData = Object.assign(insp.reviewedData || {}, saved);
       }
-    } catch(e) { /* silent — review data is best-effort */ }
+    } catch(e) {}
   }
 
   _inspection = insp;
@@ -1621,15 +1621,17 @@ async function saveField(stepId, fieldKey, value) {
     setSaveIndicator('saved', formatTime(new Date().toISOString()));
     return;
   }
-  const { id, token } = getURLParams();
+  const { id } = getURLParams();
   _pendingSaves++;
   setSaveIndicator('saving');
   try {
-    await apiFetch(
-      {},
-      'POST',
-      { action: 'saveReview', id, token, field: { stepId, key: fieldKey, value } }
-    );
+    // Save to localStorage — persists across sessions on this device
+    const storageKey = 'inhaus_review_' + id;
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch(e) {}
+    if (!saved[stepId]) saved[stepId] = {};
+    saved[stepId][fieldKey] = value;
+    localStorage.setItem(storageKey, JSON.stringify(saved));
     // Update local state
     if (!_inspection.reviewedData) _inspection.reviewedData = {};
     if (stepId === 'summary') {
@@ -1639,7 +1641,7 @@ async function saveField(stepId, fieldKey, value) {
       _inspection.reviewedData[stepId][fieldKey] = value;
     }
   } catch (err) {
-    showToast('Save failed — check connection', 'error');
+    showToast('Save failed', 'error');
     setSaveIndicator('error');
     _pendingSaves--;
     return;
