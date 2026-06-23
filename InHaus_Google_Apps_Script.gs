@@ -43,7 +43,14 @@ const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const result = data.photoUploadOnly ? processPhotoUpload(data) : processInspection(data);
+    var result;
+    if (data.action === 'saveReview') {
+      result = saveReviewData(data);
+    } else if (data.photoUploadOnly) {
+      result = processPhotoUpload(data);
+    } else {
+      result = processInspection(data);
+    }
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'ok', ...result }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -55,9 +62,113 @@ function doPost(e) {
 }
 
 function doGet(e) {
+  var params = e ? e.parameter : {};
+  if (params.action === 'getReview' && params.id) {
+    try {
+      var result = getReviewData(params.id, params.token);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ok', ...result }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
   return ContentService
     .createTextOutput(JSON.stringify({ status: 'ok', message: 'InHaus Inspector Bridge is running' }))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── REVIEW DATA SAVE/LOAD ─────────────────────────────────
+// Stores reviewer edits (captions, observations, notes) in a
+// 'Review Data' sheet: one row per inspection, columns = inspectionId + JSON blob
+
+var REVIEW_SHEET_NAME = 'Review Data';
+
+function getOrCreateReviewSheet() {
+  var ss;
+  if (MASTER_SHEET_ID) {
+    ss = SpreadsheetApp.openById(MASTER_SHEET_ID);
+  } else {
+    // Use a dedicated review data spreadsheet stored in the inspection data folder
+    var folder = DRIVE_FOLDER_ID ? DriveApp.getFolderById(DRIVE_FOLDER_ID) : DriveApp.getRootFolder();
+    var files = folder.getFilesByName('InHaus Review Data');
+    var ssFile;
+    if (files.hasNext()) {
+      ssFile = files.next();
+      ss = SpreadsheetApp.openById(ssFile.getId());
+    } else {
+      ss = SpreadsheetApp.create('InHaus Review Data');
+      var newFile = DriveApp.getFileById(ss.getId());
+      folder.addFile(newFile);
+      DriveApp.getRootFolder().removeFile(newFile);
+    }
+  }
+  var sheet = ss.getSheetByName(REVIEW_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(REVIEW_SHEET_NAME);
+    sheet.appendRow(['inspectionId', 'reviewedData', 'lastUpdated']);
+    sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+function saveReviewData(data) {
+  var id = data.id;
+  var token = data.token;
+  var field = data.field; // { stepId, key, value }
+  if (!id || !field) throw new Error('Missing id or field');
+
+  var sheet = getOrCreateReviewSheet();
+  var rows = sheet.getDataRange().getValues();
+  var rowIndex = -1;
+  var existing = {};
+
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0] === id) {
+      rowIndex = i + 1; // 1-indexed
+      try { existing = JSON.parse(rows[i][1] || '{}'); } catch(e) { existing = {}; }
+      break;
+    }
+  }
+
+  // Merge the new field value into existing data
+  var stepId = field.stepId;
+  var key = field.key;
+  var value = field.value;
+
+  if (stepId === 'summary' || stepId === 'photo' || stepId.startsWith('photo_')) {
+    existing[key] = value;
+  } else {
+    if (!existing[stepId]) existing[stepId] = {};
+    existing[stepId][key] = value;
+  }
+
+  var now = new Date().toISOString();
+  var json = JSON.stringify(existing);
+
+  if (rowIndex > 0) {
+    sheet.getRange(rowIndex, 2).setValue(json);
+    sheet.getRange(rowIndex, 3).setValue(now);
+  } else {
+    sheet.appendRow([id, json, now]);
+  }
+
+  return { saved: true, id: id };
+}
+
+function getReviewData(id, token) {
+  var sheet = getOrCreateReviewSheet();
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0] === id) {
+      var reviewedData = {};
+      try { reviewedData = JSON.parse(rows[i][1] || '{}'); } catch(e) {}
+      return { reviewedData: reviewedData, lastUpdated: rows[i][2] };
+    }
+  }
+  return { reviewedData: {}, lastUpdated: null };
 }
 
 // ── MAIN PROCESSING ──────────────────────────────────────

@@ -391,6 +391,16 @@ async function loadInspection() {
     }
   }
 
+  // Load saved review data and merge into inspection
+  if (!IS_DEMO && id) {
+    try {
+      const reviewResp = await apiFetch({ action: 'getReview', id, token });
+      if (reviewResp && reviewResp.reviewedData && Object.keys(reviewResp.reviewedData).length > 0) {
+        insp.reviewedData = Object.assign(insp.reviewedData || {}, reviewResp.reviewedData);
+      }
+    } catch(e) { /* silent — review data is best-effort */ }
+  }
+
   _inspection = insp;
   renderReviewPage(insp);
 }
