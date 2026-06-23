@@ -203,27 +203,27 @@
         "photos": [
           {
             "caption": "Boulder Blue Primary Bedroom",
-            "driveUrl": "./photos/19MfJNPjPU18Eut2fum-FD-4zNZ6BbHPE.jpg",
+            "driveUrl": "https://drive.google.com/thumbnail?id=19MfJNPjPU18Eut2fum-FD-4zNZ6BbHPE&sz=w1600",
             "imageData": null
           },
           {
             "caption": "Boulder Blue",
-            "driveUrl": "./photos/1qGyuaOcMX9IU0ceezOzE2pxw8_4JBD__.jpg",
+            "driveUrl": "https://drive.google.com/thumbnail?id=1qGyuaOcMX9IU0ceezOzE2pxw8_4JBD__&sz=w1600",
             "imageData": null
           },
           {
             "caption": "PFAS Sample 1",
-            "driveUrl": "./photos/1m299Z5N--XM_AtbvHhpjOqmyadH4AdTp.jpg",
+            "driveUrl": "https://drive.google.com/thumbnail?id=1m299Z5N--XM_AtbvHhpjOqmyadH4AdTp&sz=w1600",
             "imageData": null
           },
           {
             "caption": "PFAS Sample 2",
-            "driveUrl": "./photos/1GFc_rMAHW-upxdG7fZBxkOovuGoMPttn.jpg",
+            "driveUrl": "https://drive.google.com/thumbnail?id=1GFc_rMAHW-upxdG7fZBxkOovuGoMPttn&sz=w1600",
             "imageData": null
           },
           {
             "caption": "Boulder Blue \u2014 Second Floor Primary Bedroom",
-            "driveUrl": "./photos/1Ch-9kkZIMf81YoZw-SLKZSEl2iK7PMnG.jpg",
+            "driveUrl": "https://drive.google.com/thumbnail?id=1Ch-9kkZIMf81YoZw-SLKZSEl2iK7PMnG&sz=w1600",
             "imageData": null
           },
           {
@@ -233,12 +233,12 @@
           },
           {
             "caption": "Spare Photo 45",
-            "driveUrl": "./photos/1aJluhlcfHFchlM4yEyJrV4DIP4qtOvOk.jpg",
+            "driveUrl": "https://drive.google.com/thumbnail?id=1aJluhlcfHFchlM4yEyJrV4DIP4qtOvOk&sz=w1600",
             "imageData": null
           },
           {
             "caption": "Spare Photo 23",
-            "driveUrl": "./photos/1rNtp1OMVnwfTjyCpp0HhrxTy68IzmruA.jpg",
+            "driveUrl": "https://drive.google.com/thumbnail?id=1rNtp1OMVnwfTjyCpp0HhrxTy68IzmruA&sz=w1600",
             "imageData": null
           }
         ]
@@ -363,7 +363,7 @@
         "roomName": "Main Living Area",
         "stepName": "",
         "caption": "Boulder Blue Primary Bedroom",
-        "driveUrl": "./photos/19MfJNPjPU18Eut2fum-FD-4zNZ6BbHPE.jpg",
+        "driveUrl": "https://drive.google.com/thumbnail?id=19MfJNPjPU18Eut2fum-FD-4zNZ6BbHPE&sz=w1600",
         "timestamp": "",
         "included": null
       },
@@ -372,7 +372,7 @@
         "roomName": "Main Living Area",
         "stepName": "",
         "caption": "Boulder Blue",
-        "driveUrl": "./photos/1qGyuaOcMX9IU0ceezOzE2pxw8_4JBD__.jpg",
+        "driveUrl": "https://drive.google.com/thumbnail?id=1qGyuaOcMX9IU0ceezOzE2pxw8_4JBD__&sz=w1600",
         "timestamp": "",
         "included": null
       },
@@ -381,7 +381,7 @@
         "roomName": "Main Living Area",
         "stepName": "",
         "caption": "PFAS Sample 1",
-        "driveUrl": "./photos/1m299Z5N--XM_AtbvHhpjOqmyadH4AdTp.jpg",
+        "driveUrl": "https://drive.google.com/thumbnail?id=1m299Z5N--XM_AtbvHhpjOqmyadH4AdTp&sz=w1600",
         "timestamp": "",
         "included": null
       },
@@ -390,7 +390,7 @@
         "roomName": "Main Living Area",
         "stepName": "",
         "caption": "PFAS Sample 2",
-        "driveUrl": "./photos/1GFc_rMAHW-upxdG7fZBxkOovuGoMPttn.jpg",
+        "driveUrl": "https://drive.google.com/thumbnail?id=1GFc_rMAHW-upxdG7fZBxkOovuGoMPttn&sz=w1600",
         "timestamp": "",
         "included": null
       },
@@ -399,7 +399,7 @@
         "roomName": "Main Living Area",
         "stepName": "",
         "caption": "Boulder Blue \u2014 Second Floor Primary Bedroom",
-        "driveUrl": "./photos/1Ch-9kkZIMf81YoZw-SLKZSEl2iK7PMnG.jpg",
+        "driveUrl": "https://drive.google.com/thumbnail?id=1Ch-9kkZIMf81YoZw-SLKZSEl2iK7PMnG&sz=w1600",
         "timestamp": "",
         "included": null
       },
@@ -417,7 +417,7 @@
         "roomName": "Main Living Area",
         "stepName": "",
         "caption": "Spare Photo 45",
-        "driveUrl": "./photos/1aJluhlcfHFchlM4yEyJrV4DIP4qtOvOk.jpg",
+        "driveUrl": "https://drive.google.com/thumbnail?id=1aJluhlcfHFchlM4yEyJrV4DIP4qtOvOk&sz=w1600",
         "timestamp": "",
         "included": null
       },
@@ -426,7 +426,7 @@
         "roomName": "Main Living Area",
         "stepName": "",
         "caption": "Spare Photo 23",
-        "driveUrl": "./photos/1rNtp1OMVnwfTjyCpp0HhrxTy68IzmruA.jpg",
+        "driveUrl": "https://drive.google.com/thumbnail?id=1rNtp1OMVnwfTjyCpp0HhrxTy68IzmruA&sz=w1600",
         "timestamp": "",
         "included": null
       }
