@@ -2011,17 +2011,7 @@ function buildPhotoCard(photo, locked) {
       aiBtn.disabled = true;
       aiBtn.textContent = '\u23f3 Analyzing...';
       try {
-        // Fetch the image from Drive and convert to base64
-        const imgResp = await fetch(photo.driveUrl);
-        if (!imgResp.ok) throw new Error('Could not fetch image');
-        const blob = await imgResp.blob();
-        const base64 = await new Promise((res, rej) => {
-          const reader = new FileReader();
-          reader.onload = () => res(reader.result.split(',')[1]);
-          reader.onerror = rej;
-          reader.readAsDataURL(blob);
-        });
-        const mimeType = blob.type || 'image/jpeg';
+        // Send image URL directly to proxy — avoids CORS issues fetching Drive URLs in browser
         const prompt = 'You are a professional home health inspector reviewing a photo taken during a residential inspection.' +
           (photo.roomName ? ' Room: ' + photo.roomName + '.' : '') +
           (photo.stepName ? ' Context: ' + photo.stepName + '.' : '') +
@@ -2032,7 +2022,7 @@ function buildPhotoCard(photo, locked) {
         const resp = await fetch(VISION_PROXY_URL, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ imageBase64: base64, mimeType, prompt })
+          body: JSON.stringify({ imageUrl: photo.driveUrl, prompt })
         });
         if (!resp.ok) throw new Error('API error ' + resp.status);
         const result = await resp.json();
