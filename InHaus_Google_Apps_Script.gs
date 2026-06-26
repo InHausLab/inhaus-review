@@ -38,6 +38,38 @@ const MASTER_SHEET_ID = '';
 // Set to empty string to disable AI captions
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 
+// ── ERROR ALERTING ───────────────────────────────────────
+// Email sent on any unhandled sync failure
+const ALERT_EMAIL = 'matt@inhauslab.com';
+const ALERT_CC = 'tanner@inhauslab.com';
+
+function sendErrorAlert(context, err, payload) {
+  try {
+    var subject = '⚠️ InHaus Apps Script Error — ' + context;
+    var body = [
+      'An error occurred in the InHaus Inspector Bridge.',
+      '',
+      'Context: ' + context,
+      'Error: ' + (err ? err.message : 'unknown'),
+      'Stack: ' + (err ? err.stack : 'none'),
+      'Time: ' + new Date().toISOString(),
+      '',
+      'Inspection ID: ' + (payload ? (payload.inspectionId || 'unknown') : 'unknown'),
+      'Client: ' + (payload ? (payload.clientName || 'unknown') : 'unknown'),
+      'Address: ' + (payload ? (payload.propertyAddress || 'unknown') : 'unknown'),
+    ].join('\n');
+    MailApp.sendEmail({
+      to: ALERT_EMAIL,
+      cc: ALERT_CC,
+      subject: subject,
+      body: body
+    });
+  } catch (mailErr) {
+    // If email itself fails, log it but don't throw
+    console.error('Failed to send error alert:', mailErr);
+  }
+}
+
 // ── WEB APP ENTRY POINTS ─────────────────────────────────
 
 function doPost(e) {
@@ -55,6 +87,9 @@ function doPost(e) {
       .createTextOutput(JSON.stringify({ status: 'ok', ...result }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
+    var payload = null;
+    try { payload = JSON.parse(e.postData.contents); } catch(x) {}
+    sendErrorAlert('doPost', err, payload);
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
       .setMimeType(ContentService.MimeType.JSON);
