@@ -57,7 +57,7 @@ function getSupabaseKey() {
 }
 
 function postToSupabase(table, payload) {
-  if (!SUPABASE_ENABLED || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
+  if (!SUPABASE_ENABLED || !SUPABASE_URL || !getSupabaseKey()) return null;
   try {
     var options = {
       method: 'POST',
