@@ -45,6 +45,137 @@ const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const ALERT_EMAIL = 'matt@inhauslab.com';
 const ALERT_CC = 'tanner@inhauslab.com';
 
+// ── SUPABASE CONFIG (Phase 3) ────────────────────────────────────
+// Service role key — server-side only, never expose to browser
+// Store here since Apps Script runs server-side
+const SUPABASE_URL = 'https://kvpaqvieacccojkkxqul.supabase.co';
+const SUPABASE_ENABLED = true; // set false to disable without removing code
+// SUPABASE_SERVICE_KEY is stored in Script Properties (not hardcoded)
+// To set it: Apps Script → Project Settings → Script Properties → add SUPABASE_SERVICE_KEY
+function getSupabaseKey() {
+  return PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
+}
+
+function postToSupabase(table, payload) {
+  if (!SUPABASE_ENABLED || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
+  try {
+    var options = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': getSupabaseKey(),
+        'Authorization': 'Bearer ' + getSupabaseKey(),
+        'Prefer': 'resolution=merge-duplicates,return=representation'
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+    var url = SUPABASE_URL + '/rest/v1/' + table;
+    var response = UrlFetchApp.fetch(url, options);
+    var code = response.getResponseCode();
+    if (code >= 200 && code < 300) {
+      return JSON.parse(response.getContentText());
+    } else {
+      console.error('Supabase error ' + code + ': ' + response.getContentText());
+      return null;
+    }
+  } catch(e) {
+    console.error('Supabase POST failed:', e.message);
+    return null;
+  }
+}
+
+function logSyncRun(inspectionId, status, errorMessage, photoCount, photosUploaded, appVersion) {
+  postToSupabase('ihl_sync_runs', {
+    inspection_id: inspectionId,
+    status: status,
+    error_message: errorMessage || null,
+    photo_count: photoCount || 0,
+    photos_uploaded: photosUploaded || 0,
+    app_version: appVersion || null,
+    started_at: new Date().toISOString(),
+    completed_at: new Date().toISOString(),
+    source_system: 'apps_script'
+  });
+}
+
+function syncToSupabase(data, driveResult) {
+  if (!SUPABASE_ENABLED) return;
+  try {
+    // 1. Upsert assessment record
+    var assessment = {
+      inspection_id: data.inspectionId,
+      report_id: null,
+      inspector_name: data.inspectorName || null,
+      inspection_date: data.inspectionDate || null,
+      status: data.status || 'synced',
+      drive_folder_id: driveResult ? driveResult.folderId : null,
+      assessment_folder_url: driveResult ? driveResult.folderUrl : null,
+      water_source: data.waterSource || null,
+      occupancy: data.occupancyDuringInspection || null,
+      weather_conditions: data.weatherConditions || null,
+      client_concerns: data.clientConcerns || null,
+      known_problem_areas: data.knownProblemAreas || null,
+      pets: data.pets || null,
+      smoking_vaping: data.smokingVaping || null,
+      stove_type: data.stoveType || null,
+      fireplace: data.fireplace || null,
+      carpeted_rooms: data.carpetedRooms || null,
+      started_at: data.startedAt || null,
+      ended_at: data.endedAt || null,
+      completed_at: data.completedAt || null,
+      app_version: data.appVersion || null,
+      completion_score: data.completionScore || null,
+      completion_grade: data.completionGrade || null,
+      same_day_bonus: data.sameDayBonus || false,
+      payload_version: data.payloadVersion || null,
+      raw_jsonb: data,
+      source_system: 'apps_script',
+      source_id: data.inspectionId
+    };
+    postToSupabase('ihl_assessments', assessment);
+
+    // 2. Upsert room air quality records
+    var rooms = data.rooms || [];
+    rooms.forEach(function(room) {
+      var roomRecord = {
+        inspection_id: data.inspectionId,
+        room_name: room.roomName || null,
+        room_type: room.type || null,
+        level: room.level || null,
+        step_id: room.stepId || null,
+        co2_ppm: parseFloat(room.co2) || null,
+        co_ppm: parseFloat(room.co) || null,
+        tvoc_ppb: parseFloat(room.tvoc) || null,
+        temp_f: parseFloat(room.temp) || null,
+        humidity_pct: parseFloat(room.humidity) || null,
+        observations: room.observations || null,
+        actions_taken: room.actionsTaken || null,
+        follow_up: room.followUp || null,
+        raw_data: room,
+        source_system: 'apps_script',
+        source_id: data.inspectionId + '_' + (room.stepId || room.roomName)
+      };
+      postToSupabase('ihl_air_quality_rooms', roomRecord);
+    });
+
+    // 3. Log sync run as success
+    logSyncRun(
+      data.inspectionId,
+      'success',
+      null,
+      (data.photos || []).length,
+      driveResult ? driveResult.photosUploaded : 0,
+      data.appVersion
+    );
+
+  } catch(e) {
+    console.error('syncToSupabase error:', e.message);
+    logSyncRun(data.inspectionId, 'partial', e.message, 0, 0, data.appVersion);
+  }
+}
+
+
 function sendErrorAlert(context, err, payload) {
   try {
     var subject = '⚠️ InHaus Apps Script Error — ' + context;
@@ -235,12 +366,17 @@ function getReviewData(id, token) {
 // ── MAIN PROCESSING ──────────────────────────────────────
 
 function processInspection(data) {
+  var result;
   // Option A: Append to master sheet as a row
   if (MASTER_SHEET_ID) {
-    return appendToMasterSheet(data);
+    result = appendToMasterSheet(data);
+  } else {
+    // Option B: Create individual sheet per inspection
+    result = createInspectionSheet(data);
   }
-  // Option B: Create individual sheet per inspection
-  return createInspectionSheet(data);
+  // Phase 3: POST to Supabase after Drive sync
+  syncToSupabase(data, result);
+  return result;
 }
 
 // ── OPTION A: MASTER SHEET (all inspections as rows) ─────
