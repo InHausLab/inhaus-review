@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-06-23T12:00:00.000Z",
-  "count": 8,
+  "generatedAt": "2026-06-26T12:00:00.000Z",
+  "count": 9,
   "inspections": [
     {
       "inspectionId": "INH-20260520-EAYNCM",
@@ -139,7 +139,7 @@
       "missingCount": 0,
       "spreadsheetId": "1BC9Ww5RYOZkRSBdIO7CehUjbW9OrLTQwYv9aY158048",
       "folderId": "1sInZt5I9rJKyBOjZ3f2H1yTwPNXn7Bee",
-      "syncedAt": "2026-06-19T06:37:17.456Z",
+      "syncedAt": "2026-06-19T06:37:17.656Z",
       "reviewedBy": "",
       "reviewedAt": "",
       "submittedAt": "",
