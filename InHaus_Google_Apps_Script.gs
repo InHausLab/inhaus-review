@@ -28,7 +28,9 @@
 // ── CONFIG ────────────────────────────────────────────────
 // Set this to the ID of a Google Drive folder where inspection folders should be created
 // (Get folder ID from the URL: https://drive.google.com/drive/folders/FOLDER_ID_HERE)
-const DRIVE_FOLDER_ID = '11K48iY7zAB6IbXHOmLi9XVEAXih_3qeA'; // InHaus Lab — Inspection Data
+const DRIVE_FOLDER_ID = '11A2EXgQSFo4BAh3aYlJpHxqZKsfwe06l'; // Assessments/ — Products & Services Shared Drive
+const DRIVE_FOLDER_ID_OLD = '11K48iY7zAB6IbXHOmLi9XVEAXih_3qeA'; // OLD: InHaus Lab — Inspection Data (personal Drive)
+const USE_SHARED_DRIVE = true; // Phase 2: writing to Shared Drive
 
 // Set this to an existing spreadsheet ID to append all inspections as rows
 // Leave empty to create a new spreadsheet per inspection
@@ -68,6 +70,50 @@ function sendErrorAlert(context, err, payload) {
     // If email itself fails, log it but don't throw
     console.error('Failed to send error alert:', mailErr);
   }
+}
+
+// ── SHARED DRIVE HELPERS ────────────────────────────────
+// Required for Phase 2: Assessments/ folder is in a Shared Drive
+// DriveApp simple service cannot create/move files in Shared Drives
+// Use Drive Advanced Service (must be enabled in script: Resources → Advanced Google Services → Drive API)
+
+function getOrCreateInspectionFolderInSharedDrive(parentFolderId, folderName, inspId) {
+  if (inspId) {
+    var query = 'mimeType="application/vnd.google-apps.folder" and "' + parentFolderId + '" in parents and trashed=false';
+    var results = Drive.Files.list({
+      q: query,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+      fields: 'files(id,name)'
+    });
+    var files = (results.files || []);
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].name.indexOf(inspId) > -1) {
+        return DriveApp.getFolderById(files[i].id);
+      }
+    }
+  }
+  var folderMetadata = {
+    name: folderName,
+    mimeType: 'application/vnd.google-apps.folder',
+    parents: [parentFolderId]
+  };
+  var created = Drive.Files.create(folderMetadata, null, {
+    supportsAllDrives: true,
+    fields: 'id'
+  });
+  return DriveApp.getFolderById(created.id);
+}
+
+function moveFileToSharedDriveFolder(fileId, destFolderId) {
+  var file = Drive.Files.get(fileId, { supportsAllDrives: true, fields: 'parents' });
+  var prevParents = (file.parents || []).join(',');
+  Drive.Files.update({}, fileId, null, {
+    addParents: destFolderId,
+    removeParents: prevParents,
+    supportsAllDrives: true,
+    fields: 'id,parents'
+  });
 }
 
 // ── WEB APP ENTRY POINTS ─────────────────────────────────
@@ -249,40 +295,56 @@ function createInspectionSheet(data) {
   var address = data.propertyAddress || data.inspectionId;
   var inspId = data.inspectionId || '';
   const folderName = lastName + ' \u2014 ' + address + (inspId ? ' \u2014 ' + inspId : '');
-  const parentFolder = DRIVE_FOLDER_ID ? DriveApp.getFolderById(DRIVE_FOLDER_ID) : DriveApp.getRootFolder();
-
   // Deduplicate: search for existing folder/sheet with this inspectionId
   var inspFolder = null;
   var ss = null;
-  if (inspId) {
-    var folders = parentFolder.getFolders();
-    while (folders.hasNext()) {
-      var f = folders.next();
-      if (f.getName().indexOf(inspId) > -1) {
-        inspFolder = f;
-        var files = f.getFiles();
-        while (files.hasNext()) {
-          var existingFile = files.next();
-          if (existingFile.getMimeType() === MimeType.GOOGLE_SHEETS) {
-            ss = SpreadsheetApp.openById(existingFile.getId());
-            break;
+
+  if (USE_SHARED_DRIVE) {
+    inspFolder = getOrCreateInspectionFolderInSharedDrive(DRIVE_FOLDER_ID, folderName, inspId);
+    if (inspId) {
+      var sheetQuery = '"' + inspFolder.getId() + '" in parents and mimeType="application/vnd.google-apps.spreadsheet" and trashed=false';
+      var sheetResults = Drive.Files.list({
+        q: sheetQuery,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+        fields: 'files(id,name)'
+      });
+      var sheetFiles = (sheetResults.files || []);
+      if (sheetFiles.length > 0) ss = SpreadsheetApp.openById(sheetFiles[0].id);
+    }
+  } else {
+    var parentFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    if (inspId) {
+      var folders = parentFolder.getFolders();
+      while (folders.hasNext()) {
+        var f = folders.next();
+        if (f.getName().indexOf(inspId) > -1) {
+          inspFolder = f;
+          var files = f.getFiles();
+          while (files.hasNext()) {
+            var existingFile = files.next();
+            if (existingFile.getMimeType() === MimeType.GOOGLE_SHEETS) {
+              ss = SpreadsheetApp.openById(existingFile.getId());
+              break;
+            }
           }
+          break;
         }
-        break;
       }
     }
-  }
-
-  if (!inspFolder) {
-    inspFolder = parentFolder.createFolder(folderName);
+    if (!inspFolder) inspFolder = parentFolder.createFolder(folderName);
   }
 
   if (!ss) {
     const sheetName = 'InHaus Inspection \u2014 ' + (data.inspectionId || 'Unknown');
     ss = SpreadsheetApp.create(sheetName);
-    const file = DriveApp.getFileById(ss.getId());
-    inspFolder.addFile(file);
-    DriveApp.getRootFolder().removeFile(file);
+    if (USE_SHARED_DRIVE) {
+      moveFileToSharedDriveFolder(ss.getId(), inspFolder.getId());
+    } else {
+      const file = DriveApp.getFileById(ss.getId());
+      inspFolder.addFile(file);
+      DriveApp.getRootFolder().removeFile(file);
+    }
   } else {
     // Clear all sheets for rewrite; keep at least one sheet to avoid errors
     var existingSheets = ss.getSheets();
@@ -335,17 +397,33 @@ function processPhotoUpload(data) {
   var inspectionId = data.inspectionId;
   if (!inspectionId) throw new Error('No inspectionId in photo upload payload');
 
-  var parentFolder = DRIVE_FOLDER_ID ? DriveApp.getFolderById(DRIVE_FOLDER_ID) : DriveApp.getRootFolder();
   var targetFolder = null;
   var targetSheet = null;
 
-  // Find existing folder by inspectionId in name
-  var folders = parentFolder.getFolders();
-  while (folders.hasNext()) {
-    var f = folders.next();
-    if (f.getName().indexOf(inspectionId) > -1) {
-      targetFolder = f;
-      break;
+  if (USE_SHARED_DRIVE) {
+    var query = 'mimeType="application/vnd.google-apps.folder" and "' + DRIVE_FOLDER_ID + '" in parents and trashed=false';
+    var results = Drive.Files.list({
+      q: query,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+      fields: 'files(id,name)'
+    });
+    var folderFiles = (results.files || []);
+    for (var i = 0; i < folderFiles.length; i++) {
+      if (folderFiles[i].name.indexOf(inspectionId) > -1) {
+        targetFolder = DriveApp.getFolderById(folderFiles[i].id);
+        break;
+      }
+    }
+  } else {
+    var parentFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    var folders = parentFolder.getFolders();
+    while (folders.hasNext()) {
+      var f = folders.next();
+      if (f.getName().indexOf(inspectionId) > -1) {
+        targetFolder = f;
+        break;
+      }
     }
   }
 
