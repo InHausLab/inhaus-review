@@ -162,6 +162,7 @@ function getOrCreateReviewSheet() {
       ss = SpreadsheetApp.create('InHaus Review Data');
       var newFile = DriveApp.getFileById(ss.getId());
       folder.addFile(newFile);
+      try { DriveApp.getRootFolder().removeFile(newFile); } catch(e) {}
       DriveApp.getRootFolder().removeFile(newFile);
     }
   }
