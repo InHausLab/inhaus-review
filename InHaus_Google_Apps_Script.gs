@@ -45,6 +45,10 @@ const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const ALERT_EMAIL = 'matt@inhauslab.com';
 const ALERT_CC = 'tanner@inhauslab.com';
 
+// Shared portal token for list/get fallback calls from the review portal.
+const REVIEW_ACCESS_TOKEN = 'InHaus2026';
+const REVIEW_ACCESS_TOKEN_LEGACY = 'inhaus_review_2026';
+
 // ── SUPABASE CONFIG (Phase 3) ────────────────────────────────────
 // Service role key — server-side only, never expose to browser
 // Store here since Apps Script runs server-side
@@ -234,6 +238,10 @@ function doPost(e) {
     var result;
     if (data.action === 'saveReview') {
       result = saveReviewData(data);
+    } else if (data.action === 'submit') {
+      result = submitReviewToTanner(data);
+    } else if (data.action === 'adminUnlock') {
+      result = adminUnlockReview(data);
     } else if (data.photoUploadOnly) {
       result = processPhotoUpload(data);
     } else {
@@ -254,6 +262,30 @@ function doPost(e) {
 
 function doGet(e) {
   var params = e ? e.parameter : {};
+  if (params.action === 'list') {
+    try {
+      var listResult = listReviewInspections(params.token);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ok', ...listResult }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  if (params.action === 'get' && params.id) {
+    try {
+      var inspectionResult = getInspectionForReview(params.id, params.token);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ok', ...inspectionResult }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
   if (params.action === 'getReview' && params.id) {
     try {
       var result = getReviewData(params.id, params.token);
@@ -330,7 +362,7 @@ function saveReviewData(data) {
   var key = field.key;
   var value = field.value;
 
-  if (stepId === 'summary' || stepId === 'photo' || stepId.startsWith('photo_')) {
+  if (stepId === 'summary' || stepId === 'photo') {
     existing[key] = value;
   } else {
     if (!existing[stepId]) existing[stepId] = {};
@@ -361,6 +393,423 @@ function getReviewData(id, token) {
     }
   }
   return { reviewedData: {}, lastUpdated: null };
+}
+
+// ── REVIEW PORTAL API ────────────────────────────────────
+
+function isPortalAccessToken(token) {
+  return token === REVIEW_ACCESS_TOKEN || token === REVIEW_ACCESS_TOKEN_LEGACY;
+}
+
+function requirePortalAccess(token) {
+  if (!isPortalAccessToken(token)) {
+    throw new Error('Invalid review portal access token');
+  }
+}
+
+function requireReviewTokenForInspection(insp, token) {
+  if (isPortalAccessToken(token)) return;
+  if (!token) throw new Error('Missing review token');
+  if (insp && insp.reviewToken && insp.reviewToken !== token) {
+    throw new Error('Invalid review token');
+  }
+}
+
+function getReviewAdminToken() {
+  return PropertiesService.getScriptProperties().getProperty('REVIEW_ADMIN_TOKEN') || 'InHausAdmin2026';
+}
+
+function getFromSupabase(table, queryString) {
+  if (!SUPABASE_ENABLED || !SUPABASE_URL || !getSupabaseKey()) return [];
+  var options = {
+    method: 'get',
+    headers: {
+      'apikey': getSupabaseKey(),
+      'Authorization': 'Bearer ' + getSupabaseKey(),
+      'Content-Type': 'application/json'
+    },
+    muteHttpExceptions: true
+  };
+  var url = SUPABASE_URL + '/rest/v1/' + table + (queryString ? '?' + queryString : '');
+  var response = UrlFetchApp.fetch(url, options);
+  var code = response.getResponseCode();
+  if (code >= 200 && code < 300) {
+    var text = response.getContentText();
+    return text ? JSON.parse(text) : [];
+  }
+  throw new Error('Supabase GET failed ' + code + ': ' + response.getContentText());
+}
+
+function parseRawJsonb(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch(e) { return {}; }
+  }
+  return raw;
+}
+
+function extractDriveIdForReview(photo) {
+  if (!photo) return '';
+  if (photo.driveId) return String(photo.driveId);
+  var url = String(photo.driveUrl || photo.url || photo.imageUrl || '');
+  var match = url.match(/[?&]id=([^&]+)/) || url.match(/\/d\/([^/]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+function thumbnailUrlForReview(photo) {
+  if (photo.driveUrl) return photo.driveUrl;
+  var driveId = extractDriveIdForReview(photo);
+  return driveId ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(driveId) + '&sz=w1600' : '';
+}
+
+function photoReviewKey(photo) {
+  var driveId = extractDriveIdForReview(photo);
+  if (driveId) return 'drive:' + driveId;
+  if (photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl) {
+    return 'url:' + (photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl);
+  }
+  if (photo.photoId) return 'id:' + photo.photoId;
+  return 'meta:' + [photo.roomName || '', photo.stepName || '', photo.caption || '', photo.timestamp || ''].join('|');
+}
+
+function makeReviewPhotoId(photo, index, usedIds) {
+  var driveId = extractDriveIdForReview(photo).replace(/[^a-zA-Z0-9]/g, '');
+  var base = photo.photoId || (driveId ? 'ph_' + driveId.slice(-12) : 'ph_' + String(index + 1).padStart(3, '0'));
+  var id = base;
+  var suffix = 2;
+  while (usedIds[id]) id = base + '_' + suffix++;
+  usedIds[id] = true;
+  return id;
+}
+
+function cleanReviewPhoto(photo, context) {
+  var out = {};
+  Object.keys(photo || {}).forEach(function(key) {
+    if (key !== 'imageData' && photo[key] !== undefined) out[key] = photo[key];
+  });
+  var driveUrl = thumbnailUrlForReview(out);
+  if (driveUrl) out.driveUrl = driveUrl;
+  var driveId = extractDriveIdForReview(out);
+  if (driveId) out.driveId = driveId;
+  out.roomName = out.roomName || context.roomName || '';
+  out.stepName = out.stepName || context.stepName || '';
+  out.caption = out.caption || '';
+  out.timestamp = out.timestamp || '';
+  if (out.included === undefined) out.included = null;
+  return out;
+}
+
+function flattenInspectionPhotosForReview(insp) {
+  var byKey = {};
+  var order = [];
+
+  function addPhoto(photo, context) {
+    if (!photo || typeof photo !== 'object') return;
+    var normalized = cleanReviewPhoto(photo, context || {});
+    var hasUsefulData = normalized.driveUrl || normalized.driveId || normalized.localUrl || normalized.url ||
+      normalized.imageUrl || normalized.caption || normalized.timestamp || normalized.roomName || normalized.stepName;
+    if (!hasUsefulData) return;
+    var key = photoReviewKey(normalized);
+    if (byKey[key]) {
+      Object.keys(normalized).forEach(function(field) {
+        if ((byKey[key][field] === undefined || byKey[key][field] === '') &&
+            normalized[field] !== undefined && normalized[field] !== '') {
+          byKey[key][field] = normalized[field];
+        }
+      });
+      return;
+    }
+    byKey[key] = normalized;
+    order.push(key);
+  }
+
+  (insp.photos || []).forEach(function(photo) { addPhoto(photo, {}); });
+
+  function walk(value, context, depth) {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      value.forEach(function(item) { walk(item, context, depth); });
+      return;
+    }
+    var nextContext = {
+      roomName: value.roomName || value.name || context.roomName || '',
+      stepName: value.stepName || value.stepId || value.type || context.stepName || ''
+    };
+    Object.keys(value).forEach(function(key) {
+      var child = value[key];
+      if (key === 'photos' && Array.isArray(child)) {
+        if (depth > 0) child.forEach(function(photo) { addPhoto(photo, nextContext); });
+      } else if (child && typeof child === 'object') {
+        walk(child, nextContext, depth + 1);
+      }
+    });
+  }
+
+  walk(insp, {}, 0);
+
+  var usedIds = {};
+  return order.map(function(key) { return byKey[key]; })
+    .sort(function(a, b) {
+      var ta = a.timestamp ? Date.parse(a.timestamp) : NaN;
+      var tb = b.timestamp ? Date.parse(b.timestamp) : NaN;
+      if (!isNaN(ta) && !isNaN(tb) && ta !== tb) return ta - tb;
+      return 0;
+    })
+    .map(function(photo, index) {
+      photo.photoId = makeReviewPhotoId(photo, index, usedIds);
+      return photo;
+    });
+}
+
+function mergeDriveFolderPhotosForReview(photos, folderId) {
+  if (!folderId) return photos;
+  var existing = {};
+  photos.forEach(function(photo) {
+    var key = photoReviewKey(photo);
+    existing[key] = true;
+  });
+  try {
+    var folder = DriveApp.getFolderById(folderId);
+    var files = folder.getFiles();
+    while (files.hasNext()) {
+      var file = files.next();
+      var mime = file.getMimeType() || '';
+      var name = file.getName() || '';
+      if (mime.indexOf('image/') !== 0 && !/\.(jpe?g|png|webp|heic)$/i.test(name)) continue;
+      try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
+      var fileId = file.getId();
+      var drivePhoto = {
+        photoId: 'ph_' + fileId.replace(/[^a-zA-Z0-9]/g, '').slice(-12),
+        driveId: fileId,
+        driveUrl: 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(fileId) + '&sz=w1600',
+        caption: file.getDescription() || name.replace(/\.[^.]+$/, ''),
+        roomName: 'Drive Folder',
+        stepName: 'Unassigned Drive Photo',
+        timestamp: file.getDateCreated() ? file.getDateCreated().toISOString() : '',
+        included: null
+      };
+      var key = photoReviewKey(drivePhoto);
+      if (!existing[key]) {
+        photos.push(drivePhoto);
+        existing[key] = true;
+      }
+    }
+  } catch (err) {
+    console.error('mergeDriveFolderPhotosForReview failed:', err.message);
+  }
+  return photos;
+}
+
+function normalizeInspectionForReviewApi(data) {
+  data.id = data.id || data.inspectionId;
+  data.inspectionId = data.inspectionId || data.id;
+  data.photos = mergeDriveFolderPhotosForReview(flattenInspectionPhotosForReview(data), data.folderId || '');
+  data.photoCount = data.photos.length;
+  return data;
+}
+
+function statusForReviewList(data) {
+  var raw = data.reviewStatus || data.status || '';
+  if (/submitted to tanner/i.test(raw)) return 'Submitted to Tanner';
+  if (/report complete/i.test(raw)) return 'Report Complete';
+  if (/in review/i.test(raw)) return 'In Review';
+  if (/needs review/i.test(raw)) return 'Needs Review';
+  if (/synced/i.test(raw)) return 'Synced';
+  if (/complete/i.test(raw)) return 'Needs Review';
+  if (/progress/i.test(raw)) return 'In Review';
+  return raw || 'Needs Review';
+}
+
+function listEntryForReview(data) {
+  return {
+    inspectionId: data.inspectionId || data.id,
+    id: data.id || data.inspectionId,
+    clientName: data.clientName || '',
+    propertyAddress: data.propertyAddress || '',
+    inspectionDate: data.inspectionDate || '',
+    inspectorName: data.inspectorName || '',
+    status: statusForReviewList(data),
+    photoCount: (data.photos || []).length,
+    missingCount: data.missingCount || 0,
+    spreadsheetId: data.spreadsheetId || '',
+    folderId: data.folderId || '',
+    syncedAt: data.syncedAt || '',
+    lastUpdated: data.completedAt || data.endedAt || data.syncedAt || '',
+    reviewedBy: data.reviewedBy || '',
+    reviewedAt: data.reviewedAt || '',
+    submittedAt: data.submittedAt || data.submittedToTannerAt || '',
+    reportBuilderNotes: data.reportBuilderNotes || '',
+    reviewToken: data.reviewToken || String(data.inspectionId || data.id || '').toLowerCase()
+  };
+}
+
+function listReviewInspections(token) {
+  requirePortalAccess(token);
+  var rows = getFromSupabase(
+    'ihl_assessments',
+    'select=inspection_id,status,drive_folder_id,assessment_folder_url,raw_jsonb&order=inspection_id.desc'
+  );
+  var inspections = rows.map(function(row) {
+    var data = parseRawJsonb(row.raw_jsonb);
+    data.inspectionId = data.inspectionId || row.inspection_id;
+    data.id = data.id || data.inspectionId;
+    data.status = row.status || data.status;
+    data.folderId = data.folderId || row.drive_folder_id;
+    return listEntryForReview(normalizeInspectionForReviewApi(data));
+  });
+  return {
+    generatedAt: new Date().toISOString(),
+    count: inspections.length,
+    inspections: inspections
+  };
+}
+
+function getInspectionForReview(id, token) {
+  var rows = getFromSupabase(
+    'ihl_assessments',
+    'select=inspection_id,status,drive_folder_id,assessment_folder_url,raw_jsonb&inspection_id=eq.' + encodeURIComponent(id) + '&limit=1'
+  );
+  if (!rows.length) throw new Error('Inspection not found: ' + id);
+  var row = rows[0];
+  var data = parseRawJsonb(row.raw_jsonb);
+  data.inspectionId = data.inspectionId || row.inspection_id || id;
+  data.id = data.id || data.inspectionId;
+  data.status = row.status || data.status;
+  data.folderId = data.folderId || row.drive_folder_id;
+  requireReviewTokenForInspection(data, token);
+  data = normalizeInspectionForReviewApi(data);
+  var review = getReviewData(id, token);
+  data.reviewedData = Object.assign(data.reviewedData || {}, review.reviewedData || {});
+  if (data.reviewedData.submission && data.reviewedData.submission.status) {
+    data.status = data.reviewedData.submission.status;
+    data.submittedToTannerAt = data.reviewedData.submission.submittedAt || data.submittedToTannerAt || '';
+  }
+  return { inspection: data };
+}
+
+function deepMergeReviewData(target, source) {
+  target = target || {};
+  Object.keys(source || {}).forEach(function(key) {
+    var value = source[key];
+    if (value && typeof value === 'object' && !Array.isArray(value) &&
+        target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])) {
+      target[key] = deepMergeReviewData(target[key], value);
+    } else {
+      target[key] = value;
+    }
+  });
+  return target;
+}
+
+function upsertReviewDataRecord(id, patch) {
+  if (!id) throw new Error('Missing inspection id');
+  var sheet = getOrCreateReviewSheet();
+  var rows = sheet.getDataRange().getValues();
+  var rowIndex = -1;
+  var existing = {};
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0] === id) {
+      rowIndex = i + 1;
+      try { existing = JSON.parse(rows[i][1] || '{}'); } catch(e) { existing = {}; }
+      break;
+    }
+  }
+  var merged = deepMergeReviewData(existing, patch || {});
+  var now = new Date().toISOString();
+  if (rowIndex > 0) {
+    sheet.getRange(rowIndex, 2).setValue(JSON.stringify(merged));
+    sheet.getRange(rowIndex, 3).setValue(now);
+  } else {
+    sheet.appendRow([id, JSON.stringify(merged), now]);
+  }
+  return { reviewedData: merged, lastUpdated: now };
+}
+
+function notifyTannerSubmission(data, reviewedData) {
+  var id = data.id || data.inspectionId;
+  var subject = 'InHaus review submitted - ' + (data.propertyAddress || id);
+  var reviewUrl = 'https://inhauslab.github.io/inhaus-review/review.html?id=' +
+    encodeURIComponent(id) + '&token=' + encodeURIComponent(data.token || '');
+  var body = [
+    'David submitted an inspection review for report building.',
+    '',
+    'Inspection ID: ' + id,
+    'Address: ' + (data.propertyAddress || ''),
+    'Client: ' + (data.clientName || ''),
+    'Submitted: ' + (data.submittedAt || ''),
+    'Score: ' + (data.completionScore || '') + (data.completionGrade ? ' (' + data.completionGrade + ')' : ''),
+    'Photos: ' + ((data.photos || []).length),
+    'Same-day bonus: ' + (data.sameDayBonus ? ('$' + (data.sameDayBonusAmt || 0)) : 'No'),
+    '',
+    'Report Builder Notes:',
+    data.reportBuilderNotes || (reviewedData && reviewedData.reportBuilderNotes) || '',
+    '',
+    'Open review:',
+    reviewUrl
+  ].join('\n');
+  MailApp.sendEmail({
+    to: ALERT_CC || ALERT_EMAIL,
+    cc: ALERT_EMAIL,
+    subject: subject,
+    body: body
+  });
+}
+
+function submitReviewToTanner(data) {
+  var id = data.id || data.inspectionId;
+  if (!id) throw new Error('Missing inspection id');
+  if (!data.token) throw new Error('Missing review token');
+  var submittedAt = data.submittedAt || new Date().toISOString();
+  var patch = deepMergeReviewData({}, data.reviewedData || {});
+  patch.reportBuilderNotes = data.reportBuilderNotes || patch.reportBuilderNotes || '';
+  patch.photos = data.photos || patch.photos || [];
+  patch.submission = {
+    status: 'Submitted to Tanner',
+    submittedAt: submittedAt,
+    completionScore: data.completionScore || null,
+    completionGrade: data.completionGrade || null,
+    sameDayBonus: data.sameDayBonus || false,
+    sameDayBonusAmt: data.sameDayBonusAmt || 0
+  };
+  var saved = upsertReviewDataRecord(id, patch);
+  data.id = id;
+  data.inspectionId = id;
+  data.submittedAt = submittedAt;
+  try {
+    postToSupabase('ihl_assessments', {
+      inspection_id: id,
+      status: 'Submitted to Tanner',
+      completion_score: data.completionScore || null,
+      completion_grade: data.completionGrade || null,
+      same_day_bonus: data.sameDayBonus || false
+    });
+  } catch(e) {
+    console.error('Submit Supabase status update failed:', e.message);
+  }
+  notifyTannerSubmission(data, saved.reviewedData);
+  return { submitted: true, id: id, status: 'Submitted to Tanner', submittedAt: submittedAt };
+}
+
+function adminUnlockReview(data) {
+  var id = data.id || data.inspectionId;
+  if (!id) throw new Error('Missing inspection id');
+  if (data.adminToken !== getReviewAdminToken()) throw new Error('Invalid admin token');
+  var unlockedAt = new Date().toISOString();
+  var saved = upsertReviewDataRecord(id, {
+    submission: {
+      status: 'Needs Review',
+      unlockedAt: unlockedAt
+    }
+  });
+  try {
+    postToSupabase('ihl_assessments', {
+      inspection_id: id,
+      status: 'Needs Review'
+    });
+  } catch(e) {
+    console.error('Admin unlock Supabase status update failed:', e.message);
+  }
+  return { unlocked: true, id: id, status: 'Needs Review', unlockedAt: unlockedAt, lastUpdated: saved.lastUpdated };
 }
 
 // ── MAIN PROCESSING ──────────────────────────────────────

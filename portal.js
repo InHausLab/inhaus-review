@@ -6,7 +6,7 @@
  */
 
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxh6xtKg3FKjoHzi6jbJ_8RmjIgihgvcgeG8jGrFWweGcD3iwjV9voLVj0cmy5VeczuPw/exec';
-const ACCESS_TOKEN    = 'inhaus_review_2026';
+const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 
 const IS_DEMO = (APPS_SCRIPT_URL === 'PLACEHOLDER_URL');
@@ -198,6 +198,139 @@ function getURLParams() {
   return { id: p.get('id'), token: p.get('token') };
 }
 
+function getDriveIdFromPhoto(photo) {
+  if (!photo) return '';
+  if (photo.driveId) return String(photo.driveId);
+  const url = String(photo.driveUrl || photo.url || photo.imageUrl || '');
+  const match = url.match(/[?&]id=([^&]+)/) || url.match(/\/d\/([^/]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+function normalizePhotoUrl(photo) {
+  if (photo.driveUrl) return photo.driveUrl;
+  const driveId = getDriveIdFromPhoto(photo);
+  return driveId ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w1600` : '';
+}
+
+function photoKey(photo) {
+  const driveId = getDriveIdFromPhoto(photo);
+  if (driveId) return `drive:${driveId}`;
+  if (photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl) {
+    return `url:${photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl}`;
+  }
+  if (photo.photoId) return `id:${photo.photoId}`;
+  return `meta:${photo.roomName || ''}|${photo.stepName || ''}|${photo.caption || ''}|${photo.timestamp || ''}`;
+}
+
+function assignPhotoId(photo, index, usedIds) {
+  const driveId = getDriveIdFromPhoto(photo).replace(/[^a-zA-Z0-9]/g, '');
+  let base = photo.photoId || (driveId ? `ph_${driveId.slice(-12)}` : `ph_${String(index + 1).padStart(3, '0')}`);
+  let id = base;
+  let suffix = 2;
+  while (usedIds.has(id)) id = `${base}_${suffix++}`;
+  usedIds.add(id);
+  return id;
+}
+
+function flattenInspectionPhotos(insp) {
+  const photosByKey = new Map();
+
+  function addPhoto(photo, context = {}) {
+    if (!photo || typeof photo !== 'object') return;
+    const normalized = { ...photo };
+    delete normalized.imageData;
+    const driveUrl = normalizePhotoUrl(normalized);
+    if (driveUrl) normalized.driveUrl = driveUrl;
+    normalized.roomName = normalized.roomName || context.roomName || '';
+    normalized.stepName = normalized.stepName || context.stepName || '';
+    normalized.caption = normalized.caption || '';
+    normalized.timestamp = normalized.timestamp || '';
+    if (normalized.included === undefined) normalized.included = null;
+
+    const hasUsefulData =
+      normalized.driveUrl || normalized.localUrl || normalized.url || normalized.imageUrl ||
+      normalized.caption || normalized.timestamp || normalized.roomName || normalized.stepName;
+    if (!hasUsefulData) return;
+
+    const key = photoKey(normalized);
+    const existing = photosByKey.get(key);
+    if (existing) {
+      for (const [field, value] of Object.entries(normalized)) {
+        if ((existing[field] === undefined || existing[field] === '') && value !== undefined && value !== '') {
+          existing[field] = value;
+        }
+      }
+      return;
+    }
+    photosByKey.set(key, normalized);
+  }
+
+  (insp.photos || []).forEach(photo => addPhoto(photo));
+
+  function walk(value, context = {}, pathParts = []) {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      value.forEach(item => walk(item, context, pathParts));
+      return;
+    }
+
+    const nextContext = {
+      roomName: value.roomName || value.name || context.roomName || '',
+      stepName: value.stepName || value.stepId || value.type || context.stepName || ''
+    };
+
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'photos' && Array.isArray(child)) {
+        const isTopLevelPhotos = pathParts.length === 0;
+        if (!isTopLevelPhotos) child.forEach(photo => addPhoto(photo, nextContext));
+      } else if (child && typeof child === 'object') {
+        walk(child, nextContext, pathParts.concat(key));
+      }
+    }
+  }
+
+  walk(insp);
+
+  const usedIds = new Set();
+  return Array.from(photosByKey.values())
+    .sort((a, b) => {
+      const ta = a.timestamp ? Date.parse(a.timestamp) : NaN;
+      const tb = b.timestamp ? Date.parse(b.timestamp) : NaN;
+      if (!Number.isNaN(ta) && !Number.isNaN(tb) && ta !== tb) return ta - tb;
+      return 0;
+    })
+    .map((photo, index) => ({ ...photo, photoId: assignPhotoId(photo, index, usedIds) }));
+}
+
+function applyReviewedData(insp) {
+  const reviewed = insp.reviewedData || {};
+  const summary = reviewed.summary || {};
+  ['clientName', 'propertyAddress', 'inspectionDate', 'reportBuilderNotes'].forEach(key => {
+    if (summary[key] !== undefined) insp[key] = summary[key];
+    else if (reviewed[key] !== undefined) insp[key] = reviewed[key];
+  });
+
+  (insp.photos || []).forEach(photo => {
+    const nested = reviewed[`photo_${photo.photoId}`] || {};
+    if (nested.caption !== undefined) photo.caption = nested.caption;
+    if (nested.included !== undefined) photo.included = nested.included;
+    const legacyCaption = reviewed[`caption_${photo.photoId}`];
+    const legacyIncluded = reviewed[`included_${photo.photoId}`];
+    if (legacyCaption !== undefined) photo.caption = legacyCaption;
+    if (legacyIncluded !== undefined) photo.included = legacyIncluded;
+  });
+}
+
+function normalizeInspectionForReview(insp) {
+  if (!insp || typeof insp !== 'object') return insp;
+  insp.id = insp.id || insp.inspectionId;
+  insp.inspectionId = insp.inspectionId || insp.id;
+  insp.photos = flattenInspectionPhotos(insp);
+  applyReviewedData(insp);
+  insp.photoCount = insp.photos.length;
+  return insp;
+}
+
 const STATUS_TOOLTIPS = {
   'Synced':              'Data has been exported from the Inspector App and is ready to review here.',
   'In Review':           'Inspector is currently reviewing this inspection.',
@@ -274,12 +407,14 @@ async function apiFetch(params, method = 'GET', body = null) {
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const opts = { method };
   if (body) {
-    opts.headers = { 'Content-Type': 'application/json' };
+    opts.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(url.toString(), opts);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const json = await res.json();
+  if (json && json.status === 'error') throw new Error(json.message || 'API error');
+  return json;
 }
 
 /* ============================================================
@@ -303,12 +438,13 @@ async function loadInspectionList() {
     if (bar) bar.classList.remove('hidden');
   } else {
     try {
-      // Try static file first (fast, no auth needed), fall back to Apps Script
-      const staticResp = await fetch('./api/list.json?t=' + Date.now());
-      if (staticResp.ok) {
-        data = await staticResp.json();
-      } else {
+      try {
         data = await apiFetch({ action: 'list', token: ACCESS_TOKEN });
+        if (!data || !Array.isArray(data.inspections)) throw new Error('Live list unavailable');
+      } catch (apiErr) {
+        const staticResp = await fetch('./api/list.json?t=' + Date.now());
+        if (!staticResp.ok) throw apiErr;
+        data = await staticResp.json();
       }
     } catch (err) {
       tableBody.innerHTML = `<tr><td colspan="9" class="empty-state">
@@ -377,13 +513,15 @@ async function loadInspection() {
       return;
     }
     try {
-      // Try static file first, fall back to Apps Script
-      const staticResp = await fetch(`./api/inspections/${id}.json?t=` + Date.now());
-      if (staticResp.ok) {
+      try {
+        const liveData = await apiFetch({ action: 'get', id, token });
+        insp = liveData.inspection || liveData;
+        if (!insp || !insp.inspectionId) throw new Error('Live inspection unavailable');
+      } catch (apiErr) {
+        const staticResp = await fetch(`./api/inspections/${id}.json?t=` + Date.now());
+        if (!staticResp.ok) throw apiErr;
         const staticData = await staticResp.json();
         insp = staticData.inspection || staticData;
-      } else {
-        insp = await apiFetch({ action: 'get', id, token });
       }
     } catch (err) {
       showToast(`Failed to load inspection: ${err.message}`, 'error');
@@ -401,7 +539,7 @@ async function loadInspection() {
     } catch(e) {}
   }
 
-  _inspection = insp;
+  _inspection = normalizeInspectionForReview(insp);
   renderReviewPage(insp);
 }
 
@@ -1863,19 +2001,13 @@ function renderPhotosSection(insp, locked) {
   const container = qs('#photo-grid');
   if (!container) return;
 
-  // Support both flat insp.photos and nested insp.rooms[].photos
-  let flatPhotos = insp.photos || [];
-  if (!flatPhotos.length && insp.rooms) {
-    insp.rooms.forEach(room => {
-      (room.photos || []).forEach(p => {
-        flatPhotos.push(Object.assign({ roomName: room.roomName, photoId: p.photoId || ('ph_' + Math.random().toString(36).slice(2)) }, p));
-      });
-    });
-  }
+  insp.photos = flattenInspectionPhotos(insp);
+  applyReviewedData(insp);
 
-  const photos = flatPhotos.slice().sort((a, b) => {
+  const photos = insp.photos.slice().sort((a, b) => {
     return new Date(a.timestamp) - new Date(b.timestamp);
   });
+  insp.photos = photos;
 
   // Build room filter options
   const roomSelect = qs('#room-filter');
@@ -2512,6 +2644,14 @@ async function submitToTanner() {
   const endedAt      = _inspection?.endedAt || _inspection?.completedAt || null;
   const bonusTier    = getBonusTier(endedAt);
   const bonusEarned  = finalScore && finalScore.total >= 85 && bonusTier && bonusTier.amount > 0;
+  const notesEl      = qs('#field-report-notes');
+
+  if (_inspection && notesEl) {
+    _inspection.reportBuilderNotes = notesEl.value;
+    if (!_inspection.reviewedData) _inspection.reviewedData = {};
+    if (!_inspection.reviewedData.summary) _inspection.reviewedData.summary = {};
+    _inspection.reviewedData.summary.reportBuilderNotes = notesEl.value;
+  }
 
   try {
     await apiFetch({}, 'POST', { action: 'submit', id, token,
@@ -2519,7 +2659,10 @@ async function submitToTanner() {
       completionGrade:  finalScore ? finalScore.grade : null,
       submittedAt,
       sameDayBonus:     bonusEarned || false,
-      sameDayBonusAmt:  bonusEarned ? bonusTier.amount : 0
+      sameDayBonusAmt:  bonusEarned ? bonusTier.amount : 0,
+      reviewedData:     _inspection?.reviewedData || {},
+      reportBuilderNotes: _inspection?.reportBuilderNotes || '',
+      photos:           _inspection?.photos || []
     });
   } catch (err) {
     showToast(`Submission failed: ${err.message}`, 'error');
@@ -2528,6 +2671,10 @@ async function submitToTanner() {
   }
 
   showToast('Submitted. Tanner has been notified.', 'success', 6000);
+  if (_inspection) {
+    _inspection.status = 'Submitted to Tanner';
+    _inspection.submittedToTannerAt = submittedAt;
+  }
 
   // Show submitted banner + lock page
   const banner = qs('#submitted-banner');

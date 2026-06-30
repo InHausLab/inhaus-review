@@ -49,6 +49,16 @@ Push to a repo, enable Pages on the `main` branch. Portal is live at `https://<o
 **Option C — Google Drive / any static host**
 Upload the 4 files together. Open `index.html`.
 
+### Repair the static photo data
+
+When inspection JSON has photos nested under `rooms`, `exteriorAssessment`, `utilityRoom`, `wrapUp`, or other sections, run:
+
+```bash
+node scripts/repair-photo-pipeline.js
+```
+
+That flattens photos into each inspection's top-level `photos` array, keeps Drive thumbnail URLs in the portal shape, and rebuilds `api/list.json` with matching `photoCount` values. The portal uses the live Apps Script API first when available, then falls back to these static files.
+
 ---
 
 ## Demo / Placeholder Mode

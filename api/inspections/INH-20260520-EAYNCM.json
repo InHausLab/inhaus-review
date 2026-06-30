@@ -20,7 +20,7 @@
     "pets": "",
     "smokingVaping": "",
     "stoveType": "",
-    "wifiNetwork": "Jo\u2019s wifi",
+    "wifiNetwork": "Jo’s wifi",
     "clientConcerns": "",
     "occupancyDuringInspection": "",
     "weatherConditions": "",
@@ -89,6 +89,7 @@
     "roomSummaries": {},
     "_checkpoint": true,
     "id": "INH-20260520-EAYNCM",
-    "photos": []
+    "photos": [],
+    "photoCount": 0
   }
 }

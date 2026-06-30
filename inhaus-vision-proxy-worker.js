@@ -5,18 +5,27 @@
  * When imageUrl is provided, the Worker fetches the image server-side
  */
 
-const ALLOWED_ORIGIN = 'https://inhauslab.github.io';
+const ALLOWED_ORIGINS = new Set([
+  'https://inhauslab.github.io',
+  'https://inhaus-inspector.netlify.app'
+]);
+
+function corsHeaders(origin) {
+  return {
+    'Access-Control-Allow-Origin': ALLOWED_ORIGINS.has(origin) ? origin : 'https://inhauslab.github.io',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
+}
 
 export default {
   async fetch(request, env) {
+    const origin = request.headers.get('Origin') || '';
+
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
+        headers: corsHeaders(origin),
       });
     }
 
@@ -24,8 +33,7 @@ export default {
       return new Response('Forbidden', { status: 403 });
     }
 
-    const origin = request.headers.get('Origin') || '';
-    if (origin !== ALLOWED_ORIGIN) {
+    if (!ALLOWED_ORIGINS.has(origin)) {
       return new Response('Forbidden origin', { status: 403 });
     }
 
@@ -92,7 +100,7 @@ export default {
       return new Response(JSON.stringify(result), {
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
+          ...corsHeaders(origin),
         },
       });
     } catch (err) {
@@ -100,7 +108,7 @@ export default {
         status: 500,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
+          ...corsHeaders(origin),
         },
       });
     }

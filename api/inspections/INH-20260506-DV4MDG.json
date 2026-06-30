@@ -43,7 +43,7 @@
     },
     "rooms": [
       {
-        "roomName": "Lowest Level \u2014 Room 1",
+        "roomName": "Lowest Level — Room 1",
         "type": "room-test",
         "level": "lowest",
         "observations": [],
@@ -69,7 +69,7 @@
         "photos": []
       },
       {
-        "roomName": "Nanny\u2019s Room",
+        "roomName": "Nanny’s Room",
         "type": "bedroom",
         "level": "rooms",
         "observations": [],
@@ -105,7 +105,7 @@
         "photos": []
       },
       {
-        "roomName": "Caitlyn\u2019s Room",
+        "roomName": "Caitlyn’s Room",
         "type": "bedroom",
         "level": "rooms",
         "observations": [],
@@ -129,7 +129,7 @@
         "photos": []
       },
       {
-        "roomName": "Nanny\u2019s En-suite Bathroom ",
+        "roomName": "Nanny’s En-suite Bathroom ",
         "type": "bathroom",
         "level": "rooms",
         "observations": [],
@@ -222,7 +222,7 @@
             "imageData": null
           },
           {
-            "caption": "Boulder Blue \u2014 Second Floor Primary Bedroom",
+            "caption": "Boulder Blue — Second Floor Primary Bedroom",
             "driveUrl": "https://drive.google.com/thumbnail?id=1Ch-9kkZIMf81YoZw-SLKZSEl2iK7PMnG&sz=w1600",
             "imageData": null
           },
@@ -361,75 +361,84 @@
       {
         "photoId": "ph_12_00",
         "roomName": "Main Living Area",
-        "stepName": "",
+        "stepName": "living-area",
         "caption": "Boulder Blue Primary Bedroom",
         "driveUrl": "https://drive.google.com/thumbnail?id=19MfJNPjPU18Eut2fum-FD-4zNZ6BbHPE&sz=w1600",
         "timestamp": "",
-        "included": null
+        "included": null,
+        "driveId": "19MfJNPjPU18Eut2fum-FD-4zNZ6BbHPE"
       },
       {
         "photoId": "ph_12_01",
         "roomName": "Main Living Area",
-        "stepName": "",
+        "stepName": "living-area",
         "caption": "Boulder Blue",
         "driveUrl": "https://drive.google.com/thumbnail?id=1qGyuaOcMX9IU0ceezOzE2pxw8_4JBD__&sz=w1600",
         "timestamp": "",
-        "included": null
+        "included": null,
+        "driveId": "1qGyuaOcMX9IU0ceezOzE2pxw8_4JBD__"
       },
       {
         "photoId": "ph_12_02",
         "roomName": "Main Living Area",
-        "stepName": "",
+        "stepName": "living-area",
         "caption": "PFAS Sample 1",
         "driveUrl": "https://drive.google.com/thumbnail?id=1m299Z5N--XM_AtbvHhpjOqmyadH4AdTp&sz=w1600",
         "timestamp": "",
-        "included": null
+        "included": null,
+        "driveId": "1m299Z5N--XM_AtbvHhpjOqmyadH4AdTp"
       },
       {
         "photoId": "ph_12_03",
         "roomName": "Main Living Area",
-        "stepName": "",
+        "stepName": "living-area",
         "caption": "PFAS Sample 2",
         "driveUrl": "https://drive.google.com/thumbnail?id=1GFc_rMAHW-upxdG7fZBxkOovuGoMPttn&sz=w1600",
         "timestamp": "",
-        "included": null
+        "included": null,
+        "driveId": "1GFc_rMAHW-upxdG7fZBxkOovuGoMPttn"
       },
       {
         "photoId": "ph_12_04",
         "roomName": "Main Living Area",
-        "stepName": "",
-        "caption": "Boulder Blue \u2014 Second Floor Primary Bedroom",
+        "stepName": "living-area",
+        "caption": "Boulder Blue — Second Floor Primary Bedroom",
         "driveUrl": "https://drive.google.com/thumbnail?id=1Ch-9kkZIMf81YoZw-SLKZSEl2iK7PMnG&sz=w1600",
         "timestamp": "",
-        "included": null
+        "included": null,
+        "driveId": "1Ch-9kkZIMf81YoZw-SLKZSEl2iK7PMnG"
       },
       {
         "photoId": "ph_12_05",
         "roomName": "Main Living Area",
-        "stepName": "",
+        "stepName": "living-area",
         "caption": "Microplastics",
         "driveUrl": "https://drive.google.com/thumbnail?id=12vddJ_BP-TrNfHhEY1NqGLnXRMGMOq9f&sz=w800",
         "timestamp": "",
-        "included": null
+        "included": null,
+        "driveId": "12vddJ_BP-TrNfHhEY1NqGLnXRMGMOq9f"
       },
       {
         "photoId": "ph_12_06",
         "roomName": "Main Living Area",
-        "stepName": "",
+        "stepName": "living-area",
         "caption": "Spare Photo 45",
         "driveUrl": "https://drive.google.com/thumbnail?id=1aJluhlcfHFchlM4yEyJrV4DIP4qtOvOk&sz=w1600",
         "timestamp": "",
-        "included": null
+        "included": null,
+        "driveId": "1aJluhlcfHFchlM4yEyJrV4DIP4qtOvOk"
       },
       {
         "photoId": "ph_12_07",
         "roomName": "Main Living Area",
-        "stepName": "",
+        "stepName": "living-area",
         "caption": "Spare Photo 23",
         "driveUrl": "https://drive.google.com/thumbnail?id=1rNtp1OMVnwfTjyCpp0HhrxTy68IzmruA&sz=w1600",
         "timestamp": "",
-        "included": null
+        "included": null,
+        "driveId": "1rNtp1OMVnwfTjyCpp0HhrxTy68IzmruA"
       }
-    ]
+    ],
+    "photoCount": 8
   }
 }
