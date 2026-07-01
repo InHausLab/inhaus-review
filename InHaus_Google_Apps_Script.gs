@@ -36,6 +36,12 @@ const USE_SHARED_DRIVE = true; // Phase 2: writing to Shared Drive
 // Leave empty to create a new spreadsheet per inspection
 const MASTER_SHEET_ID = '';
 
+// Assessment Tracker (Home Health Report_Tracker)
+const TRACKER_SHEET_ID      = '1aqIKWTn-UoDt9gH5pwo7XoDUzVV4FgYUCb-KyPZvZUA';
+const TRACKER_TAB_REPORT     = 'Report Tracker';          // main assessment rows
+const TRACKER_TAB_ID_RECORDS = 'Customer & Home ID Records'; // C-ID / H-ID crosswalk
+const TRACKER_DATA_START     = 8; // first real data row (1-based); rows 6-7 = header + sample
+
 // Vision proxy for AI photo captions (Phase 1: silent comparison)
 // Set to empty string to disable AI captions
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
@@ -847,6 +853,59 @@ function appendToMasterSheet(data) {
   };
 }
 
+// ── ASSESSMENT NUMBER & FOLDER NAMING ─────────────────────────────────────────
+//
+// getNextAssessmentNumber()
+// Reads the Report Tracker col B, skips TEST/TRAINING rows, returns next
+// available number as a zero-padded 3-digit string.  REUSABLE by tracker write.
+//
+function getNextAssessmentNumber() {
+  var ss    = SpreadsheetApp.openById(TRACKER_SHEET_ID);
+  var sheet = ss.getSheetByName(TRACKER_TAB_REPORT);
+  if (!sheet) throw new Error('getNextAssessmentNumber: tab not found: ' + TRACKER_TAB_REPORT);
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < TRACKER_DATA_START) return '018';
+
+  var numRows = lastRow - TRACKER_DATA_START + 1;
+  var values  = sheet.getRange(TRACKER_DATA_START, 2, numRows, 1).getValues();
+
+  var highest = -1;
+  for (var i = 0; i < values.length; i++) {
+    var cell = String(values[i][0]).trim();
+    if (!cell || cell === '' || cell === 'N/A') continue;
+    if (/^TEST/i.test(cell) || /^TRAIN/i.test(cell)) continue;
+    var n = parseInt(cell, 10);
+    if (!isNaN(n) && n > highest) highest = n;
+  }
+
+  var next = (highest < 0) ? 18 : highest + 1;
+  return String(next).padStart(3, '0');
+}
+
+// generateFolderName(assessmentNum, data)
+// Produces: [###] – [YYYY-MM-DD] – [LastName] – [Street Address]
+//
+function generateFolderName(assessmentNum, data) {
+  var lastName   = getClientLastName(data.clientName);
+  var fullAddr   = (data.propertyAddress || '').trim();
+  var streetAddr = fullAddr.indexOf(',') > -1
+    ? fullAddr.substring(0, fullAddr.indexOf(',')).trim()
+    : fullAddr;
+  if (!streetAddr) streetAddr = data.inspectionId || 'Unknown';
+
+  var dateStr = '';
+  if (data.inspectionDate && /^\d{4}-\d{2}-\d{2}$/.test(data.inspectionDate)) {
+    dateStr = data.inspectionDate;
+  } else if (data.startedAt) {
+    dateStr = data.startedAt.substring(0, 10);
+  } else {
+    dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+
+  return assessmentNum + ' – ' + dateStr + ' – ' + lastName + ' – ' + streetAddr;
+}
+
 // ── OPTION B: INDIVIDUAL SHEET PER INSPECTION ────────────
 
 function getClientLastName(fullName) {
@@ -856,10 +915,11 @@ function getClientLastName(fullName) {
 }
 
 function createInspectionSheet(data) {
-  var lastName = getClientLastName(data.clientName);
-  var address = data.propertyAddress || data.inspectionId;
   var inspId = data.inspectionId || '';
-  const folderName = lastName + ' \u2014 ' + address + (inspId ? ' \u2014 ' + inspId : '');
+
+  // Determine assessment number and canonical folder name (new format: ### – YYYY-MM-DD – LastName – Street)
+  var assessmentNum = getNextAssessmentNumber();
+  var folderName    = generateFolderName(assessmentNum, data);
   // Deduplicate: search for existing folder/sheet with this inspectionId
   var inspFolder = null;
   var ss = null;
