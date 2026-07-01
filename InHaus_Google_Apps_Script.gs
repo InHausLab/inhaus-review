@@ -865,7 +865,10 @@ function getNextAssessmentNumber() {
   if (!sheet) throw new Error('getNextAssessmentNumber: tab not found: ' + TRACKER_TAB_REPORT);
 
   var lastRow = sheet.getLastRow();
-  if (lastRow < TRACKER_DATA_START) return '018';
+  if (lastRow < TRACKER_DATA_START) {
+    throw new Error('getNextAssessmentNumber: no data rows found in ' + TRACKER_TAB_REPORT +
+                    ' (lastRow=' + lastRow + ', expected >= ' + TRACKER_DATA_START + ')');
+  }
 
   var numRows = lastRow - TRACKER_DATA_START + 1;
   var values  = sheet.getRange(TRACKER_DATA_START, 2, numRows, 1).getValues();
@@ -879,8 +882,12 @@ function getNextAssessmentNumber() {
     if (!isNaN(n) && n > highest) highest = n;
   }
 
-  var next = (highest < 0) ? 18 : highest + 1;
-  return String(next).padStart(3, '0');
+  if (highest < 0) {
+    throw new Error('getNextAssessmentNumber: no valid numeric assessment numbers found in ' +
+                    TRACKER_TAB_REPORT + ' — check tab name, column B, and TRACKER_DATA_START');
+  }
+
+  return String(highest + 1).padStart(3, '0');
 }
 
 // generateFolderName(assessmentNum, data)
