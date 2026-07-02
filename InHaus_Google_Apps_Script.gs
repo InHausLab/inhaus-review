@@ -52,8 +52,13 @@ const ALERT_EMAIL = 'matt@inhauslab.com';
 const ALERT_CC = 'tanner@inhauslab.com';
 
 // Shared portal token for list/get fallback calls from the review portal.
-const REVIEW_ACCESS_TOKEN = 'InHaus2026';
+// Read from Script Properties so it's not hardcoded in source.
+// To set: Apps Script → Project Settings → Script Properties → add REVIEW_ACCESS_TOKEN
+// Falls back to 'InHaus2026' if property not set.
 const REVIEW_ACCESS_TOKEN_LEGACY = 'inhaus_review_2026';
+function getReviewAccessToken() {
+  return PropertiesService.getScriptProperties().getProperty('REVIEW_ACCESS_TOKEN') || 'InHaus2026';
+}
 
 // ── SUPABASE CONFIG (Phase 3) ────────────────────────────────────
 // Service role key — server-side only, never expose to browser
@@ -404,7 +409,7 @@ function getReviewData(id, token) {
 // ── REVIEW PORTAL API ────────────────────────────────────
 
 function isPortalAccessToken(token) {
-  return token === REVIEW_ACCESS_TOKEN || token === REVIEW_ACCESS_TOKEN_LEGACY;
+  return token === getReviewAccessToken() || token === REVIEW_ACCESS_TOKEN_LEGACY;
 }
 
 function requirePortalAccess(token) {
