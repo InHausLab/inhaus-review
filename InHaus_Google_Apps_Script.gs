@@ -225,14 +225,42 @@ function sendErrorAlert(context, err, payload) {
 
 function getOrCreateInspectionFolderInSharedDrive(parentFolderId, folderName, inspId) {
   var parentFolder = DriveApp.getFolderById(parentFolderId);
-  if (inspId) {
-    var folders = parentFolder.getFolders();
-    while (folders.hasNext()) {
-      var f = folders.next();
-      if (f.getName().indexOf(inspId) > -1) return f;
+  var targetName = String(folderName || '').trim();
+  var targetKey = targetName.replace(/[–—]/g, '-').replace(/\s+/g, ' ').toLowerCase();
+  var idNeedle = String(inspId || '').trim();
+  var legacyIdMatch = null;
+
+  function tagFolder(folder) {
+    if (!folder || !idNeedle) return folder;
+    try {
+      var marker = 'inspectionId: ' + idNeedle;
+      var description = folder.getDescription() || '';
+      if (description.indexOf(marker) === -1) {
+        folder.setDescription(description ? description + '\n' + marker : marker);
+      }
+    } catch (e) {
+      console.warn('Could not tag inspection folder:', e.message);
+    }
+    return folder;
+  }
+
+  var folders = parentFolder.getFolders();
+  while (folders.hasNext()) {
+    var f = folders.next();
+    var existingName = f.getName() || '';
+    var existingKey = existingName.replace(/[–—]/g, '-').replace(/\s+/g, ' ').toLowerCase();
+    if (targetName && (existingName === targetName || existingKey === targetKey)) {
+      return tagFolder(f);
+    }
+    if (idNeedle) {
+      var description = '';
+      try { description = f.getDescription() || ''; } catch (e) {}
+      if (description.indexOf(idNeedle) > -1) return f;
+      if (!legacyIdMatch && existingName.indexOf(idNeedle) > -1) legacyIdMatch = f;
     }
   }
-  return parentFolder.createFolder(folderName);
+  if (legacyIdMatch) return tagFolder(legacyIdMatch);
+  return tagFolder(parentFolder.createFolder(folderName));
 }
 
 function moveFileToSharedDriveFolder(fileId, destFolderId) {
