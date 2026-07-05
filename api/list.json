@@ -1,6 +1,4 @@
 {
-  "generatedAt": "2026-07-04T12:00:00.000Z",
-  "count": 8,
   "inspections": [
     {
       "inspectionId": "INH-20260520-EAYNCM",
@@ -146,5 +144,7 @@
       "reportBuilderNotes": "",
       "reviewToken": "6BPWTA84"
     }
-  ]
+  ],
+  "generatedAt": "2026-07-05T12:00:00.000Z",
+  "count": 8
 }
