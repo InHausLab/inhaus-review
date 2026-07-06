@@ -440,7 +440,7 @@ async function loadInspectionList() {
     try {
       try {
         data = await apiFetch({ action: 'list', token: ACCESS_TOKEN });
-        if (!data || !Array.isArray(data.inspections)) throw new Error('Live list unavailable');
+        if (!data || !Array.isArray(data.inspections) || data.inspections.length === 0) throw new Error('Live list unavailable');
       } catch (apiErr) {
         const staticResp = await fetch('./api/list.json?t=' + Date.now());
         if (!staticResp.ok) throw apiErr;
