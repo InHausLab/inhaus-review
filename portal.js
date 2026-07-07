@@ -5,7 +5,7 @@
  * Configuration: swap these two constants when Apps Script is deployed
  */
 
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz21ibOdZOWgyUZB_9ttoUtGob3Ak3Cxe-AqpoZKXpa7TQLkM6Io1T6mB-xYryDYP2NGQ/exec'; // v50 — updated July 6 2026
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx6VWKm-smdwpiZbzVIk8VGLV7V7p0Zbq1X4DE3YMe9bjH-zxkfRH_aznYCp08LzEhBLw/exec'; // v37 — verified July 1 2026
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 
@@ -191,6 +191,103 @@ function formatDateTime(iso) {
 function formatTime(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function slugifyRoomPart(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function stepKeyForRoom(room = {}) {
+  const type = slugifyRoomPart(room.type || '');
+  const name = slugifyRoomPart(room.roomName || room.name || '');
+  return [type, name].filter(Boolean).join('-');
+}
+
+function buildReviewRoomRecords(insp) {
+  const steps = insp.stepData || {};
+  const rooms = Array.isArray(insp.rooms) ? insp.rooms : [];
+  const byRoomName = new Map();
+
+  for (const [stepId, step] of Object.entries(steps)) {
+    const nameKey = slugifyRoomPart(step.roomName || step.name || '');
+    if (nameKey && !byRoomName.has(nameKey)) {
+      byRoomName.set(nameKey, { stepId, step });
+    }
+  }
+
+  if (rooms.length) {
+    return rooms.map((room, index) => {
+      const expectedKey = stepKeyForRoom(room);
+      const directStep = expectedKey ? steps[expectedKey] : null;
+      const nameMatch = byRoomName.get(slugifyRoomPart(room.roomName || room.name || ''));
+      const stepId = directStep ? expectedKey : (nameMatch?.stepId || expectedKey || `room-${index + 1}`);
+      const step = directStep || nameMatch?.step || {};
+      return { room, step, stepId };
+    });
+  }
+
+  return Object.entries(steps).map(([stepId, step]) => ({
+    room: {
+      roomName: step.roomName || step.name || stepId,
+      type: step.type || '',
+      level: step.level || '',
+      flirDone: step.flirDone || '',
+      flirConcerns: step.flirConcerns || '',
+      breezeDone: step.breezeDone || ''
+    },
+    step,
+    stepId
+  }));
+}
+
+function getReviewedField(insp, group, key, fallback = '') {
+  const rd = insp.reviewedData || {};
+  if (group && rd[group] && rd[group][key] !== undefined) return rd[group][key];
+  if (rd[key] !== undefined) return rd[key];
+  if (group === 'summary' && rd.summary && rd.summary[key] !== undefined) return rd.summary[key];
+  return fallback;
+}
+
+function getReviewedJSONField(insp, group, key, fallback = []) {
+  const raw = getReviewedField(insp, group, key, null);
+  if (raw == null || raw === '') return fallback;
+  if (Array.isArray(raw) || (raw && typeof raw === 'object')) return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed == null ? fallback : parsed;
+  } catch(e) {
+    return fallback;
+  }
+}
+
+function setReviewedField(group, key, value) {
+  if (!_inspection) return;
+  if (!_inspection.reviewedData) _inspection.reviewedData = {};
+  if (!group || group === 'summary') {
+    _inspection.reviewedData[key] = value;
+    return;
+  }
+  if (!_inspection.reviewedData[group]) _inspection.reviewedData[group] = {};
+  _inspection.reviewedData[group][key] = value;
+}
+
+function attachReviewedFieldSave(element, group, key, isGated = false) {
+  if (!element) return;
+  const update = () => {
+    setReviewedField(group, key, element.value);
+    if (isGated) checkGate();
+    debouncedSave(group, key, element.value);
+  };
+  element.addEventListener('input', update);
+  element.addEventListener('blur', () => {
+    setReviewedField(group, key, element.value);
+    if (isGated) checkGate();
+    saveField(group, key, element.value);
+  });
 }
 
 function getURLParams() {
@@ -440,7 +537,7 @@ async function loadInspectionList() {
     try {
       try {
         data = await apiFetch({ action: 'list', token: ACCESS_TOKEN });
-        if (!data || !Array.isArray(data.inspections) || data.inspections.length === 0) throw new Error('Live list unavailable');
+        if (!data || !Array.isArray(data.inspections)) throw new Error('Live list unavailable');
       } catch (apiErr) {
         const staticResp = await fetch('./api/list.json?t=' + Date.now());
         if (!staticResp.ok) throw apiErr;
@@ -1640,6 +1737,48 @@ function buildPostGroup(fields) {
   return wrap;
 }
 
+function displayValue(value) {
+  return value === undefined || value === null || value === '' ? '—' : String(value);
+}
+
+function renderIntakeSummary(insp) {
+  const body = qs('#intake-summary-body');
+  if (!body) return;
+  body.innerHTML = '';
+
+  const items = [
+    { label: 'Property', value: insp.propertyAddress, wide: true },
+    { label: 'Client', value: insp.clientName },
+    { label: 'Inspector', value: insp.inspectorName },
+    { label: 'Date', value: formatDate(insp.inspectionDate) },
+    { label: 'Type', value: insp.residenceType },
+    { label: 'Year Built', value: insp.yearBuilt },
+    { label: 'Sq Ft', value: insp.squareFootage },
+    { label: 'Bedrooms', value: insp.numberOfBedrooms },
+    { label: 'Bathrooms', value: insp.numberOfBathrooms },
+    { label: 'Levels', value: insp.numberOfLevels },
+    { label: 'Basement', value: insp.basement },
+    { label: 'Water Source', value: insp.waterSource },
+    { label: 'Filtration', value: insp.waterFiltration },
+    { label: 'Softener', value: insp.waterSoftener },
+    { label: 'Heating', value: insp.heating },
+    { label: 'AC', value: insp.ac },
+    { label: 'Ventilation', value: insp.ventilation },
+    { label: 'Weather', value: insp.weatherConditions },
+    { label: 'Occupancy', value: insp.occupancyDuringInspection },
+    { label: 'Client Concerns', value: insp.clientConcerns, wide: true },
+    { label: 'Known Problem Areas', value: insp.knownProblemAreas, wide: true }
+  ];
+
+  items.forEach(item => {
+    const node = el('div', { class: `intake-summary-item${item.wide ? ' wide' : ''}` },
+      el('div', { class: 'intake-summary-label' }, item.label),
+      el('div', { class: 'intake-summary-value' }, displayValue(item.value))
+    );
+    body.appendChild(node);
+  });
+}
+
 function renderReviewPage(insp) {
   // Nav title
   const navTitle = qs('#nav-title');
@@ -1669,6 +1808,8 @@ function renderReviewPage(insp) {
 
   renderSummarySection(insp, isSubmitted);
   renderRoomsSection(insp, isSubmitted);
+  renderWaterFindingsSection(insp, isSubmitted);
+  renderFollowUpItemsSection(insp, isSubmitted);
   renderTestsSection(insp, isSubmitted);
   try { renderPostContentSection(insp, isSubmitted); } catch(e) { console.error('renderPostContentSection failed:', e); }
   try { renderPhotosSection(insp, isSubmitted); } catch(e) { console.error('renderPhotosSection failed:', e); }
@@ -1684,6 +1825,8 @@ function renderReviewPage(insp) {
    ============================================================ */
 
 function renderSummarySection(insp, locked) {
+  renderIntakeSummary(insp);
+
   const clientEl   = qs('#field-client-name');
   const addressEl  = qs('#field-property-address');
   const dateEl     = qs('#field-inspection-date');
@@ -1795,31 +1938,102 @@ async function saveField(stepId, fieldKey, value) {
    SECTION 3 — ROOMS & OBSERVATIONS
    ============================================================ */
 
+function isAffirmative(value) {
+  return String(value || '').trim().toLowerCase() === 'yes';
+}
+
+function statusDisplay(value) {
+  return String(value || '').trim() || 'Not recorded';
+}
+
+function buildStatusPill(label, value, warn = false) {
+  const valueText = statusDisplay(value);
+  const valueClass = warn && isAffirmative(value)
+    ? ' warn'
+    : isAffirmative(value) ? ' yes' : '';
+  return el('span', { class: `room-status-pill${valueClass}` },
+    el('span', { class: 'room-status-label' }, label),
+    el('span', { class: 'room-status-value' }, valueText)
+  );
+}
+
+function buildReadOnlyBlock(label, value, emptyText) {
+  const hasValue = value !== undefined && value !== null && String(value).trim() !== '';
+  return el('div', { class: `room-readonly-block${hasValue ? '' : ' empty'}` },
+    el('div', { class: 'field-label' }, label),
+    el('div', { class: 'room-readonly-text' }, hasValue ? String(value) : emptyText)
+  );
+}
+
+function photosForRoom(photos, roomName) {
+  return (photos || []).filter(photo => photo.roomName === roomName);
+}
+
+function buildRoomPhotoStrip(roomPhotos) {
+  const wrap = el('div', { class: 'room-photo-strip-wrap' });
+  wrap.appendChild(el('div', { class: 'field-label' }, `Room Photos (${roomPhotos.length})`));
+
+  if (!roomPhotos.length) {
+    wrap.appendChild(el('div', { class: 'room-photo-empty' }, 'No photos match this room name.'));
+    return wrap;
+  }
+
+  const strip = el('div', { class: 'room-photo-strip' });
+  roomPhotos.forEach(photo => {
+    const thumb = el('button', {
+      class: 'room-photo-thumb',
+      type: 'button',
+      title: photo.caption || photo.photoId || ''
+    });
+    if (photo.driveUrl) {
+      thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId || '', loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" }));
+      thumb.addEventListener('click', () => openPhotoModal(photo.driveUrl, photo.caption));
+    } else {
+      thumb.appendChild(el('span', {}, (photo.photoId || '').slice(-4) || 'Photo'));
+    }
+    if (photo.caption) {
+      thumb.appendChild(el('span', { class: 'room-photo-caption' }, photo.caption));
+    }
+    strip.appendChild(thumb);
+  });
+  wrap.appendChild(strip);
+  return wrap;
+}
+
 function renderRoomsSection(insp, locked) {
   const container = qs('#rooms-container');
   if (!container) return;
   container.innerHTML = '';
 
-  const steps = insp.stepData || {};
-  const stepKeys = Object.keys(steps);
+  const roomRecords = buildReviewRoomRecords(insp);
 
-  if (!stepKeys.length) {
+  if (!roomRecords.length) {
     container.innerHTML = '<p class="text-muted">No room data found.</p>';
     return;
   }
 
-  for (const stepId of stepKeys) {
-    const step = steps[stepId];
-    container.appendChild(buildRoomCard(stepId, step, locked));
+  for (const record of roomRecords) {
+    container.appendChild(buildRoomCard(record, insp, locked));
   }
 }
 
-function buildRoomCard(stepId, step, locked) {
+function buildRoomCard(record, insp, locked) {
+  const { stepId, step = {}, room = {} } = record;
   const reviewed   = step.voiceReviewed === true;
-  const roomName   = step.roomName || stepId;
-  const notes      = step.notes || step.arrivalNotes || '';
+  const roomName   = room.roomName || step.roomName || stepId;
+  const level      = room.level || step.level || '';
+  const type       = room.type || step.type || '';
+  const flirDone   = room.flirDone || step.flirDone || '';
+  const flirConcerns = room.flirConcerns || step.flirConcerns || '';
+  const breezeDone = room.breezeDone || step.breezeDone || '';
   const qtrak      = step.qtrakLocation || '';
   const breeze     = step.breezeLocation || '';
+  const notes      = step.notes || step.arrivalNotes || room.observations || '';
+  const aiSummary  = step.aiSummary || '';
+  const hasConcern = isAffirmative(flirConcerns);
+  const roomPhotos = photosForRoom(insp.photos || [], roomName);
+  const tannerNotesKey = `room_${stepId}_tannerNotes`;
+  const tannerNotes = getReviewedField(insp, 'roomData', tannerNotesKey, '');
 
   const reviewedChip = el('span', { class: `voice-chip ${reviewed ? 'reviewed' : 'unreviewed'}` },
     reviewed ? '✓ Notes Reviewed' : '⚠ Needs Review'
@@ -1831,8 +2045,17 @@ function buildRoomCard(stepId, step, locked) {
   });
   collapseIcon.innerHTML = '<polyline points="5 8 10 13 15 8"/>';
 
+  const titleMeta = el('div', { class: 'room-title-meta' });
+  if (level) titleMeta.appendChild(el('span', { class: 'room-meta-chip' }, level));
+  if (type) titleMeta.appendChild(el('span', { class: 'room-meta-chip muted' }, type));
+  titleMeta.appendChild(el('span', { class: 'room-meta-chip muted' }, `${roomPhotos.length} photo${roomPhotos.length !== 1 ? 's' : ''}`));
+  if (hasConcern) titleMeta.appendChild(el('span', { class: 'room-warning-chip' }, 'FLIR concern'));
+
   const header = el('div', { class: 'room-header' },
-    el('div', { class: 'room-name' }, roomName, reviewedChip),
+    el('div', { class: 'room-title-wrap' },
+      el('div', { class: 'room-name' }, roomName, reviewedChip),
+      titleMeta
+    ),
     collapseIcon
   );
 
@@ -1868,8 +2091,32 @@ function buildRoomCard(stepId, step, locked) {
   const body = el('div', { class: 'room-body' });
   body.appendChild(el('div', { class: 'voice-review-row' }, voiceLabel));
 
-  // Notes field
-  body.appendChild(buildFieldEl(stepId, 'notes', locked ? 'Notes' : 'Notes (click to edit)', notes, true, locked));
+  const statusRow = el('div', { class: 'room-status-row' },
+    buildStatusPill('FLIR done', flirDone),
+    buildStatusPill('FLIR concerns', flirConcerns, true),
+    buildStatusPill('Breeze done', breezeDone)
+  );
+  body.appendChild(statusRow);
+
+  body.appendChild(buildReadOnlyBlock('Inspector Notes', notes, 'No inspector notes recorded.'));
+  body.appendChild(buildReadOnlyBlock('AI Summary', aiSummary, 'No AI summary available.'));
+  body.appendChild(buildRoomPhotoStrip(roomPhotos));
+
+  const tannerWrap = el('div', { class: 'room-tanner-notes' });
+  tannerWrap.appendChild(el('label', { class: 'field-label', for: `tanner-${stepId}` }, 'Tanner Notes'));
+  const tannerTA = el('textarea', {
+    id: `tanner-${stepId}`,
+    class: 'field-textarea',
+    rows: '3',
+    placeholder: 'Add Tanner-facing notes for this room...',
+    ...(locked ? { readonly: '' } : {})
+  });
+  tannerTA.value = tannerNotes;
+  tannerWrap.appendChild(tannerTA);
+  body.appendChild(tannerWrap);
+  if (!locked) {
+    attachReviewedFieldSave(tannerTA, 'roomData', tannerNotesKey);
+  }
 
   // Location fields for applicable rooms
   if ('qtrakLocation' in step || 'breezeLocation' in step) {
@@ -1879,7 +2126,7 @@ function buildRoomCard(stepId, step, locked) {
     body.appendChild(locGroup);
   }
 
-  const card = el('div', { class: 'room-section' }, header, body);
+  const card = el('div', { class: `room-section${hasConcern ? ' has-concern' : ''}` }, header, body);
 
   header.addEventListener('click', () => {
     body.style.display = body.style.display === 'none' ? '' : 'none';
@@ -1911,6 +2158,202 @@ function buildFieldEl(stepId, fieldKey, label, value, isTextarea = false, locked
   }
 
   return wrap;
+}
+
+/* ============================================================
+   SECTION 4 — WATER FINDINGS
+   ============================================================ */
+
+function waterFindingLabel(key) {
+  const labels = {
+    pH: 'pH',
+    LI: 'LI',
+    TDS: 'TDS',
+    pet: 'PET',
+    abs: 'ABS',
+    pva: 'PVA'
+  };
+  if (labels[key]) return labels[key];
+  return String(key || '')
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function renderWaterFindingsSection(insp, locked) {
+  const body = qs('#water-findings-body');
+  if (!body) return;
+  body.innerHTML = '';
+
+  const findings = insp.waterFindings || {};
+  const fridge = findings.fridgeLine || null;
+  const sink = findings.kitchenSink || null;
+  const microplastics = findings.microplastics || null;
+
+  if (!fridge && !sink && !microplastics) {
+    body.appendChild(el('p', { class: 'text-muted' }, 'No water findings found.'));
+    return;
+  }
+
+  if (fridge || sink) {
+    const tableWrap = el('div', { class: 'water-table-wrap' });
+    const table = el('table', { class: 'water-findings-table' });
+    table.appendChild(el('thead', {},
+      el('tr', {},
+        el('th', {}, 'Parameter'),
+        el('th', {}, 'Fridge Line'),
+        el('th', {}, 'Kitchen Sink')
+      )
+    ));
+    const tbody = el('tbody');
+    ['copper', 'sodium', 'hardness', 'pH', 'LI', 'TDS', 'lead', 'iron', 'ryznar'].forEach(key => {
+      const hasValue = (fridge && fridge[key] !== undefined) || (sink && sink[key] !== undefined);
+      if (!hasValue) return;
+      tbody.appendChild(el('tr', {},
+        el('td', { class: 'water-param' }, waterFindingLabel(key)),
+        el('td', {}, displayValue(fridge?.[key])),
+        el('td', {}, displayValue(sink?.[key]))
+      ));
+    });
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+    body.appendChild(tableWrap);
+  }
+
+  if (microplastics) {
+    const micro = el('div', { class: 'microplastics-card' });
+    micro.appendChild(el('div', { class: 'microplastics-total' },
+      el('span', { class: 'microplastics-label' }, 'Microplastics Total'),
+      el('span', { class: 'microplastics-value' }, displayValue(microplastics.total))
+    ));
+    const chips = el('div', { class: 'microplastics-breakdown' });
+    ['rubber', 'polystyrene', 'polyamide', 'polyethylene', 'pet', 'abs', 'pva'].forEach(key => {
+      if (microplastics[key] === undefined) return;
+      chips.appendChild(el('span', { class: 'microplastic-chip' },
+        `${waterFindingLabel(key)}: ${displayValue(microplastics[key])}`
+      ));
+    });
+    micro.appendChild(chips);
+    body.appendChild(micro);
+  }
+
+  const notesWrap = el('div', { class: 'water-notes-wrap' });
+  notesWrap.appendChild(el('label', { class: 'field-label', for: 'field-water-tanner-notes' }, 'Tanner Notes'));
+  const notes = el('textarea', {
+    id: 'field-water-tanner-notes',
+    class: 'field-textarea',
+    rows: '3',
+    placeholder: 'Add Tanner-facing notes about water findings...',
+    ...(locked ? { readonly: '' } : {})
+  });
+  notes.value = getReviewedField(insp, 'roomData', 'waterFindingsNotes', '');
+  notesWrap.appendChild(notes);
+  body.appendChild(notesWrap);
+  if (!locked) attachReviewedFieldSave(notes, 'roomData', 'waterFindingsNotes');
+}
+
+/* ============================================================
+   SECTION 5 — FOLLOW-UP ITEMS
+   ============================================================ */
+
+function normalizeFollowUpItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items.map(item => ({
+    room: item?.room || '',
+    recheckIn: item?.recheckIn || '',
+    watchFor: item?.watchFor || ''
+  }));
+}
+
+function renderFollowUpItemsSection(insp, locked) {
+  const body = qs('#follow-up-body');
+  if (!body) return;
+  body.innerHTML = '';
+
+  let items = normalizeFollowUpItems(
+    getReviewedJSONField(insp, 'roomData', 'followUpItems', insp.followUpItems || [])
+  );
+
+  const persist = (saveNow = false) => {
+    const jsonValue = JSON.stringify(items);
+    setReviewedField('roomData', 'followUpItems', jsonValue);
+    if (saveNow) saveField('roomData', 'followUpItems', jsonValue);
+    else debouncedSave('roomData', 'followUpItems', jsonValue);
+  };
+
+  const tableWrap = el('div', { class: 'follow-up-table-wrap' });
+  const table = el('table', { class: 'follow-up-table' });
+  table.appendChild(el('thead', {},
+    el('tr', {},
+      el('th', {}, 'Room'),
+      el('th', {}, 'Recheck In'),
+      el('th', {}, 'Watch For'),
+      locked ? null : el('th', { class: 'follow-up-actions-th' }, '')
+    )
+  ));
+  const tbody = el('tbody');
+
+  if (!items.length) {
+    tbody.appendChild(el('tr', {},
+      el('td', { colspan: locked ? '3' : '4', class: 'empty-state follow-up-empty' }, 'No follow-up items recorded.')
+    ));
+  }
+
+  items.forEach((item, index) => {
+    const tr = el('tr');
+    const fields = [
+      { key: 'room', placeholder: 'Room' },
+      { key: 'recheckIn', placeholder: 'e.g. 6 months' },
+      { key: 'watchFor', placeholder: 'What to watch for' }
+    ];
+
+    fields.forEach(field => {
+      const input = el('input', {
+        type: 'text',
+        class: 'inline-input',
+        value: item[field.key] || '',
+        placeholder: field.placeholder,
+        ...(locked ? { readonly: '' } : {})
+      });
+      if (!locked) {
+        input.addEventListener('input', () => {
+          items[index][field.key] = input.value;
+          persist(false);
+        });
+        input.addEventListener('blur', () => {
+          items[index][field.key] = input.value;
+          persist(true);
+        });
+      }
+      tr.appendChild(el('td', {}, input));
+    });
+
+    if (!locked) {
+      const removeBtn = el('button', { type: 'button', class: 'follow-up-remove-btn', title: 'Remove follow-up item' }, 'Remove');
+      removeBtn.addEventListener('click', () => {
+        items.splice(index, 1);
+        persist(true);
+        renderFollowUpItemsSection(_inspection, locked);
+      });
+      tr.appendChild(el('td', { class: 'follow-up-action-cell' }, removeBtn));
+    }
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  body.appendChild(tableWrap);
+
+  if (!locked) {
+    const addBtn = el('button', { type: 'button', class: 'follow-up-add-btn' }, '+ Add follow-up item');
+    addBtn.addEventListener('click', () => {
+      items.push({ room: '', recheckIn: '', watchFor: '' });
+      persist(true);
+      renderFollowUpItemsSection(_inspection, locked);
+    });
+    body.appendChild(addBtn);
+  }
 }
 
 /* ============================================================
@@ -2352,10 +2795,9 @@ function updatePhotoSummary(photos) {
   if (elInc) elInc.textContent = included;
 
   if (elRev) {
-    const rooms = _inspection?.stepData ? Object.keys(_inspection.stepData).length : 0;
-    const reviewedRooms = _inspection?.stepData
-      ? Object.values(_inspection.stepData).filter(s => s.voiceReviewed).length
-      : 0;
+    const roomRecords = _inspection ? buildReviewRoomRecords(_inspection) : [];
+    const rooms = roomRecords.length;
+    const reviewedRooms = roomRecords.filter(record => record.step?.voiceReviewed === true).length;
     elRev.textContent = reviewedRooms;
     if (elRooms) elRooms.textContent = rooms;
   }
@@ -2408,20 +2850,19 @@ function checkGate() {
 }
 
 function evaluateGate(insp) {
-  const steps   = insp.stepData || {};
   const photos  = insp.photos  || [];
   const tests   = insp.testsConfirmed || {};
   const reviewed = insp.reviewedData || {};
+  const roomRecords = buildReviewRoomRecords(insp);
 
   // 1. All room notes reviewed (voiceReviewed == true for each step)
-  const allRooms   = Object.values(steps);
-  const notesReviewed = allRooms.length > 0 && allRooms.every(s => s.voiceReviewed === true);
+  const notesReviewed = roomRecords.length > 0 && roomRecords.every(record => record.step?.voiceReviewed === true);
 
   // 2. All test locations recorded (qtrak + breeze in each room that has those fields)
-  const roomsWithLocs = allRooms.filter(s => 'qtrakLocation' in s || 'breezeLocation' in s);
-  const locsRecorded  = roomsWithLocs.length === 0 || roomsWithLocs.every(s =>
-    (s.qtrakLocation || reviewed[s.stepId]?.qtrakLocation || '').trim() !== '' &&
-    (s.breezeLocation || reviewed[s.stepId]?.breezeLocation || '').trim() !== ''
+  const roomsWithLocs = roomRecords.filter(record => 'qtrakLocation' in record.step || 'breezeLocation' in record.step);
+  const locsRecorded  = roomsWithLocs.length === 0 || roomsWithLocs.every(record =>
+    (record.step.qtrakLocation || reviewed[record.stepId]?.qtrakLocation || '').trim() !== '' &&
+    (record.step.breezeLocation || reviewed[record.stepId]?.breezeLocation || '').trim() !== ''
   );
 
   // 3. Tests conducted confirmation (at least one confirmed)
