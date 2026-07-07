@@ -1965,8 +1965,71 @@ function buildReadOnlyBlock(label, value, emptyText) {
   );
 }
 
-function photosForRoom(photos, roomName) {
-  return (photos || []).filter(photo => photo.roomName === roomName);
+function buildRoomAliasMap(roomRecords) {
+  const aliasesByStepId = new Map();
+  const groups = {};
+
+  roomRecords.forEach(record => {
+    const aliases = new Set();
+    const roomName = record.room?.roomName || record.step?.roomName || record.stepId;
+    [roomName, record.step?.roomName].filter(Boolean).forEach(name => aliases.add(slugifyRoomPart(name)));
+    aliasesByStepId.set(record.stepId, aliases);
+
+    const type = record.room?.type || record.step?.type || '';
+    if (!groups[type]) groups[type] = [];
+    groups[type].push(record);
+  });
+
+  function addIndexedAliases(type, prefix) {
+    (groups[type] || []).forEach((record, index) => {
+      const aliases = aliasesByStepId.get(record.stepId);
+      aliases.add(slugifyRoomPart(`${prefix} ${index + 1}`));
+    });
+  }
+
+  addIndexedAliases('bedroom', 'Bedroom');
+  addIndexedAliases('bathroom', 'Bathroom');
+  addIndexedAliases('additional-room', 'Additional Room');
+
+  return aliasesByStepId;
+}
+
+function photosForRoomRecord(photos, record, aliasesByStepId) {
+  const aliases = aliasesByStepId.get(record.stepId) || new Set();
+  const seen = new Set();
+  return (photos || []).filter(photo => {
+    const photoNames = [
+      photo.roomName,
+      photo.assignedRoom,
+      photo.assignedRoomName,
+      photo.reviewRoomName,
+      photo.room,
+      photo.roomLabel
+    ].filter(Boolean);
+    const matches = photoNames.some(name => aliases.has(slugifyRoomPart(name)));
+    if (!matches) return false;
+    const key = photo.photoId || photo.driveId || photo.driveUrl || JSON.stringify(photo);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function aiSummaryLooksContradictory(summary, roomPhotos) {
+  if (!summary || !roomPhotos.length) return false;
+  return /(?:not completed|not performed|not tested|not been tested|not yet been completed|was not completed|was not performed|was not tested|has not been completed|should be scheduled|follow-up visit)/i.test(summary);
+}
+
+function buildAISummaryBlock(summary, roomPhotos) {
+  if (aiSummaryLooksContradictory(summary, roomPhotos)) {
+    return el('div', { class: 'room-readonly-block ai-summary-warning' },
+      el('div', { class: 'field-label' }, 'AI Summary'),
+      el('div', { class: 'room-readonly-text' },
+        'AI summary needs review: the generated text says a test was not completed, but photos are assigned to this room. Use the source status fields, room photos, and Tanner notes instead.'
+      )
+    );
+  }
+  return buildReadOnlyBlock('AI Summary', summary, 'No AI summary available.');
 }
 
 function buildRoomPhotoStrip(roomPhotos) {
@@ -1980,21 +2043,42 @@ function buildRoomPhotoStrip(roomPhotos) {
 
   const strip = el('div', { class: 'room-photo-strip' });
   roomPhotos.forEach(photo => {
-    const thumb = el('button', {
-      class: 'room-photo-thumb',
-      type: 'button',
-      title: photo.caption || photo.photoId || ''
-    });
     if (photo.driveUrl) {
+      const openInlinePhoto = e => {
+        e.stopPropagation();
+        e.preventDefault();
+        openPhotoModal(photo.driveUrl, photo.caption, photo.photoId);
+      };
+      const thumb = el('a', {
+        class: 'room-photo-thumb',
+        href: photo.driveUrl,
+        target: '_blank',
+        rel: 'noopener',
+        title: photo.caption || photo.photoId || '',
+        'aria-label': photo.caption ? `Open ${photo.caption}` : 'Open room photo',
+        'data-photo-url': photo.driveUrl,
+        'data-photo-id': photo.photoId || '',
+        'data-photo-caption': photo.caption || '',
+        onclick: openInlinePhoto
+      });
       thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId || '', loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" }));
-      thumb.addEventListener('click', () => openPhotoModal(photo.driveUrl, photo.caption));
+      thumb.addEventListener('click', openInlinePhoto);
+      if (photo.caption) {
+        thumb.appendChild(el('span', { class: 'room-photo-caption' }, photo.caption));
+      }
+      strip.appendChild(thumb);
     } else {
+      const thumb = el('button', {
+        class: 'room-photo-thumb',
+        type: 'button',
+        title: photo.caption || photo.photoId || ''
+      });
       thumb.appendChild(el('span', {}, (photo.photoId || '').slice(-4) || 'Photo'));
+      if (photo.caption) {
+        thumb.appendChild(el('span', { class: 'room-photo-caption' }, photo.caption));
+      }
+      strip.appendChild(thumb);
     }
-    if (photo.caption) {
-      thumb.appendChild(el('span', { class: 'room-photo-caption' }, photo.caption));
-    }
-    strip.appendChild(thumb);
   });
   wrap.appendChild(strip);
   return wrap;
@@ -2004,6 +2088,15 @@ function renderRoomsSection(insp, locked) {
   const container = qs('#rooms-container');
   if (!container) return;
   container.innerHTML = '';
+  container.onclick = e => {
+    const thumb = e.target.closest('.room-photo-thumb[data-photo-url]');
+    if (!thumb || !container.contains(thumb)) return;
+    const url = thumb.dataset.photoUrl || '';
+    if (!url) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openPhotoModal(url, thumb.dataset.photoCaption || '', thumb.dataset.photoId || '');
+  };
 
   const roomRecords = buildReviewRoomRecords(insp);
 
@@ -2012,12 +2105,13 @@ function renderRoomsSection(insp, locked) {
     return;
   }
 
+  const aliasesByStepId = buildRoomAliasMap(roomRecords);
   for (const record of roomRecords) {
-    container.appendChild(buildRoomCard(record, insp, locked));
+    container.appendChild(buildRoomCard(record, insp, locked, aliasesByStepId));
   }
 }
 
-function buildRoomCard(record, insp, locked) {
+function buildRoomCard(record, insp, locked, aliasesByStepId) {
   const { stepId, step = {}, room = {} } = record;
   const reviewed   = step.voiceReviewed === true;
   const roomName   = room.roomName || step.roomName || stepId;
@@ -2031,7 +2125,7 @@ function buildRoomCard(record, insp, locked) {
   const notes      = step.notes || step.arrivalNotes || room.observations || '';
   const aiSummary  = step.aiSummary || '';
   const hasConcern = isAffirmative(flirConcerns);
-  const roomPhotos = photosForRoom(insp.photos || [], roomName);
+  const roomPhotos = photosForRoomRecord(insp.photos || [], record, aliasesByStepId);
   const tannerNotesKey = `room_${stepId}_tannerNotes`;
   const tannerNotes = getReviewedField(insp, 'roomData', tannerNotesKey, '');
 
@@ -2099,7 +2193,7 @@ function buildRoomCard(record, insp, locked) {
   body.appendChild(statusRow);
 
   body.appendChild(buildReadOnlyBlock('Inspector Notes', notes, 'No inspector notes recorded.'));
-  body.appendChild(buildReadOnlyBlock('AI Summary', aiSummary, 'No AI summary available.'));
+  body.appendChild(buildAISummaryBlock(aiSummary, roomPhotos));
   body.appendChild(buildRoomPhotoStrip(roomPhotos));
 
   const tannerWrap = el('div', { class: 'room-tanner-notes' });
@@ -2126,7 +2220,11 @@ function buildRoomCard(record, insp, locked) {
     body.appendChild(locGroup);
   }
 
-  const card = el('div', { class: `room-section${hasConcern ? ' has-concern' : ''}` }, header, body);
+  const card = el('div', {
+    class: `room-section${hasConcern ? ' has-concern' : ''}`,
+    'data-room-step-id': stepId,
+    'data-room-name': roomName
+  }, header, body);
 
   header.addEventListener('click', () => {
     body.style.display = body.style.display === 'none' ? '' : 'none';
@@ -2552,7 +2650,7 @@ function buildPhotoCard(photo, locked) {
   if (photo.driveUrl) {
     const img = el('img', { src: photo.driveUrl, alt: photo.caption || '', loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" });
     thumbWrap.appendChild(img);
-    thumbWrap.addEventListener('click', () => openPhotoModal(photo.driveUrl, photo.caption));
+    thumbWrap.addEventListener('click', () => openPhotoModal(photo.driveUrl, photo.caption, photo.photoId));
   } else {
     const placeholder = el('div', { class: 'photo-thumb-placeholder' });
     placeholder.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span>No preview</span>`;
@@ -2807,23 +2905,340 @@ function updatePhotoSummary(photos) {
    PHOTO MODAL
    ============================================================ */
 
-function openPhotoModal(url, caption) {
+const PHOTO_ANNOTATION_COLOR = '#ef4444';
+let _photoModalState = null;
+
+function normalizePhotoAnnotationPoint(point) {
+  if (!point || typeof point !== 'object') return null;
+  const x = Number(point.x);
+  const y = Number(point.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return {
+    x: Math.max(0, Math.min(1, x)),
+    y: Math.max(0, Math.min(1, y))
+  };
+}
+
+function normalizePhotoAnnotations(value) {
+  let raw = value;
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch(e) { raw = []; }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.map(item => {
+    if (!item || (item.type !== 'arrow' && item.type !== 'circle')) return null;
+    const points = Array.isArray(item.points)
+      ? item.points.map(normalizePhotoAnnotationPoint).filter(Boolean)
+      : [];
+    if (points.length < 2) return null;
+    return {
+      type: item.type,
+      points: points.slice(0, 2),
+      color: item.color || PHOTO_ANNOTATION_COLOR
+    };
+  }).filter(Boolean);
+}
+
+function getPhotoAnnotations(photoId) {
+  if (!photoId) return [];
+  const store = _inspection?.reviewedData?.photoAnnotations || {};
+  return normalizePhotoAnnotations(store[photoId]);
+}
+
+function setPhotoAnnotations(photoId, annotations) {
+  if (!photoId || !_inspection) return;
+  if (!_inspection.reviewedData) _inspection.reviewedData = {};
+  if (!_inspection.reviewedData.photoAnnotations) _inspection.reviewedData.photoAnnotations = {};
+  _inspection.reviewedData.photoAnnotations[photoId] = normalizePhotoAnnotations(annotations);
+}
+
+function photoAnnotationButton(label, title, attrs = {}) {
+  return el('button', {
+    type: 'button',
+    class: 'photo-annotation-btn',
+    title,
+    'aria-label': title,
+    ...attrs
+  }, label);
+}
+
+function buildPhotoAnnotationToolbar() {
+  const toolbar = el('div', { class: 'photo-annotation-toolbar' },
+    photoAnnotationButton('Arrow', 'Arrow tool', { 'data-tool': 'arrow' }),
+    photoAnnotationButton('Circle', 'Circle tool', { 'data-tool': 'circle' }),
+    photoAnnotationButton('Undo', 'Undo last annotation', { 'data-action': 'undo' }),
+    photoAnnotationButton('Clear', 'Clear annotations', { 'data-action': 'clear' }),
+    photoAnnotationButton('Save', 'Save annotations', { class: 'photo-annotation-btn save', 'data-action': 'save' }),
+    el('span', { class: 'photo-annotation-status', 'data-annotation-status': '' }, '')
+  );
+
+  toolbar.addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn || !_photoModalState) return;
+    const tool = btn.dataset.tool;
+    const action = btn.dataset.action;
+
+    if (tool) {
+      _photoModalState.tool = tool;
+      updatePhotoAnnotationToolbar();
+      return;
+    }
+
+    if (action === 'undo') {
+      _photoModalState.annotations.pop();
+      _photoModalState.dirty = true;
+      redrawPhotoAnnotationCanvas();
+      updatePhotoAnnotationToolbar();
+      return;
+    }
+
+    if (action === 'clear') {
+      _photoModalState.annotations = [];
+      _photoModalState.draft = null;
+      _photoModalState.dirty = true;
+      redrawPhotoAnnotationCanvas();
+      updatePhotoAnnotationToolbar();
+      return;
+    }
+
+    if (action === 'save') {
+      saveCurrentPhotoAnnotations();
+    }
+  });
+
+  return toolbar;
+}
+
+function updatePhotoAnnotationToolbar() {
+  if (!_photoModalState?.toolbar) return;
+  const { toolbar, tool, annotations, dirty, photoId } = _photoModalState;
+  toolbar.querySelectorAll('[data-tool]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tool === tool);
+  });
+
+  const undoBtn = toolbar.querySelector('[data-action="undo"]');
+  const clearBtn = toolbar.querySelector('[data-action="clear"]');
+  const saveBtn = toolbar.querySelector('[data-action="save"]');
+  if (undoBtn) undoBtn.disabled = annotations.length === 0;
+  if (clearBtn) clearBtn.disabled = annotations.length === 0;
+  if (saveBtn) saveBtn.disabled = !dirty || !photoId;
+
+  const status = toolbar.querySelector('[data-annotation-status]');
+  if (status) {
+    status.textContent = !photoId
+      ? 'No photo ID'
+      : dirty
+        ? 'Unsaved changes'
+        : `${annotations.length} saved`;
+  }
+}
+
+function pointFromCanvasEvent(event, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const x = rect.width ? (event.clientX - rect.left) / rect.width : 0;
+  const y = rect.height ? (event.clientY - rect.top) / rect.height : 0;
+  return {
+    x: Math.max(0, Math.min(1, x)),
+    y: Math.max(0, Math.min(1, y))
+  };
+}
+
+function drawPhotoAnnotation(ctx, annotation, draft = false) {
+  if (!annotation?.points?.length || annotation.points.length < 2) return;
+  const { width, height } = ctx.canvas;
+  const [start, end] = annotation.points;
+  const x1 = start.x * width;
+  const y1 = start.y * height;
+  const x2 = end.x * width;
+  const y2 = end.y * height;
+  const stroke = annotation.color || PHOTO_ANNOTATION_COLOR;
+  const lineWidth = Math.max(4, Math.min(width, height) * 0.006);
+
+  ctx.save();
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = stroke;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  if (draft) ctx.setLineDash([lineWidth * 2.4, lineWidth * 1.8]);
+
+  if (annotation.type === 'circle') {
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const rx = Math.max(Math.abs(x2 - x1) / 2, lineWidth * 2);
+    const ry = Math.max(Math.abs(y2 - y1) / 2, lineWidth * 2);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    const headLength = Math.max(18, Math.min(width, height) * 0.035);
+    const headAngle = Math.PI / 7;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headLength * Math.cos(angle - headAngle), y2 - headLength * Math.sin(angle - headAngle));
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headLength * Math.cos(angle + headAngle), y2 - headLength * Math.sin(angle + headAngle));
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function redrawPhotoAnnotationCanvas() {
+  const state = _photoModalState;
+  if (!state?.ctx || !state.imageLoaded) return;
+  const { ctx, canvas, image, annotations, draft } = state;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  annotations.forEach(annotation => drawPhotoAnnotation(ctx, annotation));
+  if (draft) drawPhotoAnnotation(ctx, draft, true);
+}
+
+function bindPhotoAnnotationCanvas(canvas) {
+  canvas.addEventListener('pointerdown', e => {
+    const state = _photoModalState;
+    if (!state?.imageLoaded || !state.photoId) return;
+    e.preventDefault();
+    canvas.setPointerCapture?.(e.pointerId);
+    const start = pointFromCanvasEvent(e, canvas);
+    state.drawing = true;
+    state.startPoint = start;
+    state.draft = {
+      type: state.tool,
+      color: PHOTO_ANNOTATION_COLOR,
+      points: [start, start]
+    };
+    redrawPhotoAnnotationCanvas();
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    const state = _photoModalState;
+    if (!state?.drawing || !state.draft) return;
+    e.preventDefault();
+    state.draft.points[1] = pointFromCanvasEvent(e, canvas);
+    redrawPhotoAnnotationCanvas();
+  });
+
+  function finish(e) {
+    const state = _photoModalState;
+    if (!state?.drawing || !state.draft) return;
+    e.preventDefault();
+    const end = pointFromCanvasEvent(e, canvas);
+    const start = state.startPoint || state.draft.points[0];
+    state.draft.points[1] = end;
+    state.drawing = false;
+    state.startPoint = null;
+
+    const distance = Math.hypot(end.x - start.x, end.y - start.y);
+    if (distance >= 0.01) {
+      const annotation = normalizePhotoAnnotations([state.draft])[0];
+      if (annotation) {
+        state.annotations.push(annotation);
+        state.dirty = true;
+      }
+    }
+    state.draft = null;
+    redrawPhotoAnnotationCanvas();
+    updatePhotoAnnotationToolbar();
+  }
+
+  canvas.addEventListener('pointerup', finish);
+  canvas.addEventListener('pointercancel', finish);
+  canvas.addEventListener('pointerleave', e => {
+    if (_photoModalState?.drawing) finish(e);
+  });
+}
+
+function saveCurrentPhotoAnnotations() {
+  const state = _photoModalState;
+  if (!state?.photoId) {
+    showToast('Cannot save annotation without a photo ID', 'error');
+    return;
+  }
+  setPhotoAnnotations(state.photoId, state.annotations);
+  saveField('photoAnnotations', state.photoId, _inspection.reviewedData.photoAnnotations[state.photoId]);
+  state.dirty = false;
+  updatePhotoAnnotationToolbar();
+  showToast('Photo annotations saved', 'success');
+}
+
+function openPhotoModal(url, caption, photoId = '') {
   let modal = qs('#photo-modal');
   if (!modal) {
     modal = el('div', { class: 'photo-modal hidden', id: 'photo-modal' });
-    const inner = el('div', { class: 'photo-modal-inner' });
-    const closeBtn = el('button', { class: 'photo-modal-close', type: 'button' }, '✕');
-    closeBtn.addEventListener('click', closePhotoModal);
-    modal.appendChild(inner);
-    modal.appendChild(closeBtn);
-    modal.addEventListener('click', e => { if (e.target === modal) closePhotoModal(); });
     document.body.appendChild(modal);
   }
-  const inner = modal.querySelector('.photo-modal-inner');
+
+  let inner = modal.querySelector('.photo-modal-inner');
+  if (!inner) {
+    inner = el('div', { class: 'photo-modal-inner' });
+    modal.appendChild(inner);
+  }
+
+  let closeBtn = modal.querySelector('.photo-modal-close');
+  if (!closeBtn) {
+    closeBtn = el('button', { class: 'photo-modal-close', type: 'button' }, '✕');
+    closeBtn.addEventListener('click', closePhotoModal);
+    modal.appendChild(closeBtn);
+  }
+
+  if (!modal.dataset.clickBound) {
+    modal.addEventListener('click', e => { if (e.target === modal) closePhotoModal(); });
+    modal.dataset.clickBound = 'true';
+  }
+
   inner.innerHTML = '';
-  const img = el('img', { src: url, alt: caption || '', referrerpolicy: "no-referrer-when-downgrade" });
-  inner.appendChild(img);
-  if (caption) inner.appendChild(el('p', { style: 'color:white;text-align:center;margin-top:8px;font-size:.85rem' }, caption));
+  const toolbar = buildPhotoAnnotationToolbar();
+  const canvasWrap = el('div', { class: 'photo-canvas-wrap' });
+  const canvas = el('canvas', { class: 'photo-annotation-canvas', 'aria-label': caption || 'Photo annotation canvas' });
+  const ctx = canvas.getContext('2d');
+  canvasWrap.appendChild(canvas);
+  inner.appendChild(toolbar);
+  inner.appendChild(canvasWrap);
+  if (caption) inner.appendChild(el('p', { class: 'photo-modal-caption' }, caption));
+
+  const annotations = getPhotoAnnotations(photoId);
+  const image = new Image();
+  const state = {
+    photoId,
+    url,
+    caption,
+    tool: 'arrow',
+    annotations,
+    dirty: false,
+    drawing: false,
+    draft: null,
+    startPoint: null,
+    toolbar,
+    canvas,
+    ctx,
+    image,
+    imageLoaded: false
+  };
+  _photoModalState = state;
+  updatePhotoAnnotationToolbar();
+  bindPhotoAnnotationCanvas(canvas);
+
+  image.onload = () => {
+    if (_photoModalState !== state) return;
+    const maxSide = 2200;
+    const naturalW = image.naturalWidth || 1600;
+    const naturalH = image.naturalHeight || 1200;
+    const scale = Math.min(1, maxSide / Math.max(naturalW, naturalH));
+    canvas.width = Math.max(1, Math.round(naturalW * scale));
+    canvas.height = Math.max(1, Math.round(naturalH * scale));
+    state.imageLoaded = true;
+    redrawPhotoAnnotationCanvas();
+  };
+  image.onerror = () => {
+    if (_photoModalState !== state) return;
+    inner.appendChild(el('p', { class: 'photo-modal-error' }, 'Photo failed to load.'));
+  };
+  image.src = url;
+
   modal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 }
@@ -2831,6 +3246,7 @@ function openPhotoModal(url, caption) {
 function closePhotoModal() {
   const modal = qs('#photo-modal');
   if (modal) modal.classList.add('hidden');
+  _photoModalState = null;
   document.body.style.overflow = '';
 }
 

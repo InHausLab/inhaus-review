@@ -812,6 +812,13 @@ body {
   font-style: italic;
 }
 
+.ai-summary-warning .room-readonly-text {
+  background: var(--amber-pale);
+  border-color: #fde68a;
+  color: #92400e;
+  font-style: normal;
+}
+
 .room-photo-strip-wrap {
   margin-bottom: 14px;
 }
@@ -823,16 +830,19 @@ body {
 }
 
 .room-photo-thumb {
+  display: block;
   position: relative;
   width: 100%;
   aspect-ratio: 4 / 3;
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);
   background: var(--gray-100);
+  color: inherit;
   overflow: hidden;
   cursor: pointer;
   padding: 0;
   text-align: left;
+  text-decoration: none;
 }
 
 .room-photo-thumb img {
@@ -1529,6 +1539,10 @@ body {
   position: relative;
   max-width: 90vw;
   max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
 .photo-modal-inner img {
@@ -1536,6 +1550,86 @@ body {
   max-height: 84vh;
   border-radius: var(--radius);
   box-shadow: 0 20px 60px rgba(0,0,0,.5);
+}
+
+.photo-annotation-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  max-width: 90vw;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: var(--radius);
+  background: rgba(17,24,39,.88);
+  box-shadow: 0 16px 40px rgba(0,0,0,.34);
+}
+
+.photo-annotation-btn {
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,.08);
+  color: white;
+  min-width: 54px;
+  min-height: 34px;
+  padding: 7px 10px;
+  font-family: var(--font);
+  font-size: .78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), opacity var(--transition);
+}
+
+.photo-annotation-btn:hover:not(:disabled),
+.photo-annotation-btn.active {
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.photo-annotation-btn.save {
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.photo-annotation-btn:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.photo-annotation-status {
+  color: rgba(255,255,255,.72);
+  font-size: .76rem;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.photo-canvas-wrap {
+  max-width: 90vw;
+  max-height: 76vh;
+}
+
+.photo-annotation-canvas {
+  display: block;
+  max-width: 90vw;
+  max-height: 76vh;
+  border-radius: var(--radius);
+  background: #111827;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.photo-modal-caption,
+.photo-modal-error {
+  color: white;
+  text-align: center;
+  margin: 0;
+  font-size: .85rem;
+}
+
+.photo-modal-error {
+  color: #fecaca;
 }
 
 .photo-modal-close {
