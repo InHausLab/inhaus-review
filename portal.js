@@ -149,7 +149,8 @@ const MOCK_INSPECTION = {
    STATE
    ============================================================ */
 let _inspection = null;      // current full inspection object
-let _saveTimer  = null;      // debounce handle for saveField
+const _saveTimers = new Map(); // debounce handles keyed by field
+let _saveChain = Promise.resolve(); // serialize backend writes to prevent lost updates
 let _pendingSaves = 0;       // count of in-flight saves
 let _currentPage = null;     // 'list' | 'review'
 
@@ -626,12 +627,18 @@ async function loadInspection() {
     }
   }
 
-  // Load saved review data from localStorage and merge
+  // Load any device-local recovery data. Older portal builds stored summary
+  // fields under a nested `summary` key even though the renderer expects them
+  // at the top level, so migrate that shape before merging.
   if (!IS_DEMO && id) {
     try {
       const saved = JSON.parse(localStorage.getItem('inhaus_review_' + id) || '{}');
+      if (saved.summary && typeof saved.summary === 'object' && !Array.isArray(saved.summary)) {
+        Object.assign(saved, saved.summary);
+        delete saved.summary;
+      }
       if (Object.keys(saved).length > 0) {
-        insp.reviewedData = Object.assign(insp.reviewedData || {}, saved);
+        insp.reviewedData = mergeReviewData(insp.reviewedData || {}, saved);
       }
     } catch(e) {}
   }
@@ -1891,10 +1898,26 @@ function getOriginalValue(stepId, fieldKey) {
   return step?.[fieldKey] ?? '';
 }
 
+function mergeReviewData(target, source) {
+  for (const [key, value] of Object.entries(source || {})) {
+    if (value && typeof value === 'object' && !Array.isArray(value) &&
+        target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])) {
+      mergeReviewData(target[key], value);
+    } else {
+      target[key] = value;
+    }
+  }
+  return target;
+}
+
 function debouncedSave(stepId, fieldKey, value) {
-  clearTimeout(_saveTimer);
+  const timerKey = `${stepId}:${fieldKey}`;
+  clearTimeout(_saveTimers.get(timerKey));
   setSaveIndicator('saving');
-  _saveTimer = setTimeout(() => saveField(stepId, fieldKey, value), 800);
+  _saveTimers.set(timerKey, setTimeout(() => {
+    _saveTimers.delete(timerKey);
+    saveField(stepId, fieldKey, value);
+  }, 800));
 }
 
 async function saveField(stepId, fieldKey, value) {
@@ -1902,7 +1925,7 @@ async function saveField(stepId, fieldKey, value) {
     setSaveIndicator('saved', formatTime(new Date().toISOString()));
     return;
   }
-  const { id } = getURLParams();
+  const { id, token } = getURLParams();
   _pendingSaves++;
   setSaveIndicator('saving');
   try {
@@ -1910,8 +1933,16 @@ async function saveField(stepId, fieldKey, value) {
     const storageKey = 'inhaus_review_' + id;
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch(e) {}
-    if (!saved[stepId]) saved[stepId] = {};
-    saved[stepId][fieldKey] = value;
+    if (stepId === 'summary') {
+      saved[fieldKey] = value;
+      if (saved.summary && typeof saved.summary === 'object') {
+        delete saved.summary[fieldKey];
+        if (Object.keys(saved.summary).length === 0) delete saved.summary;
+      }
+    } else {
+      if (!saved[stepId]) saved[stepId] = {};
+      saved[stepId][fieldKey] = value;
+    }
     localStorage.setItem(storageKey, JSON.stringify(saved));
     // Update local state
     if (!_inspection.reviewedData) _inspection.reviewedData = {};
@@ -1921,8 +1952,19 @@ async function saveField(stepId, fieldKey, value) {
       if (!_inspection.reviewedData[stepId]) _inspection.reviewedData[stepId] = {};
       _inspection.reviewedData[stepId][fieldKey] = value;
     }
+
+    // Serialize backend writes. The old portal stopped after localStorage and
+    // still showed "Saved", which meant drafts vanished on another device.
+    const remoteSave = _saveChain.then(() => apiFetch({}, 'POST', {
+      action: 'saveReview',
+      id,
+      token,
+      field: { stepId, key: fieldKey, value }
+    }));
+    _saveChain = remoteSave.catch(() => {});
+    await remoteSave;
   } catch (err) {
-    showToast('Save failed', 'error');
+    showToast('Cloud save failed — local recovery copy kept', 'error');
     setSaveIndicator('error');
     _pendingSaves--;
     return;

@@ -352,6 +352,7 @@ function doGet(e) {
   }
   if (params.action === 'getReview' && params.id) {
     try {
+      requireReviewTokenForInspectionId(params.id, params.token);
       var result = getReviewData(params.id, params.token);
       return ContentService
         .createTextOutput(JSON.stringify({ status: 'ok', ...result }))
@@ -407,43 +408,50 @@ function saveReviewData(data) {
   var token = data.token;
   var field = data.field; // { stepId, key, value }
   if (!id || !field) throw new Error('Missing id or field');
+  requireReviewTokenForInspectionId(id, token);
 
-  var sheet = getOrCreateReviewSheet();
-  var rows = sheet.getDataRange().getValues();
-  var rowIndex = -1;
-  var existing = {};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sheet = getOrCreateReviewSheet();
+    var rows = sheet.getDataRange().getValues();
+    var rowIndex = -1;
+    var existing = {};
 
-  for (var i = 1; i < rows.length; i++) {
-    if (rows[i][0] === id) {
-      rowIndex = i + 1; // 1-indexed
-      try { existing = JSON.parse(rows[i][1] || '{}'); } catch(e) { existing = {}; }
-      break;
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i][0] === id) {
+        rowIndex = i + 1; // 1-indexed
+        try { existing = JSON.parse(rows[i][1] || '{}'); } catch(e) { existing = {}; }
+        break;
+      }
     }
+
+    // Merge the new field value into existing data
+    var stepId = field.stepId;
+    var key = field.key;
+    var value = field.value;
+
+    if (stepId === 'summary' || stepId === 'photo') {
+      existing[key] = value;
+    } else {
+      if (!existing[stepId]) existing[stepId] = {};
+      existing[stepId][key] = value;
+    }
+
+    var now = new Date().toISOString();
+    var json = JSON.stringify(existing);
+
+    if (rowIndex > 0) {
+      sheet.getRange(rowIndex, 2).setValue(json);
+      sheet.getRange(rowIndex, 3).setValue(now);
+    } else {
+      sheet.appendRow([id, json, now]);
+    }
+
+    return { saved: true, id: id, lastUpdated: now };
+  } finally {
+    lock.releaseLock();
   }
-
-  // Merge the new field value into existing data
-  var stepId = field.stepId;
-  var key = field.key;
-  var value = field.value;
-
-  if (stepId === 'summary' || stepId === 'photo') {
-    existing[key] = value;
-  } else {
-    if (!existing[stepId]) existing[stepId] = {};
-    existing[stepId][key] = value;
-  }
-
-  var now = new Date().toISOString();
-  var json = JSON.stringify(existing);
-
-  if (rowIndex > 0) {
-    sheet.getRange(rowIndex, 2).setValue(json);
-    sheet.getRange(rowIndex, 3).setValue(now);
-  } else {
-    sheet.appendRow([id, json, now]);
-  }
-
-  return { saved: true, id: id };
 }
 
 function getReviewData(id, token) {
@@ -474,9 +482,22 @@ function requirePortalAccess(token) {
 function requireReviewTokenForInspection(insp, token) {
   if (isPortalAccessToken(token)) return;
   if (!token) throw new Error('Missing review token');
-  if (insp && insp.reviewToken && insp.reviewToken !== token) {
+  var expected = insp && (insp.reviewToken || String(insp.inspectionId || insp.id || '').toLowerCase());
+  if (!expected || expected !== token) {
     throw new Error('Invalid review token');
   }
+}
+
+function requireReviewTokenForInspectionId(id, token) {
+  if (isPortalAccessToken(token)) return;
+  var rows = getFromSupabase(
+    'ihl_assessments',
+    'select=inspection_id,raw_jsonb&inspection_id=eq.' + encodeURIComponent(id) + '&limit=1'
+  );
+  if (!rows.length) throw new Error('Inspection not found: ' + id);
+  var insp = parseRawJsonb(rows[0].raw_jsonb);
+  insp.inspectionId = insp.inspectionId || rows[0].inspection_id || id;
+  requireReviewTokenForInspection(insp, token);
 }
 
 function getReviewAdminToken() {
@@ -755,19 +776,46 @@ function listEntryForReview(data) {
   };
 }
 
+function getSupabasePhotoCountsForReview() {
+  var counts = {};
+  var seen = {};
+  try {
+    var rows = getFromSupabase(
+      'inspector_photo_uploads',
+      'select=inspection_id,photo_id&order=inspection_id.asc,photo_id.asc'
+    );
+    rows.forEach(function(row) {
+      if (!row || !row.inspection_id || !row.photo_id) return;
+      var uniqueKey = row.inspection_id + ':' + row.photo_id;
+      if (seen[uniqueKey]) return;
+      seen[uniqueKey] = true;
+      counts[row.inspection_id] = (counts[row.inspection_id] || 0) + 1;
+    });
+  } catch (err) {
+    console.error('getSupabasePhotoCountsForReview failed:', err.message);
+  }
+  return counts;
+}
+
 function listReviewInspections(token) {
   requirePortalAccess(token);
   var rows = getFromSupabase(
     'ihl_assessments',
     'select=inspection_id,status,drive_folder_id,assessment_folder_url,raw_jsonb&order=inspection_id.desc'
   );
+  // The list only needs counts. Scanning every Drive folder and loading full
+  // photo metadata made page load time grow linearly with every inspection.
+  var photoCounts = getSupabasePhotoCountsForReview();
   var inspections = rows.map(function(row) {
     var data = parseRawJsonb(row.raw_jsonb);
     data.inspectionId = data.inspectionId || row.inspection_id;
     data.id = data.id || data.inspectionId;
     data.status = row.status || data.status;
     data.folderId = data.folderId || row.drive_folder_id;
-    return listEntryForReview(normalizeInspectionForReviewApi(data));
+    data.photos = flattenInspectionPhotosForReview(data);
+    var entry = listEntryForReview(data);
+    entry.photoCount = Math.max(entry.photoCount || 0, photoCounts[data.inspectionId] || 0);
+    return entry;
   });
   return {
     generatedAt: new Date().toISOString(),
@@ -871,6 +919,7 @@ function submitReviewToTanner(data) {
   var id = data.id || data.inspectionId;
   if (!id) throw new Error('Missing inspection id');
   if (!data.token) throw new Error('Missing review token');
+  requireReviewTokenForInspectionId(id, data.token);
   var submittedAt = data.submittedAt || new Date().toISOString();
   var patch = deepMergeReviewData({}, data.reviewedData || {});
   patch.reportBuilderNotes = data.reportBuilderNotes || patch.reportBuilderNotes || '';
