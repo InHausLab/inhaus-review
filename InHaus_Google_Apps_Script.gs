@@ -758,10 +758,16 @@ function mergeSupabasePhotosForReview(photos, inspectionId) {
 function normalizeInspectionForReviewApi(data) {
   data.id = data.id || data.inspectionId;
   data.inspectionId = data.inspectionId || data.id;
+  // Supabase is the authoritative current photo source and can be queried in a
+  // single request. Only scan Drive for older inspections that have no photo
+  // metadata at all; a Drive folder scan adds tens of seconds to every load.
   data.photos = mergeSupabasePhotosForReview(
-    mergeDriveFolderPhotosForReview(flattenInspectionPhotosForReview(data), data.folderId || ''),
+    flattenInspectionPhotosForReview(data),
     data.inspectionId
   );
+  if (!data.photos.length && data.folderId) {
+    data.photos = mergeDriveFolderPhotosForReview(data.photos, data.folderId);
+  }
   data.photoCount = data.photos.length;
   return data;
 }
