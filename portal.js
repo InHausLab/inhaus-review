@@ -410,8 +410,20 @@ function applyReviewedData(insp) {
 
   (insp.photos || []).forEach(photo => {
     const nested = reviewed[`photo_${photo.photoId}`] || {};
+    if (photo.originalRoomName === undefined) photo.originalRoomName = photo.roomName || '';
+    if (photo.originalStepName === undefined) photo.originalStepName = photo.stepName || '';
     if (nested.caption !== undefined) photo.caption = nested.caption;
     if (nested.included !== undefined) photo.included = nested.included;
+    if (nested.placement !== undefined) {
+      let placement = nested.placement;
+      if (typeof placement === 'string') {
+        try { placement = JSON.parse(placement); } catch(e) { placement = null; }
+      }
+      if (placement && typeof placement === 'object') {
+        photo.roomName = String(placement.roomName || '');
+        photo.stepName = String(placement.stepName || '');
+      }
+    }
     const legacyCaption = reviewed[`caption_${photo.photoId}`];
     const legacyIncluded = reviewed[`included_${photo.photoId}`];
     if (legacyCaption !== undefined) photo.caption = legacyCaption;
@@ -1937,7 +1949,7 @@ function debouncedSave(stepId, fieldKey, value) {
 async function saveField(stepId, fieldKey, value) {
   if (IS_DEMO) {
     setSaveIndicator('saved', formatTime(new Date().toISOString()));
-    return;
+    return true;
   }
   const { id, token } = getURLParams();
   const isTopLevelField = stepId === 'summary' || stepId === 'post';
@@ -1982,13 +1994,14 @@ async function saveField(stepId, fieldKey, value) {
     showToast('Cloud save failed — local recovery copy kept', 'error');
     setSaveIndicator('error');
     _pendingSaves--;
-    return;
+    return false;
   }
   _pendingSaves--;
   if (_pendingSaves <= 0) {
     _pendingSaves = 0;
     setSaveIndicator('saved', formatTime(new Date().toISOString()));
   }
+  return true;
 }
 
 /* ============================================================
@@ -2594,6 +2607,150 @@ function renderTestsSection(insp, locked) {
 
 let _activeFilter = 'all';
 let _activeRoomFilter = 'all';
+const _selectedPhotoIds = new Set();
+
+function photoPlacementKey(roomName, stepName) {
+  return `${String(roomName || '')}\u001f${String(stepName || '')}`;
+}
+
+function buildPhotoPlacementDestinations(insp) {
+  const rooms = new Map();
+  const tasks = new Map();
+  const addRoom = roomName => {
+    const room = String(roomName || '').trim();
+    if (!room) return;
+    const key = photoPlacementKey(room, '');
+    if (!rooms.has(key)) rooms.set(key, { key, roomName: room, stepName: '', label: `Room — ${room}` });
+  };
+  const addTask = (roomName, stepName, customLabel = '') => {
+    const room = String(roomName || '').trim();
+    const task = String(stepName || '').trim();
+    if (!task) return;
+    const key = photoPlacementKey(room, task);
+    if (!tasks.has(key)) {
+      tasks.set(key, {
+        key,
+        roomName: room,
+        stepName: task,
+        label: customLabel || `Task — ${task}${room ? ` (${room})` : ''}`
+      });
+    }
+  };
+
+  buildReviewRoomRecords(insp).forEach(record => {
+    addRoom(record.room?.roomName || record.step?.roomName || record.stepId);
+  });
+  (insp.photos || []).forEach(photo => {
+    addRoom(photo.originalRoomName);
+    addTask(photo.originalRoomName, photo.originalStepName);
+    addRoom(photo.roomName);
+    addTask(photo.roomName, photo.stepName);
+  });
+
+  const hasWaterEquipment = (insp.photos || []).some(photo =>
+    /utility room/i.test(String(photo.roomName || '')) ||
+    /water filtration|water treatment|uv system/i.test(String(photo.stepName || ''))
+  );
+  if (hasWaterEquipment) {
+    addRoom('Utility Room');
+    addTask('Utility Room', 'Water Treatment System', 'Task — Water Treatment System (Utility Room)');
+  }
+
+  const byLabel = (a, b) => a.label.localeCompare(b.label);
+  return {
+    rooms: Array.from(rooms.values()).sort(byLabel),
+    tasks: Array.from(tasks.values()).sort(byLabel)
+  };
+}
+
+function appendPhotoPlacementOptions(select, insp, placeholder) {
+  select.innerHTML = '';
+  select.appendChild(el('option', { value: '' }, placeholder || '— Not assigned —'));
+  const destinations = buildPhotoPlacementDestinations(insp);
+  if (destinations.rooms.length) {
+    const roomGroup = el('optgroup', { label: 'Rooms' });
+    destinations.rooms.forEach(destination => {
+      roomGroup.appendChild(el('option', { value: destination.key }, destination.label));
+    });
+    select.appendChild(roomGroup);
+  }
+  if (destinations.tasks.length) {
+    const taskGroup = el('optgroup', { label: 'Tasks' });
+    destinations.tasks.forEach(destination => {
+      taskGroup.appendChild(el('option', { value: destination.key }, destination.label));
+    });
+    select.appendChild(taskGroup);
+  }
+}
+
+function parsePhotoPlacement(value) {
+  if (!value) return { roomName: '', stepName: '' };
+  const parts = String(value).split('\u001f');
+  return { roomName: parts[0] || '', stepName: parts[1] || '' };
+}
+
+async function savePhotoPlacement(photo, placement) {
+  if (!photo) return;
+  photo.roomName = placement.roomName;
+  photo.stepName = placement.stepName;
+  const saved = await saveField(`photo_${photo.photoId}`, 'placement', {
+    roomName: placement.roomName,
+    stepName: placement.stepName
+  });
+  if (!saved) throw new Error('Cloud save failed');
+}
+
+function updatePhotoSelectionToolbar() {
+  const count = qs('#photo-selection-count');
+  const select = qs('#bulk-photo-placement');
+  const apply = qs('#apply-photo-placement');
+  const clear = qs('#clear-photo-selection');
+  const selectedCount = _selectedPhotoIds.size;
+  if (count) count.textContent = `${selectedCount} selected`;
+  if (select) select.disabled = selectedCount === 0;
+  if (apply) apply.disabled = selectedCount === 0 || !select?.value;
+  if (clear) clear.disabled = selectedCount === 0;
+}
+
+function setupPhotoPlacementToolbar(insp, locked) {
+  const toolbar = qs('#photo-placement-toolbar');
+  const select = qs('#bulk-photo-placement');
+  const apply = qs('#apply-photo-placement');
+  const clear = qs('#clear-photo-selection');
+  if (!toolbar || !select || !apply || !clear) return;
+  toolbar.style.display = locked ? 'none' : 'flex';
+  if (locked) return;
+
+  appendPhotoPlacementOptions(select, insp, 'Place selected in room/task…');
+  select.onchange = updatePhotoSelectionToolbar;
+  clear.onclick = () => {
+    _selectedPhotoIds.clear();
+    qsa('.photo-select-checkbox').forEach(box => { box.checked = false; });
+    select.value = '';
+    updatePhotoSelectionToolbar();
+  };
+  apply.onclick = async () => {
+    const placement = parsePhotoPlacement(select.value);
+    const photos = (insp.photos || []).filter(photo => _selectedPhotoIds.has(photo.photoId));
+    if (!photos.length || !select.value) return;
+    apply.disabled = true;
+    apply.textContent = `Saving ${photos.length}…`;
+    try {
+      for (const photo of photos) await savePhotoPlacement(photo, placement);
+      _selectedPhotoIds.clear();
+      select.value = '';
+      showToast(`${photos.length} photo${photos.length === 1 ? '' : 's'} placed in ${placement.stepName || placement.roomName}`, 'success');
+      renderRoomsSection(insp, false);
+      renderPhotosSection(insp, false);
+    } catch (err) {
+      showToast('Photo placement failed — local recovery copy kept', 'error');
+    } finally {
+      apply.textContent = 'Place selected';
+      updatePhotoSelectionToolbar();
+    }
+  };
+  updatePhotoSelectionToolbar();
+}
 
 function renderPhotosSection(insp, locked) {
   const container = qs('#photo-grid');
@@ -2606,6 +2763,10 @@ function renderPhotosSection(insp, locked) {
     return new Date(a.timestamp) - new Date(b.timestamp);
   });
   insp.photos = photos;
+  for (const photoId of Array.from(_selectedPhotoIds)) {
+    if (!photos.some(photo => photo.photoId === photoId)) _selectedPhotoIds.delete(photoId);
+  }
+  setupPhotoPlacementToolbar(insp, locked);
 
   // Build room filter options
   const roomSelect = qs('#room-filter');
@@ -2716,12 +2877,55 @@ function buildPhotoCard(photo, locked) {
 
   const seqBadge = el('div', { class: 'photo-thumb-overlay' }, photo.stepName || '');
   thumbWrap.appendChild(seqBadge);
+  if (!locked) {
+    const selectBox = el('input', {
+      class: 'photo-select-checkbox',
+      type: 'checkbox',
+      title: 'Select this photo for bulk placement',
+      'aria-label': `Select photo ${photo.caption || photo.photoId}`
+    });
+    selectBox.checked = _selectedPhotoIds.has(photo.photoId);
+    selectBox.addEventListener('click', event => event.stopPropagation());
+    selectBox.addEventListener('change', event => {
+      event.stopPropagation();
+      if (selectBox.checked) _selectedPhotoIds.add(photo.photoId);
+      else _selectedPhotoIds.delete(photo.photoId);
+      updatePhotoSelectionToolbar();
+    });
+    thumbWrap.appendChild(selectBox);
+  }
   card.appendChild(thumbWrap);
 
   // Info
   const info = el('div', { class: 'photo-info' });
   info.appendChild(el('div', { class: 'photo-room' }, photo.roomName || ''));
   info.appendChild(el('div', { class: 'photo-step' }, photo.stepName || ''));
+
+  if (!locked) {
+    const placementWrap = el('label', { class: 'photo-placement-wrap' });
+    placementWrap.appendChild(el('span', { class: 'photo-placement-label' }, 'Place in room/task'));
+    const placementSelect = el('select', {
+      class: 'photo-placement-select',
+      'aria-label': `Place ${photo.caption || photo.photoId} in room or task`
+    });
+    appendPhotoPlacementOptions(placementSelect, _inspection, '— Not assigned —');
+    placementSelect.value = photoPlacementKey(photo.roomName, photo.stepName);
+    placementSelect.addEventListener('change', async () => {
+      const placement = parsePhotoPlacement(placementSelect.value);
+      placementSelect.disabled = true;
+      try {
+        await savePhotoPlacement(photo, placement);
+        showToast(`Photo placed in ${placement.stepName || placement.roomName || 'Unassigned'}`, 'success');
+        renderRoomsSection(_inspection, false);
+        renderPhotosSection(_inspection, false);
+      } catch (err) {
+        placementSelect.disabled = false;
+        showToast('Photo placement failed — local recovery copy kept', 'error');
+      }
+    });
+    placementWrap.appendChild(placementSelect);
+    info.appendChild(placementWrap);
+  }
 
   // Caption
   const captionWrap = el('div', { class: 'photo-caption' });
@@ -2886,7 +3090,7 @@ function buildPhotoCard(photo, locked) {
     assignBadge.textContent = assignments.length > 0
       ? `\uD83D\uDCCC ${assignments.map(a => a.label).join(', ')}`
       : '\u2014 Not in any section';
-    const assignBtn = el('button', { class: 'photo-assign-btn', type: 'button' }, 'Assign \u2192');
+    const assignBtn = el('button', { class: 'photo-assign-btn', type: 'button' }, 'Report section \u2192');
     assignBtn.addEventListener('click', () => {
       const allPhotos = _inspection?.photos || [];
       const allSlots = [

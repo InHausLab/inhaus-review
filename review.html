@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>InHaus Lab — Inspection Review</title>
-  <link rel="stylesheet" href="styles.css?v=20260717-4">
+  <link rel="stylesheet" href="styles.css?v=20260717-6">
 </head>
 <body>
 
@@ -306,6 +306,16 @@
           <span class="text-muted" id="photo-filter-count"></span>
         </div>
 
+        <!-- Bulk room/task placement -->
+        <div class="photo-placement-toolbar" id="photo-placement-toolbar">
+          <strong id="photo-selection-count">0 selected</strong>
+          <select id="bulk-photo-placement" class="filter-select" aria-label="Place selected photos in room or task" disabled>
+            <option value="">Place selected in room/task…</option>
+          </select>
+          <button id="apply-photo-placement" class="btn btn-primary btn-sm" type="button" disabled>Place selected</button>
+          <button id="clear-photo-selection" class="btn btn-outline btn-sm" type="button" disabled>Clear</button>
+        </div>
+
         <!-- AI Describe All -->
         <div id="describe-all-wrap" style="margin-bottom:14px;display:none;">
           <button id="describe-all-btn" type="button" style="padding:10px 20px;font-size:0.9rem;font-weight:700;background:#1e40af;color:#fff;border:none;border-radius:9px;cursor:pointer;">&#10024; AI Describe All Photos</button>
@@ -380,7 +390,7 @@
 <div id="photo-modal" class="photo-modal hidden"></div>
 <div class="toast-container" id="toast-container"></div>
 
-<script src="portal.js?v=20260717-4"></script>
+<script src="portal.js?v=20260717-6"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
     portalInit('review');
