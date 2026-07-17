@@ -432,7 +432,7 @@ function saveReviewData(data) {
     var key = field.key;
     var value = field.value;
 
-    if (stepId === 'summary' || stepId === 'photo') {
+    if (stepId === 'summary' || stepId === 'post' || stepId === 'photo') {
       existing[key] = value;
     } else {
       if (!existing[stepId]) existing[stepId] = {};

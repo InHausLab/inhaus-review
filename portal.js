@@ -627,16 +627,27 @@ async function loadInspection() {
     }
   }
 
-  // Load any device-local recovery data. Older portal builds stored summary
-  // fields under a nested `summary` key even though the renderer expects them
-  // at the top level, so migrate that shape before merging.
+  // Migrate older backend drafts that nested top-level review fields under
+  // `summary` or `post`, even though the renderer reads those keys directly.
+  if (insp.reviewedData && typeof insp.reviewedData === 'object') {
+    ['summary', 'post'].forEach(group => {
+      if (insp.reviewedData[group] && typeof insp.reviewedData[group] === 'object' && !Array.isArray(insp.reviewedData[group])) {
+        Object.assign(insp.reviewedData, insp.reviewedData[group]);
+        delete insp.reviewedData[group];
+      }
+    });
+  }
+
+  // Load any device-local recovery data and migrate the same older shape.
   if (!IS_DEMO && id) {
     try {
       const saved = JSON.parse(localStorage.getItem('inhaus_review_' + id) || '{}');
-      if (saved.summary && typeof saved.summary === 'object' && !Array.isArray(saved.summary)) {
-        Object.assign(saved, saved.summary);
-        delete saved.summary;
-      }
+      ['summary', 'post'].forEach(group => {
+        if (saved[group] && typeof saved[group] === 'object' && !Array.isArray(saved[group])) {
+          Object.assign(saved, saved[group]);
+          delete saved[group];
+        }
+      });
       if (Object.keys(saved).length > 0) {
         insp.reviewedData = mergeReviewData(insp.reviewedData || {}, saved);
       }
@@ -1929,6 +1940,7 @@ async function saveField(stepId, fieldKey, value) {
     return;
   }
   const { id, token } = getURLParams();
+  const isTopLevelField = stepId === 'summary' || stepId === 'post';
   _pendingSaves++;
   setSaveIndicator('saving');
   try {
@@ -1936,11 +1948,11 @@ async function saveField(stepId, fieldKey, value) {
     const storageKey = 'inhaus_review_' + id;
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch(e) {}
-    if (stepId === 'summary') {
+    if (isTopLevelField) {
       saved[fieldKey] = value;
-      if (saved.summary && typeof saved.summary === 'object') {
-        delete saved.summary[fieldKey];
-        if (Object.keys(saved.summary).length === 0) delete saved.summary;
+      if (saved[stepId] && typeof saved[stepId] === 'object') {
+        delete saved[stepId][fieldKey];
+        if (Object.keys(saved[stepId]).length === 0) delete saved[stepId];
       }
     } else {
       if (!saved[stepId]) saved[stepId] = {};
@@ -1949,7 +1961,7 @@ async function saveField(stepId, fieldKey, value) {
     localStorage.setItem(storageKey, JSON.stringify(saved));
     // Update local state
     if (!_inspection.reviewedData) _inspection.reviewedData = {};
-    if (stepId === 'summary') {
+    if (isTopLevelField) {
       _inspection.reviewedData[fieldKey] = value;
     } else {
       if (!_inspection.reviewedData[stepId]) _inspection.reviewedData[stepId] = {};
