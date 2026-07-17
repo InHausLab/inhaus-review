@@ -71,6 +71,22 @@ function getSupabaseKey() {
   return PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
 }
 
+function getExistingAssessmentNumber(inspectionId) {
+  if (!inspectionId || !SUPABASE_ENABLED || !SUPABASE_URL || !getSupabaseKey()) return '';
+  try {
+    var rows = getFromSupabase(
+      'ihl_assessments',
+      'select=assessment_num&inspection_id=eq.' + encodeURIComponent(inspectionId) + '&limit=1'
+    );
+    return rows && rows.length && rows[0].assessment_num
+      ? String(rows[0].assessment_num)
+      : '';
+  } catch (e) {
+    console.warn('Existing assessment number lookup failed:', e.message);
+    return '';
+  }
+}
+
 function postToSupabase(table, payload, conflictColumn) {
   if (!SUPABASE_ENABLED || !SUPABASE_URL || !getSupabaseKey()) return null;
   try {
@@ -119,10 +135,11 @@ function syncToSupabase(data, driveResult) {
   if (!SUPABASE_ENABLED) return;
   try {
     // 1. Upsert assessment record
+    var existingAssessmentNum = getExistingAssessmentNumber(data.inspectionId);
     var assessment = {
-      assessment_num: driveResult && driveResult.assessmentNum
+      assessment_num: existingAssessmentNum || (driveResult && driveResult.assessmentNum
         ? String(driveResult.assessmentNum)
-        : String(data.assessmentNum || data.inspectionId || ''),
+        : String(data.assessmentNum || data.inspectionId || '')),
       inspection_id: data.inspectionId,
       report_id: null,
       inspector_name: data.inspectorName || null,
@@ -966,7 +983,10 @@ function createInspectionSheet(data) {
   var inspId = data.inspectionId || '';
 
   // Determine assessment number and canonical folder name (new format: ### – YYYY-MM-DD – LastName – Street)
-  var assessmentNum = getNextAssessmentNumber();
+  // Retries must retain the original number. Generating a fresh number for an
+  // existing inspection can collide with another assessment_num and make an
+  // otherwise idempotent inspection_id upsert fail.
+  var assessmentNum = getExistingAssessmentNumber(inspId) || getNextAssessmentNumber();
   var folderName    = generateFolderName(assessmentNum, data);
   // Deduplicate: search for existing folder/sheet with this inspectionId
   var inspFolder = null;
