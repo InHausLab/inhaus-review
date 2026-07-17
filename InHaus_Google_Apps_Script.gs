@@ -119,6 +119,9 @@ function syncToSupabase(data, driveResult) {
   try {
     // 1. Upsert assessment record
     var assessment = {
+      assessment_num: driveResult && driveResult.assessmentNum
+        ? String(driveResult.assessmentNum)
+        : String(data.assessmentNum || data.inspectionId || ''),
       inspection_id: data.inspectionId,
       report_id: null,
       inspector_name: data.inspectorName || null,
@@ -148,7 +151,10 @@ function syncToSupabase(data, driveResult) {
       source_system: 'apps_script',
       source_id: data.inspectionId
     };
-    postToSupabase('ihl_assessments', assessment);
+    var assessmentRows = postToSupabase('ihl_assessments', assessment);
+    if (!assessmentRows || !assessmentRows.length) {
+      throw new Error('Supabase rejected the assessment record');
+    }
 
     // 2. Upsert room air quality records
     var rooms = data.rooms || [];
@@ -187,6 +193,7 @@ function syncToSupabase(data, driveResult) {
   } catch(e) {
     console.error('syncToSupabase error:', e.message);
     logSyncRun(data.inspectionId, 'partial', e.message, 0, 0, data.appVersion);
+    throw e;
   }
 }
 
@@ -1050,6 +1057,7 @@ function createInspectionSheet(data) {
     spreadsheetId: ss.getId(),
     folderUrl: inspFolder.getUrl(),
     folderId: inspFolder.getId(),
+    assessmentNum: assessmentNum,
     inspectionId: data.inspectionId,
     photosUploaded: photoResults.length
   };
