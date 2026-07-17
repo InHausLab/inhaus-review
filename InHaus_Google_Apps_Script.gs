@@ -71,7 +71,7 @@ function getSupabaseKey() {
   return PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
 }
 
-function postToSupabase(table, payload) {
+function postToSupabase(table, payload, conflictColumn) {
   if (!SUPABASE_ENABLED || !SUPABASE_URL || !getSupabaseKey()) return null;
   try {
     var options = {
@@ -86,6 +86,7 @@ function postToSupabase(table, payload) {
       muteHttpExceptions: true
     };
     var url = SUPABASE_URL + '/rest/v1/' + table;
+    if (conflictColumn) url += '?on_conflict=' + encodeURIComponent(conflictColumn);
     var response = UrlFetchApp.fetch(url, options);
     var code = response.getResponseCode();
     if (code >= 200 && code < 300) {
@@ -151,7 +152,7 @@ function syncToSupabase(data, driveResult) {
       source_system: 'apps_script',
       source_id: data.inspectionId
     };
-    var assessmentRows = postToSupabase('ihl_assessments', assessment);
+    var assessmentRows = postToSupabase('ihl_assessments', assessment, 'inspection_id');
     if (!assessmentRows || !assessmentRows.length) {
       throw new Error('Supabase rejected the assessment record');
     }
