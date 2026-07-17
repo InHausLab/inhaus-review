@@ -664,10 +664,58 @@ function mergeDriveFolderPhotosForReview(photos, folderId) {
   return photos;
 }
 
+function mergeSupabasePhotosForReview(photos, inspectionId) {
+  if (!inspectionId) return photos;
+  var existing = {};
+  photos.forEach(function(photo) {
+    existing[photoReviewKey(photo)] = true;
+    if (photo.photoId) existing['id:' + photo.photoId] = true;
+  });
+
+  try {
+    var rows = getFromSupabase(
+      'inspector_photo_uploads',
+      'select=photo_id,room_name,step_name,caption,slot,drive_url,storage_path' +
+        '&inspection_id=eq.' + encodeURIComponent(inspectionId) +
+        '&order=photo_id.asc'
+    );
+    rows.forEach(function(row) {
+      if (!row || !row.photo_id || !row.drive_url) return;
+      var driveId = extractDriveIdForReview({ driveUrl: row.drive_url });
+      var photo = {
+        photoId: String(row.photo_id),
+        driveId: driveId || '',
+        driveUrl: driveId
+          ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(driveId) + '&sz=w1600'
+          : String(row.drive_url),
+        caption: row.caption || '',
+        roomName: row.room_name || '',
+        stepName: row.step_name || '',
+        assignedSlot: row.slot === null || row.slot === undefined ? null : row.slot,
+        storagePath: row.storage_path || '',
+        timestamp: '',
+        included: null
+      };
+      var driveKey = photoReviewKey(photo);
+      var idKey = 'id:' + photo.photoId;
+      if (existing[driveKey] || existing[idKey]) return;
+      photos.push(photo);
+      existing[driveKey] = true;
+      existing[idKey] = true;
+    });
+  } catch (err) {
+    console.error('mergeSupabasePhotosForReview failed:', err.message);
+  }
+  return photos;
+}
+
 function normalizeInspectionForReviewApi(data) {
   data.id = data.id || data.inspectionId;
   data.inspectionId = data.inspectionId || data.id;
-  data.photos = mergeDriveFolderPhotosForReview(flattenInspectionPhotosForReview(data), data.folderId || '');
+  data.photos = mergeSupabasePhotosForReview(
+    mergeDriveFolderPhotosForReview(flattenInspectionPhotosForReview(data), data.folderId || ''),
+    data.inspectionId
+  );
   data.photoCount = data.photos.length;
   return data;
 }
