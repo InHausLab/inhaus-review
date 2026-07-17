@@ -65,6 +65,7 @@ function getReviewAccessToken() {
 // Store here since Apps Script runs server-side
 const SUPABASE_URL = 'https://kvpaqvieacccojkkxqul.supabase.co';
 const SUPABASE_ENABLED = true; // set false to disable without removing code
+const PHOTO_REVIEW_PROXY_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev/photo';
 // SUPABASE_SERVICE_KEY is stored in Script Properties (not hardcoded)
 // To set it: Apps Script → Project Settings → Script Properties → add SUPABASE_SERVICE_KEY
 function getSupabaseKey() {
@@ -689,8 +690,8 @@ function mergeSupabasePhotosForReview(photos, inspectionId) {
   if (!inspectionId) return photos;
   var existing = {};
   photos.forEach(function(photo) {
-    existing[photoReviewKey(photo)] = true;
-    if (photo.photoId) existing['id:' + photo.photoId] = true;
+    existing[photoReviewKey(photo)] = photo;
+    if (photo.photoId) existing['id:' + photo.photoId] = photo;
   });
 
   try {
@@ -701,14 +702,19 @@ function mergeSupabasePhotosForReview(photos, inspectionId) {
         '&order=photo_id.asc'
     );
     rows.forEach(function(row) {
-      if (!row || !row.photo_id || !row.drive_url) return;
+      if (!row || !row.photo_id || !row.storage_path) return;
       var driveId = extractDriveIdForReview({ driveUrl: row.drive_url });
+      var proxyUrl = PHOTO_REVIEW_PROXY_URL +
+        '?inspectionId=' + encodeURIComponent(inspectionId) +
+        '&photoId=' + encodeURIComponent(row.photo_id) +
+        '&token=' + encodeURIComponent(String(inspectionId).toLowerCase());
       var photo = {
         photoId: String(row.photo_id),
         driveId: driveId || '',
-        driveUrl: driveId
+        driveUrl: proxyUrl,
+        originalDriveUrl: driveId
           ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(driveId) + '&sz=w1600'
-          : String(row.drive_url),
+          : String(row.drive_url || ''),
         caption: row.caption || '',
         roomName: row.room_name || '',
         stepName: row.step_name || '',
@@ -719,10 +725,29 @@ function mergeSupabasePhotosForReview(photos, inspectionId) {
       };
       var driveKey = photoReviewKey(photo);
       var idKey = 'id:' + photo.photoId;
-      if (existing[driveKey] || existing[idKey]) return;
+      var matched = existing[idKey];
+      if (!matched && driveId) {
+        var originalDrivePhoto = {
+          driveId: driveId,
+          driveUrl: 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(driveId) + '&sz=w1600'
+        };
+        matched = existing[photoReviewKey(originalDrivePhoto)];
+      }
+      if (matched) {
+        matched.photoId = photo.photoId;
+        matched.driveUrl = proxyUrl;
+        matched.originalDriveUrl = photo.originalDriveUrl;
+        matched.storagePath = photo.storagePath;
+        matched.caption = matched.caption || photo.caption;
+        matched.roomName = matched.roomName === 'Drive Folder' ? photo.roomName : (matched.roomName || photo.roomName);
+        matched.stepName = matched.stepName === 'Unassigned Drive Photo' ? photo.stepName : (matched.stepName || photo.stepName);
+        matched.assignedSlot = matched.assignedSlot === undefined ? photo.assignedSlot : matched.assignedSlot;
+        existing[idKey] = matched;
+        return;
+      }
       photos.push(photo);
-      existing[driveKey] = true;
-      existing[idKey] = true;
+      existing[driveKey] = photo;
+      existing[idKey] = photo;
     });
   } catch (err) {
     console.error('mergeSupabasePhotosForReview failed:', err.message);
