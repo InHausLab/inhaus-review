@@ -1039,6 +1039,7 @@ function createInspectionSheet(data) {
   // Deduplicate: search for existing folder/sheet with this inspectionId
   var inspFolder = null;
   var ss = null;
+  var summary = null;
 
   if (USE_SHARED_DRIVE) {
     inspFolder = getOrCreateInspectionFolderInSharedDrive(DRIVE_FOLDER_ID, folderName, inspId);
@@ -1078,6 +1079,7 @@ function createInspectionSheet(data) {
   if (!ss) {
     const sheetName = 'InHaus Inspection \u2014 ' + (data.inspectionId || 'Unknown');
     ss = SpreadsheetApp.create(sheetName);
+    summary = ss.getSheets()[0];
     if (USE_SHARED_DRIVE) {
       moveFileToSharedDriveFolder(ss.getId(), inspFolder.getId());
     } else {
@@ -1086,16 +1088,18 @@ function createInspectionSheet(data) {
       DriveApp.getRootFolder().removeFile(file);
     }
   } else {
-    // Clear all sheets for rewrite; keep at least one sheet to avoid errors
+    // Keep a stable reference to the first sheet and make it active before
+    // deleting the others. getActiveSheet() can otherwise return a stale
+    // deleted tab and throw "A sheet with ID ... does not exist" on retries.
     var existingSheets = ss.getSheets();
+    summary = existingSheets[0];
+    ss.setActiveSheet(summary);
     for (var i = existingSheets.length - 1; i > 0; i--) {
       ss.deleteSheet(existingSheets[i]);
     }
-    existingSheets[0].clearContents();
-    existingSheets[0].setName('Summary');
+    summary.clearContents();
   }
-  
-  const summary = ss.getActiveSheet();
+
   summary.setName('Summary');
   writeSummary(summary, data);
   
