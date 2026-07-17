@@ -1608,9 +1608,10 @@ function openAssignPhotoModal(photo, allPhotos, slots, rd) {
   const slotListWrap = el('div', { class: 'assign-slot-list' });
   slotListWrap.appendChild(el('div', { class: 'assign-slot-hint' }, 'Toggle the slots this photo should appear in:'));
 
-  const slotState = {}; // slotKey → { ids: string[], changed: bool }
+  const slotState = {}; // slotKey → current ids + original value
   slots.forEach(s => {
-    slotState[s.slotKey] = { ids: [...tryParseIds(s.slotKey)] };
+    const ids = [...tryParseIds(s.slotKey)];
+    slotState[s.slotKey] = { ids, original: JSON.stringify(ids) };
   });
 
   const buildSlotRows = () => {
@@ -1646,9 +1647,11 @@ function openAssignPhotoModal(photo, allPhotos, slots, rd) {
   const doneBtn = el('button', { class: 'picker-done-btn', type: 'button' }, 'Save');
   doneBtn.addEventListener('click', () => {
     if (!_inspection.reviewedData) _inspection.reviewedData = {};
-    // Save each slot
+    // Save only slots that changed. Saving all 17 slots made one assignment
+    // generate 17 sequential backend writes and could take close to a minute.
     slots.forEach(s => {
       const jsonValue = JSON.stringify(slotState[s.slotKey].ids);
+      if (jsonValue === slotState[s.slotKey].original) return;
       _inspection.reviewedData[s.slotKey] = jsonValue;
       saveField('post', s.slotKey, jsonValue);
     });
