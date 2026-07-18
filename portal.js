@@ -153,6 +153,7 @@ const _saveTimers = new Map(); // debounce handles keyed by field
 let _saveChain = Promise.resolve(); // serialize backend writes to prevent lost updates
 let _pendingSaves = 0;       // count of in-flight saves
 let _currentPage = null;     // 'list' | 'review'
+const _postVisibleCounts = new Map(); // expanded optional post-content rows per inspection
 
 /* ============================================================
    UTILITIES
@@ -1142,12 +1143,19 @@ function renderPostContentSection(insp, locked) {
 
   const assignedSet = getAllSection5AssignedIds(rd);
   const tryParseIds = key => { try { return JSON.parse(rd[key] || '[]'); } catch(e) { return []; } };
+  const postData = insp.stepData?.['post-assessment'] || {};
+  const hasText = (...keys) => keys.some(key => String(rd[key] || postData[key] || '').trim());
+  const hasPhotos = key => tryParseIds(key).length > 0;
 
   // ---- Follow-up Actions ----
   body.appendChild(buildPostSubheading('Follow-Up Actions Needed',
-    'Recommended re-checks for the client report. Leave unused slots blank.'));
-  for (let i = 1; i <= 5; i++) {
-    body.appendChild(buildPostGroup([
+    'Recommended re-checks for the client report. Add another only when needed.'));
+  renderProgressivePostGroups(body, {
+    insp, locked, sectionKey: 'follow-up', maxCount: 5,
+    addLabel: '+ Add another follow-up action',
+    emptyLabel: 'No follow-up actions recorded.',
+    hasContent: i => hasText(`followUp_${i}_desc`, `followUp_${i}_whatToWatch`, `followUp_${i}_timeframe`) || hasPhotos(`followUp_${i}_photoIds`),
+    buildGroup: i => buildPostGroup([
       { label: `Action ${i} — Description`, stepId: 'post', field: `followUp_${i}_desc`,
         type: 'textarea', value: rd[`followUp_${i}_desc`] || insp.stepData?.['post-assessment']?.[`followUp_${i}_whatToWatch`] || '', locked,
         placeholder: 'e.g. Re-test basement east wall in 3 months — active moisture risk (🎙 speak then review)' },
@@ -1156,29 +1164,33 @@ function renderPostContentSection(insp, locked) {
         value: rd[`followUp_${i}_timeframe`] || insp.stepData?.['post-assessment']?.[`followUp_${i}_timeframe`] || '', locked },
       { label: 'Photos', type: 'photopicker', slotKey: `followUp_${i}_photoIds`, stepId: 'post',
         assignedIds: tryParseIds(`followUp_${i}_photoIds`), allPhotos, locked }
-    ]));
-  }
+    ])
+  });
 
   body.appendChild(buildPostDivider());
 
   // ---- Actions Taken ----
   body.appendChild(buildPostSubheading('Actions Taken During Assessment',
-    'What you physically did on-site. Each entry appears in the report.'));
-  for (let i = 1; i <= 6; i++) {
-    body.appendChild(buildPostGroup([
+    'What you physically did on-site. Add another only when needed.'));
+  renderProgressivePostGroups(body, {
+    insp, locked, sectionKey: 'actions-taken', maxCount: 6,
+    addLabel: '+ Add another action taken',
+    emptyLabel: 'No actions taken were recorded.',
+    hasContent: i => hasText(`actionTaken_${i}_desc`) || hasPhotos(`actionTaken_${i}_photoIds`),
+    buildGroup: i => buildPostGroup([
       { label: `Action ${i}`, stepId: 'post', field: `actionTaken_${i}_desc`,
         type: 'textarea', value: rd[`actionTaken_${i}_desc`] || insp.stepData?.['post-assessment']?.[`actionTaken_${i}_desc`] || '', locked,
         placeholder: 'e.g. Replaced HVAC filter — 20x20x1 MERV 11, installed new' },
       { label: 'Photos', type: 'photopicker', slotKey: `actionTaken_${i}_photoIds`, stepId: 'post',
         assignedIds: tryParseIds(`actionTaken_${i}_photoIds`), allPhotos, locked }
-    ]));
-  }
+    ])
+  });
 
   body.appendChild(buildPostDivider());
 
   // ---- Assessment Observations ----
   body.appendChild(buildPostSubheading('Assessment Observations',
-    'Notable findings for the report. Include location, what you saw, and a photo reference for each.'));
+    'Notable findings for the report. Start with one and add another only when needed.'));
 
   // Pre-fill button — only show when room notes exist and slots are empty
   if (!locked) {
@@ -1188,8 +1200,12 @@ function renderPostContentSection(insp, locked) {
     body.appendChild(prefillBtn);
   }
 
-  for (let i = 1; i <= 6; i++) {
-    body.appendChild(buildPostGroup([
+  renderProgressivePostGroups(body, {
+    insp, locked, sectionKey: 'observations', maxCount: 6,
+    addLabel: '+ Add another observation',
+    emptyLabel: 'No assessment observations recorded.',
+    hasContent: i => hasText(`obs_${i}_location`, `obs_${i}_note`) || hasPhotos(`obs_${i}_photoIds`),
+    buildGroup: i => buildPostGroup([
       { label: `Observation ${i} — Room / Location`, stepId: 'post', field: `obs_${i}_location`,
         type: 'text', value: rd[`obs_${i}_location`] || insp.stepData?.['post-assessment']?.[`obs_${i}_location`] || '', locked,
         placeholder: 'e.g. Primary Bathroom' },
@@ -1198,8 +1214,8 @@ function renderPostContentSection(insp, locked) {
         placeholder: 'e.g. Active moisture staining on drywall below showerhead — no active drip at time of inspection' },
       { label: 'Photos', type: 'photopicker', slotKey: `obs_${i}_photoIds`, stepId: 'post',
         assignedIds: tryParseIds(`obs_${i}_photoIds`), allPhotos, locked }
-    ]));
-  }
+    ])
+  });
 
   // ---- Completion Score ----
   renderScoreCard(body, insp);
@@ -1698,6 +1714,67 @@ function openAssignPhotoModal(photo, allPhotos, slots, rd) {
   overlay.appendChild(modal);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
+}
+
+function preserveVisiblePostInputs(insp) {
+  if (!insp.reviewedData) insp.reviewedData = {};
+  qsa('#post-content-body [data-step="post"][data-field]').forEach(inp => {
+    insp.reviewedData[inp.dataset.field] = inp.value;
+  });
+}
+
+function renderProgressivePostGroups(container, config) {
+  const {
+    insp, locked, sectionKey, maxCount, addLabel, emptyLabel,
+    hasContent, buildGroup
+  } = config;
+  const inspectionKey = insp.inspectionId || insp.id || 'current';
+  const stateKey = `${inspectionKey}:${sectionKey}`;
+
+  let highestUsed = 0;
+  for (let i = 1; i <= maxCount; i++) {
+    if (hasContent(i)) highestUsed = i;
+  }
+
+  const rememberedCount = Number(_postVisibleCounts.get(stateKey) || 0);
+  const visibleCount = locked
+    ? highestUsed
+    : Math.min(maxCount, Math.max(1, highestUsed, rememberedCount));
+  if (!locked) _postVisibleCounts.set(stateKey, visibleCount);
+
+  const list = el('div', {
+    class: 'progressive-post-groups',
+    'data-post-section': sectionKey
+  });
+
+  if (visibleCount === 0) {
+    list.appendChild(el('div', { class: 'post-empty-state' }, emptyLabel));
+  }
+
+  for (let i = 1; i <= visibleCount; i++) {
+    const group = buildGroup(i);
+    group.setAttribute('data-post-index', String(i));
+    list.appendChild(group);
+  }
+
+  if (!locked && visibleCount < maxCount) {
+    const addButton = el('button', {
+      class: 'post-add-another-btn',
+      type: 'button'
+    }, addLabel);
+    addButton.addEventListener('click', () => {
+      preserveVisiblePostInputs(insp);
+      _postVisibleCounts.set(stateKey, visibleCount + 1);
+      renderPostContentSection(insp, false);
+      requestAnimationFrame(() => {
+        const nextGroup = qs(`[data-post-section="${sectionKey}"] [data-post-index="${visibleCount + 1}"]`);
+        nextGroup?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+    list.appendChild(addButton);
+  }
+
+  container.appendChild(list);
 }
 
 function buildPostSubheading(title, subtitle) {

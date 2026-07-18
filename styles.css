@@ -2037,6 +2037,33 @@ body {
 .post-field-row:last-child {
   margin-bottom: 0;
 }
+.post-add-another-btn {
+  width: 100%;
+  min-height: 48px;
+  margin: 2px 0 10px;
+  border: 2px dashed var(--green-300, #9eb68f);
+  border-radius: 8px;
+  background: var(--green-50, #f4f8ef);
+  color: var(--green-800, #1a2f0c);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.post-add-another-btn:hover,
+.post-add-another-btn:focus-visible {
+  background: var(--green-100, #e8f0df);
+  border-style: solid;
+  outline: none;
+}
+.post-empty-state {
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--gray-50, #fafafa);
+  color: var(--gray-500, #6b7280);
+  font-size: 0.86rem;
+}
 
 /* ── Photo Status Legend ────────────────────────────────────── */
 .photo-status-legend {
