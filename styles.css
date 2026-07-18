@@ -751,6 +751,12 @@ body {
   border: 1px solid #fde68a;
 }
 
+.voice-chip.no-notes {
+  background: var(--gray-100);
+  color: var(--gray-500);
+  border: 1px solid var(--gray-200);
+}
+
 .room-body { padding: 16px; }
 
 .room-status-row {

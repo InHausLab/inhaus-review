@@ -2109,6 +2109,16 @@ function buildReadOnlyBlock(label, value, emptyText) {
   );
 }
 
+function getRoomInspectorNotes(record) {
+  const step = record?.step || {};
+  const room = record?.room || {};
+  return String(step.notes || step.arrivalNotes || room.observations || '').trim();
+}
+
+function roomHasReviewableNotes(record) {
+  return getRoomInspectorNotes(record) !== '';
+}
+
 function buildRoomAliasMap(roomRecords) {
   const aliasesByStepId = new Map();
   const groups = {};
@@ -2257,7 +2267,8 @@ function renderRoomsSection(insp, locked) {
 
 function buildRoomCard(record, insp, locked, aliasesByStepId) {
   const { stepId, step = {}, room = {} } = record;
-  const reviewed   = step.voiceReviewed === true;
+  const hasNotes   = roomHasReviewableNotes(record);
+  const reviewed   = hasNotes && step.voiceReviewed === true;
   const roomName   = room.roomName || step.roomName || stepId;
   const level      = room.level || step.level || '';
   const type       = room.type || step.type || '';
@@ -2266,16 +2277,16 @@ function buildRoomCard(record, insp, locked, aliasesByStepId) {
   const breezeDone = room.breezeDone || step.breezeDone || '';
   const qtrak      = step.qtrakLocation || '';
   const breeze     = step.breezeLocation || '';
-  const notes      = step.notes || step.arrivalNotes || room.observations || '';
+  const notes      = getRoomInspectorNotes(record);
   const aiSummary  = step.aiSummary || '';
   const hasConcern = isAffirmative(flirConcerns);
   const roomPhotos = photosForRoomRecord(insp.photos || [], record, aliasesByStepId);
   const tannerNotesKey = `room_${stepId}_tannerNotes`;
   const tannerNotes = getReviewedField(insp, 'roomData', tannerNotesKey, '');
 
-  const reviewedChip = el('span', { class: `voice-chip ${reviewed ? 'reviewed' : 'unreviewed'}` },
-    reviewed ? '✓ Notes Reviewed' : '⚠ Needs Review'
-  );
+  const reviewStatusClass = !hasNotes ? 'no-notes' : reviewed ? 'reviewed' : 'unreviewed';
+  const reviewStatusText = !hasNotes ? 'No Notes' : reviewed ? '✓ Notes Reviewed' : '⚠ Review Notes';
+  const reviewedChip = el('span', { class: `voice-chip ${reviewStatusClass}` }, reviewStatusText);
 
   const collapseIcon = el('svg', {
     class: 'collapse-icon', viewBox: '0 0 20 20', fill: 'none',
@@ -2307,7 +2318,7 @@ function buildRoomCard(record, insp, locked, aliasesByStepId) {
 
   const voiceLabel = el('label', { for: `vr-${stepId}` },
     voiceCheck,
-    ' I\'ve reviewed the voice dictation for this room'
+    ' I\'ve reviewed the inspector notes for this room'
   );
 
   voiceCheck.checked = reviewed;
@@ -2316,7 +2327,7 @@ function buildRoomCard(record, insp, locked, aliasesByStepId) {
       const chip = header.querySelector('.voice-chip');
       if (chip) {
         chip.className = `voice-chip ${voiceCheck.checked ? 'reviewed' : 'unreviewed'}`;
-        chip.textContent = voiceCheck.checked ? '✓ Notes Reviewed' : '⚠ Needs Review';
+        chip.textContent = voiceCheck.checked ? '✓ Notes Reviewed' : '⚠ Review Notes';
       }
       saveField(stepId, 'voiceReviewed', voiceCheck.checked);
       if (_inspection?.stepData?.[stepId]) {
@@ -2327,7 +2338,9 @@ function buildRoomCard(record, insp, locked, aliasesByStepId) {
   }
 
   const body = el('div', { class: 'room-body' });
-  body.appendChild(el('div', { class: 'voice-review-row' }, voiceLabel));
+  if (hasNotes) {
+    body.appendChild(el('div', { class: 'voice-review-row' }, voiceLabel));
+  }
 
   const statusRow = el('div', { class: 'room-status-row' },
     buildStatusPill('FLIR done', flirDone),
@@ -3229,8 +3242,9 @@ function updatePhotoSummary(photos) {
 
   if (elRev) {
     const roomRecords = _inspection ? buildReviewRoomRecords(_inspection) : [];
-    const rooms = roomRecords.length;
-    const reviewedRooms = roomRecords.filter(record => record.step?.voiceReviewed === true).length;
+    const roomsWithNotes = roomRecords.filter(roomHasReviewableNotes);
+    const rooms = roomsWithNotes.length;
+    const reviewedRooms = roomsWithNotes.filter(record => record.step?.voiceReviewed === true).length;
     elRev.textContent = reviewedRooms;
     if (elRooms) elRooms.textContent = rooms;
   }
@@ -3606,8 +3620,10 @@ function evaluateGate(insp) {
   const reviewed = insp.reviewedData || {};
   const roomRecords = buildReviewRoomRecords(insp);
 
-  // 1. All room notes reviewed (voiceReviewed == true for each step)
-  const notesReviewed = roomRecords.length > 0 && roomRecords.every(record => record.step?.voiceReviewed === true);
+  // 1. Only rooms that actually contain inspector notes require review.
+  // Rooms without notes are neutral and must not block submission.
+  const roomsWithNotes = roomRecords.filter(roomHasReviewableNotes);
+  const notesReviewed = roomsWithNotes.every(record => record.step?.voiceReviewed === true);
 
   // 2. All test locations recorded (qtrak + breeze in each room that has those fields)
   const roomsWithLocs = roomRecords.filter(record => 'qtrakLocation' in record.step || 'breezeLocation' in record.step);
