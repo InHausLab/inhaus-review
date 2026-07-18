@@ -1220,9 +1220,6 @@ function renderPostContentSection(insp, locked) {
   // ---- Completion Score ----
   renderScoreCard(body, insp);
 
-  // ---- Photo Library ----
-  renderPhotoLibrary(body, allPhotos, rd, insp);
-
   if (!locked) {
     // Wire up all inputs in this section
     qsa('#post-content-body input, #post-content-body textarea, #post-content-body select').forEach(inp => {
