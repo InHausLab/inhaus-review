@@ -5,7 +5,7 @@
  * Configuration: swap these two constants when Apps Script is deployed
  */
 
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwcCqVf_tnTJPm9D65SKEdfIq7-gYhCQZqaTL1rvVgJkGtdEXRNckLUkgW8octOQjFIXA/exec'; // Apps Script v52 — updated July 17 2026
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwcCqVf_tnTJPm9D65SKEdfIq7-gYhCQZqaTL1rvVgJkGtdEXRNckLUkgW8octOQjFIXA/exec'; // Apps Script v64 — updated July 19 2026
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 
@@ -793,11 +793,37 @@ function buildMicButton(textarea, stepId, fieldKey) {
    ============================================================ */
 
 function buildSmartPrefillSuggestions(insp) {
-  // Returns array of { roomName, note, qtrak, breeze, photos[] }
-  // — one entry per room that has actual notes worth surfacing
+  // Returns approved inspector findings first, followed by room notes.
+  // Approved photo comments keep their photo links so the report builder sees
+  // the comment and evidence together in Assessment Observations.
   const suggestions = [];
   const stepData = insp.stepData || {};
   const photos   = insp.photos   || [];
+  const seenNotes = new Set();
+
+  (insp.findings || [])
+    .filter(finding => finding && finding.status === 'approved')
+    .forEach(finding => {
+      const note = String(finding.cleanedComment || '').trim();
+      if (!note) return;
+      const noteKey = note.toLowerCase().replace(/\s+/g, ' ');
+      if (seenNotes.has(noteKey)) return;
+      seenNotes.add(noteKey);
+      const linkedIds = new Set([
+        ...(Array.isArray(finding.photoIds) ? finding.photoIds : []),
+        finding.sourcePhotoId || ''
+      ].filter(Boolean));
+      suggestions.push({
+        findingId: finding.findingId || '',
+        source: 'approved_finding',
+        stepId: finding.stepId || '',
+        roomName: finding.roomName || finding.reportSection || finding.stepName || 'Inspection Finding',
+        note,
+        qtrak: '',
+        breeze: '',
+        photos: photos.filter(photo => linkedIds.has(photo.photoId))
+      });
+    });
 
   const SKIP_STEPS = new Set(['arrival', 'device-setup', 'debrief', 'post-assessment', 'pre-assessment']);
 
@@ -808,11 +834,14 @@ function buildSmartPrefillSuggestions(insp) {
     const qtrak    = (step.qtrakLocation || '').trim();
     const breeze   = (step.breezeLocation || '').trim();
     if (!note && !qtrak && !breeze) continue;
+    const noteKey = [note, qtrak, breeze].join('|').toLowerCase().replace(/\s+/g, ' ');
+    if (seenNotes.has(noteKey)) continue;
+    seenNotes.add(noteKey);
 
     // Photos for this room
     const roomPhotos = photos.filter(p => p.roomName === roomName || p.stepId === stepId);
 
-    suggestions.push({ stepId, roomName, note, qtrak, breeze, photos: roomPhotos });
+    suggestions.push({ source: 'room_note', stepId, roomName, note, qtrak, breeze, photos: roomPhotos });
   }
 
   return suggestions;
@@ -843,14 +872,65 @@ function applySmartPrefill(insp) {
     insp.reviewedData[noteKey] = noteVal;
     saveField('post', locKey,  locVal);
     saveField('post', noteKey, noteVal);
+    const photoIds = (s.photos || []).map(photo => photo.photoId).filter(Boolean);
+    if (photoIds.length) {
+      const photoKey = `obs_${i + 1}_photoIds`;
+      const photoValue = JSON.stringify(photoIds);
+      insp.reviewedData[photoKey] = photoValue;
+      saveField('post', photoKey, photoValue);
+    }
     filled++;
   }
 
   if (filled === 0) {
     showToast('All observation slots already have content — clear slots to re-fill', 'info');
   } else {
-    showToast(`Pre-filled ${filled} observation${filled !== 1 ? 's' : ''} from room notes ✓`, 'success');
+    showToast(`Pre-filled ${filled} observation${filled !== 1 ? 's' : ''} from approved findings and room notes ✓`, 'success');
     renderPostContentSection(insp, false);
+  }
+}
+
+function importApprovedFindingsIntoObservations(insp) {
+  if (!insp.reviewedData) insp.reviewedData = {};
+  const rd = insp.reviewedData;
+  let importedIds = [];
+  try { importedIds = JSON.parse(rd._importedApprovedFindingIds || '[]'); } catch(e) {}
+  if (!Array.isArray(importedIds)) importedIds = [];
+  const imported = new Set(importedIds);
+  let changed = false;
+
+  const approved = buildSmartPrefillSuggestions(insp)
+    .filter(item => item.source === 'approved_finding' && item.findingId);
+  approved.forEach(item => {
+    if (imported.has(item.findingId)) return;
+    const duplicateSlot = Array.from({ length: 6 }, (_, index) => index + 1)
+      .find(index => String(rd[`obs_${index}_note`] || '').trim() === item.note);
+    if (duplicateSlot) {
+      imported.add(item.findingId);
+      changed = true;
+      return;
+    }
+    const openSlot = Array.from({ length: 6 }, (_, index) => index + 1)
+      .find(index => !String(rd[`obs_${index}_location`] || '').trim() && !String(rd[`obs_${index}_note`] || '').trim());
+    if (!openSlot) return;
+
+    const locationKey = `obs_${openSlot}_location`;
+    const noteKey = `obs_${openSlot}_note`;
+    const photoKey = `obs_${openSlot}_photoIds`;
+    const photoIds = (item.photos || []).map(photo => photo.photoId).filter(Boolean);
+    rd[locationKey] = item.roomName;
+    rd[noteKey] = item.note;
+    if (photoIds.length) rd[photoKey] = JSON.stringify(photoIds);
+    saveField('post', locationKey, rd[locationKey]);
+    saveField('post', noteKey, rd[noteKey]);
+    if (photoIds.length) saveField('post', photoKey, rd[photoKey]);
+    imported.add(item.findingId);
+    changed = true;
+  });
+
+  if (changed) {
+    rd._importedApprovedFindingIds = JSON.stringify(Array.from(imported));
+    saveField('post', '_importedApprovedFindingIds', rd._importedApprovedFindingIds);
   }
 }
 
@@ -1111,8 +1191,10 @@ function renderPostContentSection(insp, locked) {
   if (!body) return;
   body.innerHTML = '';
 
-  const rd = insp.reviewedData || {};
+  if (!insp.reviewedData) insp.reviewedData = {};
+  const rd = insp.reviewedData;
   const allPhotos = insp.photos || [];
+  if (!locked) importApprovedFindingsIntoObservations(insp);
 
   // Pre-populate slots from spare photo assignedSlot field (set by inspector in app)
   // Only applies when the slot is currently empty — never overwrites reviewer's manual assignments
@@ -1195,7 +1277,7 @@ function renderPostContentSection(insp, locked) {
   // Pre-fill button — only show when room notes exist and slots are empty
   if (!locked) {
     const prefillBtn = el('button', { type: 'button', class: 'prefill-btn' },
-      '\u2728 Fill from inspection notes');
+      '\u2728 Fill from approved findings & inspection notes');
     prefillBtn.addEventListener('click', () => applySmartPrefill(insp));
     body.appendChild(prefillBtn);
   }
