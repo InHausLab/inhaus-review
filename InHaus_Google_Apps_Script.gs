@@ -307,6 +307,12 @@ function doPost(e) {
       result = submitReviewToTanner(data);
     } else if (data.action === 'adminUnlock') {
       result = adminUnlockReview(data);
+    } else if (data.action === 'commentLibraryCandidate') {
+      result = submitCommentLibraryCandidate(data);
+    } else if (data.action === 'commentLibraryAdmin') {
+      result = updateCommentLibraryAdmin(data);
+    } else if (data.action === 'teamMerge') {
+      result = mergeTeamInspection(data);
     } else if (data.photoUploadOnly) {
       result = processPhotoUpload(data);
     } else {
@@ -327,6 +333,18 @@ function doPost(e) {
 
 function doGet(e) {
   var params = e ? e.parameter : {};
+  if (params.action === 'capabilities') {
+    try {
+      requirePortalAccess(params.token);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ok', capabilities: { teamFieldMerge: true, companyCommentLibrary: true, recoveryAudit: true } }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
   if (params.action === 'list') {
     try {
       var listResult = listReviewInspections(params.token);
@@ -357,6 +375,30 @@ function doGet(e) {
       var result = getReviewData(params.id, params.token);
       return ContentService
         .createTextOutput(JSON.stringify({ status: 'ok', ...result }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  if (params.action === 'commentLibrary') {
+    try {
+      requirePortalAccess(params.token);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ok', libraryVersion: 1, comments: getApprovedCommentLibrary() }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  if (params.action === 'commentLibraryAdmin') {
+    try {
+      if (params.adminToken !== getReviewAdminToken()) throw new Error('Invalid admin token');
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ok', libraryVersion: 1, library: getCommentLibraryState() }))
         .setMimeType(ContentService.MimeType.JSON);
     } catch (err) {
       return ContentService
@@ -765,6 +807,13 @@ function normalizeInspectionForReviewApi(data) {
     flattenInspectionPhotosForReview(data),
     data.inspectionId
   );
+  // A deleted photo can still exist in Supabase while devices converge. Keep
+  // the shared tombstone authoritative so it cannot reappear in the portal.
+  var photoTombstones = data.photoTombstones || {};
+  data.photos = data.photos.filter(function(photo) {
+    var photoId = String((photo && (photo.id || photo.photoId || photo.clientPhotoId)) || '');
+    return !(photoId && photoTombstones[photoId] && photoTombstones[photoId].status === 'deleted');
+  });
   if (!data.photos.length && data.folderId) {
     data.photos = mergeDriveFolderPhotosForReview(data.photos, data.folderId);
   }
