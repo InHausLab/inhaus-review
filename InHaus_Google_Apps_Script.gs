@@ -395,16 +395,9 @@ function doGet(e) {
     }
   }
   if (params.action === 'commentLibraryAdmin') {
-    try {
-      if (params.adminToken !== getReviewAdminToken()) throw new Error('Invalid admin token');
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: 'ok', libraryVersion: 1, library: getCommentLibraryState() }))
-        .setMimeType(ContentService.MimeType.JSON);
-    } catch (err) {
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'error', message: 'Admin library requests require POST' }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
   return ContentService
     .createTextOutput(JSON.stringify({ status: 'ok', message: 'InHaus Inspector Bridge is running' }))

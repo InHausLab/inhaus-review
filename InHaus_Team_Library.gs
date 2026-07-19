@@ -1,4 +1,4 @@
-// InHaus Inspector v163 - company comment library and atomic team field merging.
+// InHaus Inspector v164 - company comment library and atomic team field merging.
 // Add this file to the same Apps Script project as InHaus_Google_Apps_Script.gs.
 
 var COMMENT_LIBRARY_RECORD_ID = '__INHAUS_COMMENT_LIBRARY_V1__';
@@ -95,6 +95,9 @@ function submitCommentLibraryCandidate(data) {
 function updateCommentLibraryAdmin(data) {
   if (data.adminToken !== getReviewAdminToken()) throw new Error('Invalid admin token');
   var command = String(data.command || '');
+  if (command === 'list') {
+    return { libraryVersion: 1, library: getCommentLibraryState() };
+  }
   var commentId = String(data.commentId || '');
   if (!command || !commentId) throw new Error('Missing library command or comment id');
   return withCommentLibraryLock(function() {
