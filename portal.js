@@ -579,6 +579,10 @@ function renderInspectionList(inspections, tableBody, countLabel) {
 
   tableBody.innerHTML = '';
   for (const insp of inspections) {
+    // The live list endpoint authorizes the request with ACCESS_TOKEN but does
+    // not return a per-inspection reviewToken. Reuse the portal token so Open
+    // Review never generates token=undefined.
+    const reviewToken = insp.reviewToken || ACCESS_TOKEN;
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>
@@ -597,7 +601,7 @@ function renderInspectionList(inspections, tableBody, countLabel) {
       </td>
       <td class="text-muted">${formatDateTime(insp.lastUpdated)}</td>
       <td>
-        <a href="review.html?id=${encodeURIComponent(insp.id || insp.inspectionId)}&token=${encodeURIComponent(insp.reviewToken)}"
+        <a href="review.html?id=${encodeURIComponent(insp.id || insp.inspectionId)}&token=${encodeURIComponent(reviewToken)}"
            class="btn btn-open btn-sm">Open Review →</a>
       </td>
     `;
