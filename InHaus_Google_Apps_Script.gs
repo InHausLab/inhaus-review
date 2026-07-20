@@ -66,10 +66,11 @@ function getReviewAccessToken() {
 const SUPABASE_URL = 'https://kvpaqvieacccojkkxqul.supabase.co';
 const SUPABASE_ENABLED = true; // set false to disable without removing code
 const PHOTO_REVIEW_PROXY_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev/photo';
-// SUPABASE_SERVICE_KEY is stored in Script Properties (not hardcoded)
-// To set it: Apps Script → Project Settings → Script Properties → add SUPABASE_SERVICE_KEY
+// SUPABASE_KEY is stored in Script Properties (not hardcoded). The legacy
+// SUPABASE_SERVICE_KEY name remains supported for older deployments.
 function getSupabaseKey() {
-  return PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
+  var properties = PropertiesService.getScriptProperties();
+  return properties.getProperty('SUPABASE_KEY') || properties.getProperty('SUPABASE_SERVICE_KEY');
 }
 
 function getExistingAssessmentNumber(inspectionId) {
@@ -876,6 +877,9 @@ function listReviewInspections(token) {
     'ihl_assessments',
     'select=inspection_id,status,drive_folder_id,assessment_folder_url,raw_jsonb&order=inspection_id.desc'
   );
+  // Keep the fixed deployment smoke-test record out of inspector and reviewer
+  // work queues. Direct GET remains available for backend verification.
+  rows = rows.filter(function(row) { return row.inspection_id !== 'INH-TEST'; });
   // The list only needs counts. Scanning every Drive folder and loading full
   // photo metadata made page load time grow linearly with every inspection.
   var photoCounts = getSupabasePhotoCountsForReview();
@@ -1049,6 +1053,20 @@ function adminUnlockReview(data) {
 // ── MAIN PROCESSING ──────────────────────────────────────
 
 function processInspection(data) {
+  // Checkpoints must be fast and must never rebuild the Drive workbook. The
+  // raw inspection JSON in Supabase is what powers Continue Inspection and the
+  // review portal between steps.
+  if (data._checkpoint) {
+    try {
+      syncToSupabase(data, null);
+    } catch (supaErr) {
+      // A checkpoint is still a best-effort backup. A final submit will retry
+      // the complete Drive + Supabase write and surface any real failure.
+      console.warn('Supabase checkpoint sync skipped:', supaErr.message);
+    }
+    return { checkpointed: true, inspectionId: data.inspectionId };
+  }
+
   var result;
   // Option A: Append to master sheet as a row
   if (MASTER_SHEET_ID) {
