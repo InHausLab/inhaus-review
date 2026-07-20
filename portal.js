@@ -294,7 +294,11 @@ function attachReviewedFieldSave(element, group, key, isGated = false) {
 
 function getURLParams() {
   const p = new URLSearchParams(window.location.search);
-  return { id: p.get('id'), token: p.get('token') };
+  const suppliedToken = p.get('token');
+  const token = suppliedToken && suppliedToken !== 'undefined' && suppliedToken !== 'null'
+    ? suppliedToken
+    : ACCESS_TOKEN;
+  return { id: p.get('id'), token };
 }
 
 function getDriveIdFromPhoto(photo) {
