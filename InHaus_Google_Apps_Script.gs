@@ -879,7 +879,9 @@ function listReviewInspections(token) {
   );
   // Keep the fixed deployment smoke-test record out of inspector and reviewer
   // work queues. Direct GET remains available for backend verification.
-  rows = rows.filter(function(row) { return row.inspection_id !== 'INH-TEST'; });
+  rows = rows.filter(function(row) {
+    return row.inspection_id !== 'INH-TEST' && row.inspection_id !== 'INH-READINESS-PROBE';
+  });
   // The list only needs counts. Scanning every Drive folder and loading full
   // photo metadata made page load time grow linearly with every inspection.
   var photoCounts = getSupabasePhotoCountsForReview();
