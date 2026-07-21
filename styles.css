@@ -1176,6 +1176,21 @@ body {
   flex-wrap: wrap;
 }
 
+.atp-review-grid {
+  display:grid;
+  grid-template-columns:repeat(3, minmax(140px, 1fr));
+  gap:10px;
+  padding:8px 0;
+}
+.atp-review-grid label { display:flex; flex-direction:column; gap:4px; color:var(--text-muted); font-size:.78rem; font-weight:700; }
+.atp-review-grid .inline-input { width:100%; }
+.atp-review-notes { grid-column:span 2; }
+.atp-review-confirm { align-self:end; flex-direction:row !important; align-items:center; min-height:36px; }
+@media (max-width:800px) {
+  .atp-review-grid { grid-template-columns:1fr 1fr; }
+  .atp-review-notes { grid-column:1 / -1; }
+}
+
 .filter-btn {
   padding: 5px 13px;
   border-radius: 99px;

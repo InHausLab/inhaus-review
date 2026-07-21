@@ -8,6 +8,7 @@
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11ryZiHft3ZTrzT9zrCQl5Gw4Tq6nIoNYhCepQYEC0dYz3r8b51LEXqQ/exec'; // v73 — updated July 20 2026
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
+const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 
 const IS_DEMO = (APPS_SCRIPT_URL === 'PLACEHOLDER_URL');
 
@@ -446,6 +447,17 @@ function normalizeInspectionForReview(insp) {
   return insp;
 }
 
+async function loadWorkerPhotos(inspectionId) {
+  if (!inspectionId) return [];
+  const url = new URL(PHOTO_WORKER_URL + '/inspection-photos');
+  url.searchParams.set('inspectionId', inspectionId);
+  url.searchParams.set('token', inspectionId.toLowerCase());
+  const response = await fetch(url.toString(), { cache: 'no-store' });
+  if (!response.ok) throw new Error('Photo recovery failed: ' + response.status);
+  const data = await response.json();
+  return Array.isArray(data.photos) ? data.photos : [];
+}
+
 const STATUS_TOOLTIPS = {
   'Synced':              'Data has been exported from the Inspector App and is ready to review here.',
   'In Review':           'Inspector is currently reviewing this inspection.',
@@ -657,6 +669,18 @@ async function loadInspection() {
         delete insp.reviewedData[group];
       }
     });
+  }
+
+  // Apps Script inspection rows can lag behind successfully uploaded photo
+  // metadata. Merge the Worker/Supabase photo list so a ready inspection never
+  // renders as an empty photo library.
+  if (!IS_DEMO && id) {
+    try {
+      const workerPhotos = await loadWorkerPhotos(id);
+      if (workerPhotos.length) insp.photos = (Array.isArray(insp.photos) ? insp.photos : []).concat(workerPhotos);
+    } catch (photoErr) {
+      console.warn('Direct photo recovery unavailable:', photoErr);
+    }
   }
 
   // Load any device-local recovery data and migrate the same older shape.
@@ -2731,6 +2755,31 @@ function renderTestsSection(insp, locked) {
     const isConfirmed  = !!confirmed[test.key];
 
     const qtyVal = insp.reviewedData?.[test.key + '_qty'] || insp[test.key + '_qty'] || '';
+    if (test.key === 'testATP') {
+      const atp = insp.stepData?.['atp-kitchen'] || {};
+      const surface = insp.reviewedData?.testATP_surface || atp.atpSurface || atp.atpSurfaceOther || '';
+      const pre = insp.reviewedData?.testATP_preRLU ?? atp.atpPreRLU ?? '';
+      const preStatus = insp.reviewedData?.testATP_preStatus || atp.atpPreStatus || '';
+      const post = insp.reviewedData?.testATP_postRLU ?? atp.atpPostRLU ?? '';
+      const postStatus = insp.reviewedData?.testATP_postStatus || atp.atpPostStatus || '';
+      const cleaned = insp.reviewedData?.testATP_cleaned || atp.atpCleaned || '';
+      const atpNotes = insp.reviewedData?.testATP_notes || atp.notes || '';
+      tr.className = 'atp-test-row';
+      tr.innerHTML = `
+        <td class="test-name">ATP</td>
+        <td colspan="5">
+          <div class="atp-review-grid">
+            <label><span>Surface tested</span><input type="text" class="inline-input" data-step="tests" data-field="testATP_surface" value="${escapeHTML(surface)}" ${locked ? 'readonly' : ''}></label>
+            <label><span>Pre-test RLU</span><input type="number" class="inline-input" data-step="tests" data-field="testATP_preRLU" value="${escapeHTML(pre)}" ${locked ? 'readonly' : ''}></label>
+            <label><span>Pre-test status</span><input type="text" class="inline-input" data-step="tests" data-field="testATP_preStatus" value="${escapeHTML(preStatus)}" ${locked ? 'readonly' : ''}></label>
+            <label><span>Cleaned</span><input type="text" class="inline-input" data-step="tests" data-field="testATP_cleaned" value="${escapeHTML(cleaned)}" ${locked ? 'readonly' : ''}></label>
+            <label><span>Post-test RLU</span><input type="number" class="inline-input" data-step="tests" data-field="testATP_postRLU" value="${escapeHTML(post)}" ${locked ? 'readonly' : ''}></label>
+            <label><span>Post-test status</span><input type="text" class="inline-input" data-step="tests" data-field="testATP_postStatus" value="${escapeHTML(postStatus)}" ${locked ? 'readonly' : ''}></label>
+            <label class="atp-review-notes"><span>Notes</span><input type="text" class="inline-input" data-step="tests" data-field="testATP_notes" value="${escapeHTML(atpNotes)}" ${locked ? 'readonly' : ''}></label>
+            <label class="atp-review-confirm"><input type="checkbox" data-step="tests" data-field="testATP_confirmed" ${isConfirmed ? 'checked' : ''} ${locked ? 'disabled' : ''}> Confirmed</label>
+          </div>
+        </td>`;
+    } else {
     tr.innerHTML = `
       <td class="test-name">${escapeHTML(test.label)}</td>
       <td><input type="text" class="inline-input" data-step="tests" data-field="${test.key}_location"
@@ -2751,6 +2800,7 @@ function renderTestsSection(insp, locked) {
           value="${escapeHTML(notesVal)}" placeholder="Notes…"
           ${locked ? 'readonly' : ''}></td>
     `;
+    }
 
     if (!locked) {
       const inputs = tr.querySelectorAll('.inline-input');
