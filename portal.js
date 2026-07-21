@@ -311,9 +311,12 @@ function getDriveIdFromPhoto(photo) {
 }
 
 function normalizePhotoUrl(photo) {
-  if (photo.driveUrl) return photo.driveUrl;
+  // Prefer the authenticated Worker image endpoint when present. Google Drive
+  // /view links are HTML pages and cannot be used directly as <img> sources.
+  if (photo.url && /inhaus-photo-worker\.inhauslab\.workers\.dev\/photo/.test(photo.url)) return photo.url;
   const driveId = getDriveIdFromPhoto(photo);
-  return driveId ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w1600` : '';
+  if (driveId) return `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w1600`;
+  return photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl || '';
 }
 
 function photoKey(photo) {
