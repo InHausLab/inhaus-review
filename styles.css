@@ -583,6 +583,25 @@ body {
   white-space: nowrap;
 }
 
+.complete-data-coverage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius-md);
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 13px;
+}
+
+.complete-data-coverage span {
+  color: #3f6212;
+  text-align: right;
+}
+
 .complete-data-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -616,6 +635,8 @@ body {
 @media (max-width: 700px) {
   .complete-data-grid { grid-template-columns: 1fr; }
   .complete-data-group summary { align-items: flex-start; }
+  .complete-data-coverage { align-items: flex-start; flex-direction: column; }
+  .complete-data-coverage span { text-align: left; }
 }
 
 .field-original {

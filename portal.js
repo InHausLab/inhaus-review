@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V8';
+const REVIEW_PORTAL_VERSION = 'V9';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -619,6 +619,65 @@ async function saveCloudReviewField(inspectionId, field) {
   return data;
 }
 
+function mergeCheckpointValue(base, incoming) {
+  if (incoming === undefined || incoming === null || incoming === '') return base;
+
+  if (Array.isArray(incoming)) {
+    if (!incoming.length && Array.isArray(base) && base.length) return base;
+    return incoming.map(item => mergeCheckpointValue(undefined, item));
+  }
+
+  if (incoming && typeof incoming === 'object') {
+    const prior = base && typeof base === 'object' && !Array.isArray(base) ? base : {};
+    const merged = { ...prior };
+    Object.entries(incoming).forEach(([key, value]) => {
+      if (key === 'resumeData') return;
+      merged[key] = mergeCheckpointValue(prior[key], value);
+    });
+    return merged;
+  }
+
+  return incoming;
+}
+
+function mergeInspectionCheckpoints(inspection) {
+  if (!inspection || typeof inspection !== 'object') return inspection;
+
+  const checkpoints = [];
+  const seen = new Set();
+  let current = inspection.resumeData;
+  let depth = 1;
+
+  while (current && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current);
+    if (current.stepData && typeof current.stepData === 'object') {
+      checkpoints.push({
+        data: current,
+        depth,
+        timestamp: Number(current._lastCheckpointSucceededAt || current._lastCheckpointAttemptAt || 0)
+      });
+    }
+    current = current.resumeData;
+    depth += 1;
+  }
+
+  if (!checkpoints.length) return inspection;
+
+  // Apply older/deeper checkpoints first, then overlay newer saved values.
+  // Deep-merging stepData preserves completed steps when a later emergency or
+  // cache-recovery checkpoint contains only the handful of fields changed next.
+  checkpoints.sort((a, b) => {
+    if (a.timestamp && b.timestamp && a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+    return b.depth - a.depth;
+  });
+
+  let merged = mergeCheckpointValue({}, inspection);
+  checkpoints.forEach(checkpoint => {
+    merged = mergeCheckpointValue(merged, checkpoint.data);
+  });
+  return merged;
+}
+
 /* ============================================================
    INSPECTION LIST PAGE
    ============================================================ */
@@ -735,22 +794,10 @@ async function loadInspection() {
     }
   }
 
-  // Field-active inspections arrive as an export wrapper whose freshest phone
-  // checkpoint is nested under resumeData. Prefer that checkpoint so values
-  // entered late in the inspection are not hidden by stale wrapper fields.
-  if (insp.resumeData && typeof insp.resumeData === 'object') {
-    let liveCheckpoint = insp.resumeData;
-    const checkpointLayers = new Set();
-    while (liveCheckpoint && typeof liveCheckpoint === 'object' && !checkpointLayers.has(liveCheckpoint)) {
-      checkpointLayers.add(liveCheckpoint);
-      if (liveCheckpoint.stepData) break;
-      if (!liveCheckpoint.resumeData || typeof liveCheckpoint.resumeData !== 'object') break;
-      liveCheckpoint = liveCheckpoint.resumeData;
-    }
-    if (liveCheckpoint?.stepData) {
-      insp = { ...insp, ...liveCheckpoint, resumeData: liveCheckpoint };
-    }
-  }
+  // Field-active inspections can contain multiple nested checkpoints. Merge
+  // every checkpoint instead of selecting one partial layer, so a later phone
+  // recovery save cannot hide previously completed steps from the portal.
+  insp = mergeInspectionCheckpoints(insp);
 
   // Reviewer edits are persisted independently of Apps Script so they survive
   // device changes even when Google's web-app POST redirect drops the body.
@@ -2096,8 +2143,8 @@ function completeDataRows(value, prefix = '', rows = [], seen = new Set()) {
   }
 
   if (typeof value !== 'object') {
-    if (!completeDataIsEmpty(value) && value !== false) {
-      rows.push({ label: prefix, value: value === true ? 'Yes' : String(value) });
+    if (!completeDataIsEmpty(value)) {
+      rows.push({ label: prefix, value: value === true ? 'Yes' : value === false ? 'No' : String(value) });
     }
     return rows;
   }
@@ -2147,6 +2194,18 @@ function renderCompleteInspectionData(insp) {
     'occupancyDuringInspection', 'weatherConditions', 'knownProblemAreas', 'windowsOpen'
   ];
   const property = Object.fromEntries(topLevelKeys.map(key => [key, insp[key]]));
+  const reservedTopLevel = new Set([
+    ...topLevelKeys,
+    'id', 'inspectionId', 'stepData', 'rooms', 'dynamicRooms', 'roomRelationships',
+    'roomSummaries', 'findings', 'preAssessmentChecklist', 'arrivalSetup', 'deviceSetup',
+    'exteriorAssessment', 'radonSetup', 'utilityRoom', 'wrapUp', 'customerDebrief',
+    'postAssessment', 'photos', 'sparePhotos', 'photoTombstones', 'auditTrail',
+    'commentLibrary', 'collaboration', 'reviewedData', 'resumeData', 'x-sync-secret',
+    'sharedDriveFolderId'
+  ]);
+  const supplemental = Object.fromEntries(Object.entries(insp).filter(([key, value]) =>
+    !key.startsWith('_') && !reservedTopLevel.has(key) && !completeDataIsEmpty(value)
+  ));
   const groups = [
     ['Property & Assessment Conditions', property, true],
     ['Equipment & Pre-Assessment', insp.preAssessmentChecklist],
@@ -2158,17 +2217,36 @@ function renderCompleteInspectionData(insp) {
     ['Utility, HVAC & Water Systems', insp.utilityRoom],
     ['Before Leaving', insp.wrapUp],
     ['Customer Debrief', insp.customerDebrief],
-    ['Post Assessment', insp.postAssessment]
+    ['Post Assessment', insp.postAssessment],
+    ['Step-by-Step Captured Data', insp.stepData],
+    ['Dynamic Room Definitions', insp.dynamicRooms],
+    ['Room Relationships', insp.roomRelationships],
+    ['Room Summaries', insp.roomSummaries],
+    ['Findings & Field Observations', insp.findings],
+    ['Other Captured Inspection Data', supplemental]
   ];
 
+  let renderedGroups = 0;
+  let renderedValues = 0;
   groups.forEach(([title, value, open]) => {
     const group = renderCompleteDataGroup(title, value, open);
-    if (group) body.appendChild(group);
+    if (group) {
+      renderedGroups += 1;
+      renderedValues += group.querySelectorAll('.complete-data-row').length;
+      body.appendChild(group);
+    }
   });
 
   if (!body.children.length) {
     body.appendChild(el('div', { class: 'empty-state' }, 'No inspector field data was returned for this inspection.'));
+    return;
   }
+
+  const savedSteps = Object.keys(insp.stepData || {}).length;
+  body.prepend(el('div', { class: 'complete-data-coverage' },
+    el('strong', {}, 'Cloud field coverage verified'),
+    el('span', {}, `${savedSteps} saved app steps · ${renderedValues} captured values · ${renderedGroups} data groups`)
+  ));
 }
 
 function renderIntakeSummary(insp) {
