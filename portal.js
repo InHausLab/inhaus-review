@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V4';
+const REVIEW_PORTAL_VERSION = 'V5';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -442,6 +442,43 @@ function applyReviewedData(insp) {
     if (legacyCaption !== undefined) photo.caption = legacyCaption;
     if (legacyIncluded !== undefined) photo.included = legacyIncluded;
   });
+}
+
+function syncPhotoCaptionViews(photoId, caption) {
+  if (!photoId) return;
+  const escapedId = window.CSS?.escape ? window.CSS.escape(photoId) : String(photoId).replace(/["\\]/g, '\\$&');
+  document.querySelectorAll(`[data-photo-id="${escapedId}"]`).forEach(node => {
+    if ((node.matches('input, textarea')) && document.activeElement !== node) node.value = caption;
+    node.dataset.photoCaption = caption;
+    if (node.matches('.room-photo-thumb')) {
+      node.title = caption || photoId;
+      node.setAttribute('aria-label', caption ? `Open ${caption}` : 'Open room photo');
+      const img = node.querySelector('img');
+      if (img) img.alt = caption || photoId;
+      let label = node.querySelector('.room-photo-caption');
+      if (caption) {
+        if (!label) {
+          label = el('span', { class: 'room-photo-caption' });
+          node.appendChild(label);
+        }
+        label.textContent = caption;
+      } else if (label) {
+        label.remove();
+      }
+    }
+  });
+}
+
+async function saveReviewedPhotoCaption(photoId, value) {
+  if (!photoId || !_inspection) return false;
+  const caption = String(value || '').trim();
+  (_inspection.photos || []).forEach(photo => {
+    if (photo.photoId === photoId) photo.caption = caption;
+  });
+  syncPhotoCaptionViews(photoId, caption);
+  const saved = await saveField(`photo_${photoId}`, 'caption', caption);
+  if (saved) showToast('Photo caption saved everywhere in the review');
+  return saved;
 }
 
 function normalizeInspectionForReview(insp) {
@@ -1619,17 +1656,10 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
       placeholder: 'Add caption…',
       'data-photo-id': photo.photoId
     });
-    captionEl.addEventListener('blur', () => {
+    captionEl.addEventListener('blur', async () => {
       const newCaption = captionEl.value.trim();
-      // Update in-memory photo object
-      const idx = (insp.photos || []).findIndex(p => p.photoId === photo.photoId);
-      if (idx !== -1) {
-        _inspection.photos[idx].caption = newCaption;
-        photo.caption = newCaption;
-      }
-      // Persist as the same per-photo review override used by the main photo
-      // editor so the caption survives reloads and device changes.
-      saveField(`photo_${photo.photoId}`, 'caption', newCaption);
+      if (newCaption === String(photo.caption || '').trim()) return;
+      await saveReviewedPhotoCaption(photo.photoId, newCaption);
     });
     captionEl.addEventListener('keydown', e => { if (e.key === 'Enter') captionEl.blur(); });
     captionWrap.appendChild(captionEl);
@@ -3353,6 +3383,7 @@ function buildPhotoCard(photo, locked) {
   const captionTA = el('textarea', {
     placeholder: 'Add or correct the caption shown in the review and report…',
     rows: '2',
+    'data-photo-id': photo.photoId,
     ...(locked ? { readonly: '' } : {})
   });
   captionTA.value = photo.caption || '';
@@ -3360,9 +3391,7 @@ function buildPhotoCard(photo, locked) {
     captionTA.addEventListener('blur', async () => {
       const newCaption = captionTA.value.trim();
       if (newCaption === String(photo.caption || '').trim()) return;
-      photo.caption = newCaption;
-      const saved = await saveField('photo_' + photo.photoId, 'caption', newCaption);
-      if (saved) showToast('Photo caption saved to the review');
+      await saveReviewedPhotoCaption(photo.photoId, newCaption);
     });
   }
   captionWrap.appendChild(captionTA);
@@ -3883,8 +3912,36 @@ function openPhotoModal(url, caption, photoId = '') {
   const ctx = canvas.getContext('2d');
   canvasWrap.appendChild(canvas);
   inner.appendChild(toolbar);
+
+  const captionEditor = el('div', { class: 'photo-modal-caption-editor' });
+  const captionLabel = el('label', { class: 'photo-modal-caption-label' }, 'Review caption — edits update everywhere');
+  const captionInput = el('textarea', {
+    class: 'photo-modal-caption-input',
+    rows: '2',
+    'data-photo-id': photoId,
+    placeholder: 'Add or correct the caption shown in the room and photo summary…'
+  });
+  captionInput.value = caption || '';
+  const captionSave = el('button', { class: 'photo-modal-caption-save', type: 'button' }, 'Save Caption');
+  const captionStatus = el('span', { class: 'photo-modal-caption-status' }, '');
+  captionSave.addEventListener('click', async () => {
+    captionSave.disabled = true;
+    captionSave.textContent = 'Saving…';
+    const saved = await saveReviewedPhotoCaption(photoId, captionInput.value);
+    captionSave.disabled = false;
+    captionSave.textContent = 'Save Caption';
+    captionStatus.textContent = saved ? 'Saved everywhere' : 'Save failed';
+    captionStatus.className = `photo-modal-caption-status${saved ? ' saved' : ' failed'}`;
+    if (saved && _photoModalState) _photoModalState.caption = captionInput.value.trim();
+  });
+  captionInput.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') captionSave.click();
+  });
+  captionEditor.appendChild(captionLabel);
+  captionEditor.appendChild(captionInput);
+  captionEditor.appendChild(el('div', { class: 'photo-modal-caption-actions' }, captionSave, captionStatus));
+  inner.appendChild(captionEditor);
   inner.appendChild(canvasWrap);
-  if (caption) inner.appendChild(el('p', { class: 'photo-modal-caption' }, caption));
 
   const annotations = getPhotoAnnotations(photoId);
   const image = new Image();
