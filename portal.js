@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V3';
+const REVIEW_PORTAL_VERSION = 'V4';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -1627,8 +1627,9 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
         _inspection.photos[idx].caption = newCaption;
         photo.caption = newCaption;
       }
-      // Persist to Apps Script
-      saveField('photos', `caption_${photo.photoId}`, newCaption);
+      // Persist as the same per-photo review override used by the main photo
+      // editor so the caption survives reloads and device changes.
+      saveField(`photo_${photo.photoId}`, 'caption', newCaption);
     });
     captionEl.addEventListener('keydown', e => { if (e.key === 'Enter') captionEl.blur(); });
     captionWrap.appendChild(captionEl);
@@ -3348,16 +3349,20 @@ function buildPhotoCard(photo, locked) {
 
   // Caption
   const captionWrap = el('div', { class: 'photo-caption' });
+  captionWrap.appendChild(el('label', { class: 'photo-caption-label' }, 'Review caption — editable'));
   const captionTA = el('textarea', {
-    placeholder: 'Add caption…',
+    placeholder: 'Add or correct the caption shown in the review and report…',
     rows: '2',
     ...(locked ? { readonly: '' } : {})
   });
   captionTA.value = photo.caption || '';
   if (!locked) {
-    captionTA.addEventListener('blur', () => {
-      photo.caption = captionTA.value;
-      try { debouncedSave('photo_' + photo.photoId, 'caption', captionTA.value); } catch(e) {}
+    captionTA.addEventListener('blur', async () => {
+      const newCaption = captionTA.value.trim();
+      if (newCaption === String(photo.caption || '').trim()) return;
+      photo.caption = newCaption;
+      const saved = await saveField('photo_' + photo.photoId, 'caption', newCaption);
+      if (saved) showToast('Photo caption saved to the review');
     });
   }
   captionWrap.appendChild(captionTA);
