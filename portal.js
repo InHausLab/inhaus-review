@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V6';
+const REVIEW_PORTAL_VERSION = 'V7';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -228,11 +228,16 @@ function buildReviewRoomRecords(insp) {
 
   if (rooms.length) {
     return rooms.map((room, index) => {
+      const declaredStepId = room.stepId || '';
       const expectedKey = stepKeyForRoom(room);
-      const directStep = expectedKey ? steps[expectedKey] : null;
+      const directStep = (declaredStepId && steps[declaredStepId]) || (expectedKey ? steps[expectedKey] : null);
       const nameMatch = byRoomName.get(slugifyRoomPart(room.roomName || room.name || ''));
-      const stepId = directStep ? expectedKey : (nameMatch?.stepId || expectedKey || `room-${index + 1}`);
-      const step = directStep || nameMatch?.step || {};
+      const stepId = declaredStepId || (directStep ? expectedKey : (nameMatch?.stepId || expectedKey || `room-${index + 1}`));
+      // The exported rooms array is the canonical report payload and can be
+      // complete even when the lightweight resume stepData map is partial.
+      // Use the exported room as the baseline, then overlay any matching live
+      // step so room status, notes, readings, and relationships never vanish.
+      const step = { ...room, ...(directStep || nameMatch?.step || {}) };
       return { room, step, stepId };
     });
   }
