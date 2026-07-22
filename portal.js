@@ -547,6 +547,32 @@ async function apiFetch(params, method = 'GET', body = null) {
   return json;
 }
 
+async function loadCloudReview(inspectionId) {
+  const url = new URL(PHOTO_WORKER_URL + '/get-review');
+  url.searchParams.set('inspectionId', inspectionId);
+  const response = await fetch(url.toString(), {
+    cache: 'no-store',
+    headers: { Authorization: `Bearer ${ACCESS_TOKEN}` }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Review load failed: ${response.status}`);
+  return data;
+}
+
+async function saveCloudReviewField(inspectionId, field) {
+  const response = await fetch(PHOTO_WORKER_URL + '/save-review', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ inspectionId, field })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Review save failed: ${response.status}`);
+  return data;
+}
+
 /* ============================================================
    INSPECTION LIST PAGE
    ============================================================ */
@@ -660,6 +686,19 @@ async function loadInspection() {
     } catch (err) {
       showToast(`Failed to load inspection: ${err.message}`, 'error');
       return;
+    }
+  }
+
+  // Reviewer edits are persisted independently of Apps Script so they survive
+  // device changes even when Google's web-app POST redirect drops the body.
+  if (!IS_DEMO && id) {
+    try {
+      const cloudReview = await loadCloudReview(id);
+      if (cloudReview.fieldData && typeof cloudReview.fieldData === 'object') {
+        insp.reviewedData = mergeReviewData(insp.reviewedData || {}, cloudReview.fieldData);
+      }
+    } catch (reviewErr) {
+      console.warn('Cloud review recovery unavailable:', reviewErr);
     }
   }
 
@@ -2142,7 +2181,7 @@ async function saveField(stepId, fieldKey, value) {
     setSaveIndicator('saved', formatTime(new Date().toISOString()));
     return true;
   }
-  const { id, token } = getURLParams();
+  const { id } = getURLParams();
   const isTopLevelField = stepId === 'summary' || stepId === 'post';
   _pendingSaves++;
   setSaveIndicator('saving');
@@ -2173,11 +2212,10 @@ async function saveField(stepId, fieldKey, value) {
 
     // Serialize backend writes. The old portal stopped after localStorage and
     // still showed "Saved", which meant drafts vanished on another device.
-    const remoteSave = _saveChain.then(() => apiFetch({}, 'POST', {
-      action: 'saveReview',
-      id,
-      token,
-      field: { stepId, key: fieldKey, value }
+    const remoteSave = _saveChain.then(() => saveCloudReviewField(id, {
+      stepId,
+      key: fieldKey,
+      value
     }));
     _saveChain = remoteSave.catch(() => {});
     await remoteSave;
