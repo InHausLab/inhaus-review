@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V12';
+const REVIEW_PORTAL_VERSION = 'V13';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -350,10 +350,14 @@ function assignPhotoId(photo, index, usedIds) {
 
 function flattenInspectionPhotos(insp) {
   const photosByKey = new Map();
+  const deletedPhotoIds = new Set(Array.isArray(insp?.reviewedData?.deletedPhotoIds)
+    ? insp.reviewedData.deletedPhotoIds.filter(Boolean)
+    : []);
 
   function addPhoto(photo, context = {}) {
     if (!photo || typeof photo !== 'object') return;
     const normalized = { ...photo };
+    if (normalized.photoId && deletedPhotoIds.has(normalized.photoId)) return;
     delete normalized.imageData;
     const driveUrl = normalizePhotoUrl(normalized);
     if (driveUrl) normalized.driveUrl = driveUrl;
@@ -415,7 +419,8 @@ function flattenInspectionPhotos(insp) {
       if (!Number.isNaN(ta) && !Number.isNaN(tb) && ta !== tb) return ta - tb;
       return 0;
     })
-    .map((photo, index) => ({ ...photo, photoId: assignPhotoId(photo, index, usedIds) }));
+    .map((photo, index) => ({ ...photo, photoId: assignPhotoId(photo, index, usedIds) }))
+    .filter(photo => !deletedPhotoIds.has(photo.photoId));
 }
 
 function applyReviewedData(insp) {
@@ -531,6 +536,37 @@ async function saveReviewedPhotoRotation(photoId, value) {
   const saved = await saveField(`photo_${photoId}`, 'rotation', rotation);
   if (saved) showToast(`Photo rotation saved (${rotation}°)`);
   return saved;
+}
+
+async function deleteReviewedPhoto(photoId) {
+  if (!photoId || !_inspection?.inspectionId) return false;
+  const response = await fetch(PHOTO_WORKER_URL + '/delete-review-photo', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ inspectionId: _inspection.inspectionId, photoId })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Photo delete failed: ${response.status}`);
+
+  const deletedPhotoIds = new Set(Array.isArray(_inspection.reviewedData?.deletedPhotoIds)
+    ? _inspection.reviewedData.deletedPhotoIds
+    : []);
+  deletedPhotoIds.add(photoId);
+  const deletionIndexSaved = await saveField('summary', 'deletedPhotoIds', Array.from(deletedPhotoIds));
+  _inspection.photos = (_inspection.photos || []).filter(photo => photo.photoId !== photoId);
+  _inspection.photoCount = _inspection.photos.length;
+  _selectedPhotoIds.delete(photoId);
+  closePhotoModal();
+  renderRoomsSection(_inspection, false);
+  renderPhotosSection(_inspection, false);
+  checkGate();
+  showToast(deletionIndexSaved
+    ? 'Photo deleted from the review and cloud storage'
+    : 'Photo deleted; review index will retry saving', deletionIndexSaved ? 'success' : 'info');
+  return true;
 }
 
 function normalizeInspectionForReview(insp) {
@@ -4628,6 +4664,7 @@ function openPhotoModal(url, caption, photoId = '') {
   });
   captionInput.value = caption || '';
   const captionSave = el('button', { class: 'photo-modal-caption-save', type: 'button' }, 'Save Caption');
+  const photoDelete = el('button', { class: 'photo-modal-delete', type: 'button' }, 'Delete Photo');
   const captionStatus = el('span', { class: 'photo-modal-caption-status' }, '');
   captionSave.addEventListener('click', async () => {
     captionSave.disabled = true;
@@ -4642,9 +4679,23 @@ function openPhotoModal(url, caption, photoId = '') {
   captionInput.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') captionSave.click();
   });
+  photoDelete.addEventListener('click', async () => {
+    if (!photoId || !confirm('Delete this photo from the review and cloud storage?\n\nThis cannot be undone.')) return;
+    photoDelete.disabled = true;
+    photoDelete.textContent = 'Deleting…';
+    try {
+      await deleteReviewedPhoto(photoId);
+    } catch (err) {
+      photoDelete.disabled = false;
+      photoDelete.textContent = 'Delete Photo';
+      captionStatus.textContent = err.message || 'Delete failed';
+      captionStatus.className = 'photo-modal-caption-status failed';
+      showToast('Photo was not deleted — no review data changed', 'error');
+    }
+  });
   captionEditor.appendChild(captionLabel);
   captionEditor.appendChild(captionInput);
-  captionEditor.appendChild(el('div', { class: 'photo-modal-caption-actions' }, captionSave, captionStatus));
+  captionEditor.appendChild(el('div', { class: 'photo-modal-caption-actions' }, captionSave, photoDelete, captionStatus));
   inner.appendChild(captionEditor);
   inner.appendChild(canvasWrap);
 
@@ -5224,7 +5275,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-20260722-03',
+    appVersion: 'REVIEW-PORTAL-V13',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
