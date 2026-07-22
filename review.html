@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>InHaus Lab — Inspection Review</title>
-  <link rel="stylesheet" href="styles.css?v=20260722-14">
+  <link rel="stylesheet" href="styles.css?v=20260722-15">
 </head>
 <body>
 
@@ -107,6 +107,27 @@
             <div class="field-original"></div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== COMPLETE INSPECTOR DATA ========== -->
+  <div class="review-section">
+    <div class="card">
+      <div class="card-header" data-toggle>
+        <div class="card-header-left">
+          <span class="section-number">ALL</span>
+          <div>
+            <div class="card-title">Complete Inspector Data</div>
+            <div class="card-subtitle">Every captured app section, including property conditions, equipment, rooms, HVAC, setup, and departure data</div>
+          </div>
+        </div>
+        <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <polyline points="5 8 10 13 15 8"/>
+        </svg>
+      </div>
+      <div class="card-body" id="complete-inspection-data">
+        <div class="loading-state"><div class="loading-spinner"></div><br>Loading complete inspection data…</div>
       </div>
     </div>
   </div>
@@ -390,7 +411,7 @@
 <div id="photo-modal" class="photo-modal hidden"></div>
 <div class="toast-container" id="toast-container"></div>
 
-<script src="portal.js?v=20260722-05"></script>
+<script src="portal.js?v=20260722-07"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
     portalInit('review');

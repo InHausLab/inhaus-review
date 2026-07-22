@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V2';
+const REVIEW_PORTAL_VERSION = 'V3';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -696,9 +696,18 @@ async function loadInspection() {
   // Field-active inspections arrive as an export wrapper whose freshest phone
   // checkpoint is nested under resumeData. Prefer that checkpoint so values
   // entered late in the inspection are not hidden by stale wrapper fields.
-  if (insp.resumeData && typeof insp.resumeData === 'object' && insp.resumeData.stepData) {
-    const liveCheckpoint = insp.resumeData;
-    insp = { ...insp, ...liveCheckpoint, resumeData: liveCheckpoint };
+  if (insp.resumeData && typeof insp.resumeData === 'object') {
+    let liveCheckpoint = insp.resumeData;
+    const checkpointLayers = new Set();
+    while (liveCheckpoint && typeof liveCheckpoint === 'object' && !checkpointLayers.has(liveCheckpoint)) {
+      checkpointLayers.add(liveCheckpoint);
+      if (liveCheckpoint.stepData) break;
+      if (!liveCheckpoint.resumeData || typeof liveCheckpoint.resumeData !== 'object') break;
+      liveCheckpoint = liveCheckpoint.resumeData;
+    }
+    if (liveCheckpoint?.stepData) {
+      insp = { ...insp, ...liveCheckpoint, resumeData: liveCheckpoint };
+    }
   }
 
   // Reviewer edits are persisted independently of Apps Script so they survive
@@ -2016,6 +2025,116 @@ function displayValue(value) {
   return value === undefined || value === null || value === '' ? '—' : String(value);
 }
 
+function completeDataLabel(key) {
+  return String(key || '')
+    .replace(/^_+/, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+function completeDataIsEmpty(value) {
+  if (value === undefined || value === null || value === '') return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === 'object') return Object.keys(value).length === 0;
+  return false;
+}
+
+function completeDataRows(value, prefix = '', rows = [], seen = new Set()) {
+  if (value === undefined || value === null || seen.has(value)) return rows;
+  if (value && typeof value === 'object') seen.add(value);
+
+  if (Array.isArray(value)) {
+    if (!value.length) return rows;
+    if (value.some(item => item && typeof item === 'object' && item.photoId)) return rows;
+    if (value.every(item => item === null || typeof item !== 'object')) {
+      const selected = value.filter(item => item !== '' && item !== null && item !== undefined);
+      if (selected.length) rows.push({ label: prefix, value: selected.join(', ') });
+      return rows;
+    }
+    value.forEach((item, index) => {
+      const itemName = item?.roomName || item?.name || item?.stepName || `Item ${index + 1}`;
+      completeDataRows(item, prefix ? `${prefix} — ${itemName}` : itemName, rows, seen);
+    });
+    return rows;
+  }
+
+  if (typeof value !== 'object') {
+    if (!completeDataIsEmpty(value) && value !== false) {
+      rows.push({ label: prefix, value: value === true ? 'Yes' : String(value) });
+    }
+    return rows;
+  }
+
+  const ignored = new Set([
+    'dataUrl', 'imageData', 'thumbnailDataUrl', 'photos', 'sparePhotos',
+    'findings', 'commentLibrary', 'auditTrail', 'photoTombstones', 'resumeData',
+    'collaboration', 'roomRelationships', 'reviewedData'
+  ]);
+  Object.entries(value).forEach(([key, child]) => {
+    if (key.startsWith('_') || ignored.has(key) || completeDataIsEmpty(child)) return;
+    const label = prefix ? `${prefix} — ${completeDataLabel(key)}` : completeDataLabel(key);
+    completeDataRows(child, label, rows, seen);
+  });
+  return rows;
+}
+
+function renderCompleteDataGroup(title, value, open = false) {
+  const rows = completeDataRows(value);
+  if (!rows.length) return null;
+  const details = el('details', { class: 'complete-data-group', ...(open ? { open: '' } : {}) });
+  details.appendChild(el('summary', {},
+    el('span', {}, title),
+    el('span', { class: 'complete-data-count' }, `${rows.length} captured value${rows.length === 1 ? '' : 's'}`)
+  ));
+  const grid = el('div', { class: 'complete-data-grid' });
+  rows.forEach(row => {
+    grid.appendChild(el('div', { class: 'complete-data-row' },
+      el('div', { class: 'complete-data-label' }, row.label),
+      el('div', { class: 'complete-data-value' }, row.value)
+    ));
+  });
+  details.appendChild(grid);
+  return details;
+}
+
+function renderCompleteInspectionData(insp) {
+  const body = qs('#complete-inspection-data');
+  if (!body) return;
+  body.innerHTML = '';
+
+  const topLevelKeys = [
+    'propertyAddress', 'clientName', 'inspectorName', 'inspectionDate', 'assessmentType',
+    'numberOfLevels', 'numberOfBedrooms', 'numberOfBathrooms', 'residenceType', 'yearBuilt',
+    'squareFootage', 'basement', 'carpetedRooms', 'fireplace', 'pets', 'smokingVaping',
+    'stoveType', 'waterSource', 'waterSourceDescription', 'wifiNetwork', 'clientConcerns',
+    'occupancyDuringInspection', 'weatherConditions', 'knownProblemAreas', 'windowsOpen'
+  ];
+  const property = Object.fromEntries(topLevelKeys.map(key => [key, insp[key]]));
+  const groups = [
+    ['Property & Assessment Conditions', property, true],
+    ['Equipment & Pre-Assessment', insp.preAssessmentChecklist],
+    ['Arrival & Site Setup', insp.arrivalSetup],
+    ['Device Setup', insp.deviceSetup],
+    ['Exterior Assessment', insp.exteriorAssessment],
+    ['Radon Setup', insp.radonSetup],
+    ['Rooms & Observations', insp.rooms],
+    ['Utility, HVAC & Water Systems', insp.utilityRoom],
+    ['Before Leaving', insp.wrapUp],
+    ['Customer Debrief', insp.customerDebrief],
+    ['Post Assessment', insp.postAssessment]
+  ];
+
+  groups.forEach(([title, value, open]) => {
+    const group = renderCompleteDataGroup(title, value, open);
+    if (group) body.appendChild(group);
+  });
+
+  if (!body.children.length) {
+    body.appendChild(el('div', { class: 'empty-state' }, 'No inspector field data was returned for this inspection.'));
+  }
+}
+
 function renderIntakeSummary(insp) {
   const body = qs('#intake-summary-body');
   if (!body) return;
@@ -2120,6 +2239,7 @@ function renderReviewPage(insp) {
 
 function renderSummarySection(insp, locked) {
   renderIntakeSummary(insp);
+  renderCompleteInspectionData(insp);
 
   const clientEl   = qs('#field-client-name');
   const addressEl  = qs('#field-property-address');
