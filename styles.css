@@ -591,7 +591,7 @@ body {
   margin-bottom: 14px;
   padding: 12px 14px;
   border: 1px solid #bbf7d0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   background: #f0fdf4;
   color: #166534;
   font-size: 13px;
@@ -632,11 +632,185 @@ body {
   white-space: pre-wrap;
 }
 
+.field-test-records {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px;
+  border-bottom: 1px solid var(--gray-200);
+  background: var(--gray-50);
+}
+
+.field-test-record {
+  overflow: hidden;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.field-test-record-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--gray-100);
+  color: var(--gray-900);
+}
+
+.field-test-record-status {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.field-test-record-grid,
+.kitchen-data-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--gray-200);
+}
+
+.field-test-record-item,
+.kitchen-data-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.field-test-record-item span,
+.kitchen-data-item span {
+  color: var(--gray-500);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.field-test-record-item strong,
+.kitchen-data-item strong {
+  color: var(--gray-900);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.kitchen-data-grid {
+  overflow: hidden;
+  margin-bottom: 18px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+}
+
+.water-sample-source {
+  margin-bottom: 14px;
+}
+
+.water-sample-source-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+  color: var(--gray-900);
+}
+
+.water-lab-empty {
+  margin-bottom: 16px;
+}
+
+.kitchen-photo-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.kitchen-photo-tab {
+  padding: 9px 18px;
+  border: 1px solid var(--gray-300);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--gray-700);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.kitchen-photo-tab.active {
+  border-color: var(--green);
+  background: var(--green);
+  color: #fff;
+}
+
+.kitchen-photo-panel[hidden] { display: none; }
+
+.kitchen-photo-task + .kitchen-photo-task,
+.kitchen-other-photos {
+  margin-top: 18px;
+}
+
+.kitchen-photo-task-title {
+  margin-bottom: 9px;
+  color: var(--gray-700);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.kitchen-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.kitchen-photo-thumb {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--gray-900);
+  text-align: left;
+  cursor: pointer;
+}
+
+.kitchen-photo-thumb img,
+.kitchen-photo-placeholder {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--gray-100);
+}
+
+.kitchen-photo-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--gray-500);
+}
+
+.kitchen-photo-caption {
+  display: block;
+  padding: 9px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
 @media (max-width: 700px) {
   .complete-data-grid { grid-template-columns: 1fr; }
   .complete-data-group summary { align-items: flex-start; }
   .complete-data-coverage { align-items: flex-start; flex-direction: column; }
   .complete-data-coverage span { text-align: left; }
+  .field-test-records { grid-template-columns: 1fr; }
+  .field-test-record-grid,
+  .kitchen-data-grid { grid-template-columns: 1fr; }
 }
 
 .field-original {

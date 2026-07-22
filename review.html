@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>InHaus Lab — Inspection Review</title>
-  <link rel="stylesheet" href="styles.css?v=20260722-22">
+  <link rel="stylesheet" href="styles.css?v=20260722-24">
 </head>
 <body>
 
@@ -193,8 +193,8 @@
         <div class="card-header-left">
           <span class="section-number">4</span>
           <div>
-            <div class="card-title">Water Findings</div>
-            <div class="card-subtitle">Fridge line, kitchen sink, and microplastics results</div>
+            <div class="card-title">Water Findings &amp; Samples</div>
+            <div class="card-subtitle">Collection status, sample details, fridge line, kitchen sink, and microplastics results</div>
           </div>
         </div>
         <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -207,12 +207,33 @@
     </div>
   </div>
 
-  <!-- ========== SECTION 5 — FOLLOW-UP ITEMS ========== -->
+  <!-- ========== SECTION 5 — KITCHEN INSPECTION ========== -->
   <div class="review-section">
     <div class="card">
       <div class="card-header" data-toggle>
         <div class="card-header-left">
           <span class="section-number">5</span>
+          <div>
+            <div class="card-title">Kitchen Inspection</div>
+            <div class="card-subtitle">Appliance checks and the inspector's saved Before/After photo placement</div>
+          </div>
+        </div>
+        <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <polyline points="5 8 10 13 15 8"/>
+        </svg>
+      </div>
+      <div class="card-body" id="kitchen-inspection-body">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== SECTION 6 — FOLLOW-UP ITEMS ========== -->
+  <div class="review-section">
+    <div class="card">
+      <div class="card-header" data-toggle>
+        <div class="card-header-left">
+          <span class="section-number">6</span>
           <div>
             <div class="card-title">Follow-Up Items</div>
             <div class="card-subtitle">Rooms, timing, and what Tanner should watch for</div>
@@ -228,12 +249,12 @@
     </div>
   </div>
 
-  <!-- ========== SECTION 6 — TESTS & SAMPLES ========== -->
+  <!-- ========== SECTION 7 — TESTS & SAMPLES ========== -->
   <div class="review-section">
     <div class="card">
       <div class="card-header" data-toggle>
         <div class="card-header-left">
-          <span class="section-number">6</span>
+          <span class="section-number">7</span>
           <div>
             <div class="card-title">Tests &amp; Samples</div>
             <div class="card-subtitle">Locations, sample IDs, quantity, and confirmation</div>
@@ -244,6 +265,7 @@
         </svg>
       </div>
       <div class="card-body" style="padding:0">
+        <div id="field-test-records" class="field-test-records"></div>
         <div style="overflow-x:auto">
           <table class="tests-table">
             <thead>
@@ -270,12 +292,12 @@
     </div>
   </div>
 
-  <!-- ========== SECTION 7 — POST-INSPECTION CONTENT ========== -->
+  <!-- ========== SECTION 8 — POST-INSPECTION CONTENT ========== -->
   <div class="review-section">
     <div class="card">
       <div class="card-header" data-toggle>
         <div class="card-header-left">
-          <span class="section-number">7</span>
+          <span class="section-number">8</span>
           <div>
             <div class="card-title">Post-Inspection Report Content</div>
             <div class="card-subtitle">Follow-up actions, actions taken, and assessment observations for Tanner</div>
@@ -291,12 +313,12 @@
     </div>
   </div>
 
-  <!-- ========== SECTION 8 — PHOTOS ========== -->
+  <!-- ========== SECTION 9 — PHOTOS ========== -->
   <div class="review-section">
     <div class="card" id="photos-card">
       <div class="card-header" data-toggle>
         <div class="card-header-left">
-          <span class="section-number">8</span>
+          <span class="section-number">9</span>
           <div>
             <div class="card-title">Photos</div>
             <div class="card-subtitle">Mark each photo Include, Exclude, or Unreviewed</div>
@@ -353,12 +375,12 @@
     </div>
   </div>
 
-  <!-- ========== SECTION 9 — SUBMIT TO TANNER ========== -->
+  <!-- ========== SECTION 10 — SUBMIT TO TANNER ========== -->
   <div class="review-section" id="submit-section-wrap">
     <div class="card" id="submit-section">
       <div class="card-header" data-toggle>
         <div class="card-header-left">
-          <span class="section-number">9</span>
+          <span class="section-number">10</span>
           <div>
             <div class="card-title">Submit to Tanner</div>
             <div class="card-subtitle">Final confirmation before sending to report builder</div>
@@ -411,7 +433,7 @@
 <div id="photo-modal" class="photo-modal hidden"></div>
 <div class="toast-container" id="toast-container"></div>
 
-<script src="portal.js?v=20260722-15"></script>
+<script src="portal.js?v=20260722-17"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
     portalInit('review');

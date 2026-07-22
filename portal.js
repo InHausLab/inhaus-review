@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V9';
+const REVIEW_PORTAL_VERSION = 'V10';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -2336,6 +2336,7 @@ function renderReviewPage(insp) {
   renderSummarySection(insp, isSubmitted);
   renderRoomsSection(insp, isSubmitted);
   renderWaterFindingsSection(insp, isSubmitted);
+  renderKitchenInspectionSection(insp, isSubmitted);
   renderFollowUpItemsSection(insp, isSubmitted);
   renderTestsSection(insp, isSubmitted);
   try { renderPostContentSection(insp, isSubmitted); } catch(e) { console.error('renderPostContentSection failed:', e); }
@@ -2866,10 +2867,35 @@ function renderWaterFindingsSection(insp, locked) {
   const fridge = findings.fridgeLine || null;
   const sink = findings.kitchenSink || null;
   const microplastics = findings.microplastics || null;
+  const waterSample = insp.stepData?.['water-sample'] || {};
+
+  if (Object.keys(waterSample).length) {
+    const source = el('div', { class: 'water-sample-source' },
+      el('div', { class: 'water-sample-source-title' },
+        el('strong', {}, 'Water Sample — Captured in App'),
+        el('span', { class: 'field-test-record-status' }, waterSample._visited ? 'Visited' : 'Not visited')
+      )
+    );
+    const grid = el('div', { class: 'kitchen-data-grid' });
+    [
+      ['Water panel planned', waterSample.waterPanelPlanned || insp.waterPanelPlanned],
+      ['Water panel collected', waterSample.waterPanelCollected],
+      ['Sample ID', insp.waterSampleId],
+      ['Collection location', insp.postTestLocWater],
+      ['Water source', insp.waterSource],
+      ['Inspector notes', waterSample.notes]
+    ].forEach(([label, value]) => {
+      grid.appendChild(el('div', { class: 'kitchen-data-item' },
+        el('span', {}, label),
+        el('strong', {}, sourceDisplayValue(value))
+      ));
+    });
+    source.appendChild(grid);
+    body.appendChild(source);
+  }
 
   if (!fridge && !sink && !microplastics) {
-    body.appendChild(el('p', { class: 'text-muted' }, 'No water findings found.'));
-    return;
+    body.appendChild(el('p', { class: 'text-muted water-lab-empty' }, 'No lab-result water findings are stored yet. The field collection record is shown above.'));
   }
 
   if (fridge || sink) {
@@ -2927,6 +2953,146 @@ function renderWaterFindingsSection(insp, locked) {
   notesWrap.appendChild(notes);
   body.appendChild(notesWrap);
   if (!locked) attachReviewedFieldSave(notes, 'roomData', 'waterFindingsNotes');
+}
+
+/* ============================================================
+   SECTION 5 — KITCHEN INSPECTION
+   ============================================================ */
+
+function sourceDisplayValue(value) {
+  if (value === true) return 'Yes';
+  if (value === false) return 'No';
+  if (Array.isArray(value)) return value.length ? value.join(', ') : 'Not recorded';
+  return value === undefined || value === null || value === '' ? 'Not recorded' : String(value);
+}
+
+function buildKitchenPhotoThumb(photo, fallbackLabel) {
+  const caption = photo?.caption || fallbackLabel || photo?.photoId || 'Kitchen photo';
+  const button = el('button', {
+    type: 'button',
+    class: 'kitchen-photo-thumb',
+    'data-photo-id': photo?.photoId || '',
+    'data-photo-caption': photo?.caption || '',
+    'aria-label': `Open ${caption}`
+  });
+  if (photo?.driveUrl) {
+    button.appendChild(el('img', {
+      src: photo.driveUrl,
+      alt: caption,
+      loading: 'lazy',
+      referrerpolicy: 'no-referrer-when-downgrade'
+    }));
+    button.addEventListener('click', () => openPhotoModal(photo.driveUrl, photo.caption || fallbackLabel || '', photo.photoId || ''));
+  } else {
+    button.appendChild(el('div', { class: 'kitchen-photo-placeholder' }, 'Photo unavailable'));
+  }
+  button.appendChild(el('span', { class: 'kitchen-photo-caption' }, caption));
+  return button;
+}
+
+function renderKitchenInspectionSection(insp) {
+  const body = qs('#kitchen-inspection-body');
+  if (!body) return;
+  body.innerHTML = '';
+
+  const kitchen = insp.stepData?.['kitchen-appliance'] || {};
+  if (!Object.keys(kitchen).length) {
+    body.appendChild(el('p', { class: 'text-muted' }, 'No kitchen inspection data found.'));
+    return;
+  }
+
+  const dataGrid = el('div', { class: 'kitchen-data-grid' });
+  [
+    ['Stove type', kitchen.stoveType],
+    ['Exhaust hood', kitchen.exhaustHoodType],
+    ['Vented', kitchen.exhaustVented],
+    ['Water flushed', kitchen.waterFlushed],
+    ['Refrigerator checked', kitchen.fridgeChecked],
+    ['Dishwasher checked', kitchen.dishwasherChecked],
+    ['Dishwasher filter checked', kitchen.dishwasherFilterChecked],
+    ['Under sink checked', kitchen.underSinkChecked],
+    ['Under sink cleaned', kitchen.underSinkCleaned],
+    ['Stove vent checked', kitchen.stoveVentChecked],
+    ['Visible mold', kitchen.moldVisible],
+    ['Appliance condition', kitchen.appliancesCondition]
+  ].forEach(([label, value]) => {
+    dataGrid.appendChild(el('div', { class: 'kitchen-data-item' },
+      el('span', {}, label),
+      el('strong', {}, sourceDisplayValue(value))
+    ));
+  });
+  body.appendChild(dataGrid);
+
+  const allPhotos = _inspection?.photos || [];
+  const photosById = new Map(allPhotos.map(photo => [photo.photoId, photo]));
+  const tasks = [
+    { label: 'Under Refrigerator', before: '_fridgeBeforePhotos', after: '_fridgeAfterPhotos' },
+    { label: 'Under Dishwasher', before: '_dishwasherBeforePhotos', after: '_dishwasherAfterPhotos' },
+    { label: 'Dishwasher Filter', before: '_dishwasherFilterBeforePhotos', after: '_dishwasherFilterAfterPhotos' },
+    { label: 'Under Sink', before: '_underSinkBeforePhotos', after: '_underSinkAfterPhotos' },
+    { label: 'Above Stove Vent', before: '_stoveVentBeforePhotos', after: '_stoveVentAfterPhotos' }
+  ];
+
+  const assignedFor = key => (Array.isArray(kitchen[key]) ? kitchen[key] : []).map(saved =>
+    photosById.get(saved.photoId) || saved
+  );
+  const beforeCount = tasks.reduce((sum, task) => sum + assignedFor(task.before).length, 0);
+  const afterCount = tasks.reduce((sum, task) => sum + assignedFor(task.after).length, 0);
+
+  const tabBar = el('div', { class: 'kitchen-photo-tabs', role: 'tablist', 'aria-label': 'Kitchen photo phase' });
+  const panels = {};
+  const setActivePhase = phase => {
+    tabBar.querySelectorAll('.kitchen-photo-tab').forEach(button => {
+      const active = button.dataset.phase === phase;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    Object.entries(panels).forEach(([key, panel]) => panel.hidden = key !== phase);
+  };
+
+  [['before', beforeCount], ['after', afterCount]].forEach(([phase, count]) => {
+    const button = el('button', {
+      type: 'button',
+      class: `kitchen-photo-tab${phase === 'before' ? ' active' : ''}`,
+      'data-phase': phase,
+      role: 'tab',
+      'aria-selected': phase === 'before' ? 'true' : 'false'
+    }, `${phase === 'before' ? 'Before' : 'After'} (${count})`);
+    button.addEventListener('click', () => setActivePhase(phase));
+    tabBar.appendChild(button);
+  });
+  body.appendChild(tabBar);
+
+  ['before', 'after'].forEach(phase => {
+    const panel = el('div', { class: 'kitchen-photo-panel', role: 'tabpanel', ...(phase === 'after' ? { hidden: '' } : {}) });
+    let panelCount = 0;
+    tasks.forEach(task => {
+      const photos = assignedFor(task[phase]);
+      if (!photos.length) return;
+      panelCount += photos.length;
+      const group = el('div', { class: 'kitchen-photo-task' },
+        el('div', { class: 'kitchen-photo-task-title' }, `${task.label} · ${photos.length} photo${photos.length === 1 ? '' : 's'}`)
+      );
+      const grid = el('div', { class: 'kitchen-photo-grid' });
+      photos.forEach(photo => grid.appendChild(buildKitchenPhotoThumb(photo, `${task.label} — ${phase}`)));
+      group.appendChild(grid);
+      panel.appendChild(group);
+    });
+    if (!panelCount) panel.appendChild(el('p', { class: 'text-muted' }, `No ${phase} photos were assigned by the inspector.`));
+    panels[phase] = panel;
+    body.appendChild(panel);
+  });
+
+  const otherPhotos = (Array.isArray(kitchen._photos) ? kitchen._photos : []).map(saved => photosById.get(saved.photoId) || saved);
+  if (otherPhotos.length) {
+    const other = el('div', { class: 'kitchen-other-photos' },
+      el('div', { class: 'kitchen-photo-task-title' }, `Other Kitchen Documentation · ${otherPhotos.length} photo${otherPhotos.length === 1 ? '' : 's'}`)
+    );
+    const grid = el('div', { class: 'kitchen-photo-grid' });
+    otherPhotos.forEach(photo => grid.appendChild(buildKitchenPhotoThumb(photo, 'Kitchen documentation')));
+    other.appendChild(grid);
+    body.appendChild(other);
+  }
 }
 
 /* ============================================================
@@ -3048,7 +3214,54 @@ const TEST_DEFS = [
   { key: 'testMoldSwabs',    label: 'Mold Swabs',        sampleKey: 'moldSwabSampleId' }
 ];
 
+function renderFieldTestRecords(insp) {
+  const wrap = qs('#field-test-records');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  const buildRecord = (title, status, fields) => {
+    const card = el('div', { class: 'field-test-record' },
+      el('div', { class: 'field-test-record-header' },
+        el('strong', {}, title),
+        el('span', { class: 'field-test-record-status' }, status)
+      )
+    );
+    const grid = el('div', { class: 'field-test-record-grid' });
+    fields.forEach(([label, value]) => {
+      grid.appendChild(el('div', { class: 'field-test-record-item' },
+        el('span', {}, label),
+        el('strong', {}, sourceDisplayValue(value))
+      ));
+    });
+    card.appendChild(grid);
+    return card;
+  };
+
+  const atp = insp.stepData?.['atp-kitchen'] || {};
+  const water = insp.stepData?.['water-sample'] || {};
+
+  wrap.appendChild(buildRecord('ATP Testing', atp._completedAt ? 'Captured in app' : 'Not completed', [
+    ['Surface tested', atp.atpSurface || atp.atpSurfaceOther],
+    ['Pre-test RLU', atp.atpPreRLU],
+    ['Pre-test status', atp.atpPreStatus],
+    ['Cleaned', atp.atpCleaned],
+    ['Post-test RLU', atp.atpPostRLU],
+    ['Post-test status', atp.atpPostStatus],
+    ['Inspector notes', atp.notes]
+  ]));
+
+  wrap.appendChild(buildRecord('Water Samples', water._visited ? 'Captured in app' : 'Not visited', [
+    ['Water panel planned', water.waterPanelPlanned || insp.waterPanelPlanned],
+    ['Water panel collected', water.waterPanelCollected],
+    ['Sample ID', insp.waterSampleId],
+    ['Collection location', insp.postTestLocWater],
+    ['Water source', insp.waterSource],
+    ['Inspector notes', water.notes]
+  ]));
+}
+
 function renderTestsSection(insp, locked) {
+  renderFieldTestRecords(insp);
   const tbody = qs('#tests-tbody');
   if (!tbody) return;
   tbody.innerHTML = '';
