@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V11';
+const REVIEW_PORTAL_VERSION = 'V12';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -432,6 +432,7 @@ function applyReviewedData(insp) {
     if (photo.originalStepName === undefined) photo.originalStepName = photo.stepName || '';
     if (nested.caption !== undefined) photo.caption = nested.caption;
     if (nested.included !== undefined) photo.included = nested.included;
+    if (nested.rotation !== undefined) photo.rotation = normalizePhotoRotation(nested.rotation);
     if (nested.placement !== undefined) {
       let placement = nested.placement;
       if (typeof placement === 'string') {
@@ -444,9 +445,43 @@ function applyReviewedData(insp) {
     }
     const legacyCaption = reviewed[`caption_${photo.photoId}`];
     const legacyIncluded = reviewed[`included_${photo.photoId}`];
+    const legacyRotation = reviewed[`rotation_${photo.photoId}`];
     if (legacyCaption !== undefined) photo.caption = legacyCaption;
     if (legacyIncluded !== undefined) photo.included = legacyIncluded;
+    if (legacyRotation !== undefined) photo.rotation = normalizePhotoRotation(legacyRotation);
+    if (photo.rotation === undefined) photo.rotation = 0;
   });
+}
+
+function normalizePhotoRotation(value) {
+  const numeric = Number(value) || 0;
+  return ((Math.round(numeric / 90) * 90) % 360 + 360) % 360;
+}
+
+function syncPhotoRotationViews(photoId, rotation) {
+  if (!photoId) return;
+  const normalized = normalizePhotoRotation(rotation);
+  const escapedId = window.CSS?.escape ? window.CSS.escape(photoId) : String(photoId).replace(/["\\]/g, '\\$&');
+  document.querySelectorAll(`[data-photo-id="${escapedId}"]`).forEach(node => {
+    node.dataset.photoRotation = String(normalized);
+    node.querySelectorAll('img').forEach(img => {
+      img.dataset.photoRotation = String(normalized);
+      const applyRotation = () => {
+        const width = img.clientWidth;
+        const height = img.clientHeight;
+        const scale = normalized % 180 !== 0 && width && height
+          ? Math.min(width / height, height / width)
+          : 1;
+        img.style.transform = normalized ? `rotate(${normalized}deg) scale(${scale})` : '';
+      };
+      applyRotation();
+      if (!img.complete) img.addEventListener('load', applyRotation, { once: true });
+    });
+  });
+}
+
+function syncAllPhotoRotations() {
+  (_inspection?.photos || []).forEach(photo => syncPhotoRotationViews(photo.photoId, photo.rotation));
 }
 
 function syncPhotoCaptionViews(photoId, caption) {
@@ -483,6 +518,18 @@ async function saveReviewedPhotoCaption(photoId, value) {
   syncPhotoCaptionViews(photoId, caption);
   const saved = await saveField(`photo_${photoId}`, 'caption', caption);
   if (saved) showToast('Photo caption saved everywhere in the review');
+  return saved;
+}
+
+async function saveReviewedPhotoRotation(photoId, value) {
+  if (!photoId || !_inspection) return false;
+  const rotation = normalizePhotoRotation(value);
+  (_inspection.photos || []).forEach(photo => {
+    if (photo.photoId === photoId) photo.rotation = rotation;
+  });
+  syncPhotoRotationViews(photoId, rotation);
+  const saved = await saveField(`photo_${photoId}`, 'rotation', rotation);
+  if (saved) showToast(`Photo rotation saved (${rotation}°)`);
   return saved;
 }
 
@@ -1219,7 +1266,11 @@ function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) 
       assignedIds.forEach(pid => {
         const photo = allPhotos.find(p => p.photoId === pid);
         if (!photo) return;
-        const thumb = el('div', { class: 'picker-thumb', style: `width:${sz}` });
+        const thumb = el('div', {
+          class: 'picker-thumb',
+          style: `width:${sz}`,
+          'data-photo-id': photo.photoId
+        });
         if (photo.driveUrl) {
           thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy', style: `width:${sz};height:${sz}`, referrerpolicy: "no-referrer-when-downgrade" }));
         } else {
@@ -1247,7 +1298,7 @@ function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) 
       assignedIds.forEach(pid => {
         const photo = allPhotos.find(p => p.photoId === pid);
         if (!photo) return;
-        const thumb = el('div', { class: 'picker-thumb' });
+        const thumb = el('div', { class: 'picker-thumb', 'data-photo-id': photo.photoId });
         if (photo.driveUrl) {
           thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" }));
         } else {
@@ -1502,6 +1553,7 @@ function renderPostContentSection(insp, locked) {
   } else {
     removePhotoFAB();
   }
+  syncAllPhotoRotations();
 }
 
 function removePhotoFAB() {
@@ -1682,12 +1734,16 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
   allPhotos.forEach(photo => {
     const slots = photoSlotMap[photo.photoId];
     const isAssigned = !!slots;
-    const card = el('div', { class: `lib-card${isAssigned ? ' lib-assigned' : ' lib-unassigned'}` });
+    const card = el('div', {
+      class: `lib-card${isAssigned ? ' lib-assigned' : ' lib-unassigned'}`,
+      'data-photo-id': photo.photoId
+    });
 
     // Photo thumbnail
     const imgWrap = el('div', { class: 'lib-img-wrap' });
     if (photo.driveUrl) {
       imgWrap.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" }));
+      imgWrap.addEventListener('click', () => openPhotoModal(photo.driveUrl, photo.caption, photo.photoId));
     } else {
       imgWrap.appendChild(el('div', { class: 'lib-img-placeholder' }, (photo.photoId || '').slice(-4)));
     }
@@ -1831,6 +1887,7 @@ function openFABModal(allPhotos, slots, rd) {
       });
       grid.appendChild(item);
     });
+    syncAllPhotoRotations();
   };
   buildGrid();
 
@@ -2345,6 +2402,7 @@ function renderReviewPage(insp) {
   const photosCard = qs('#photos-card');
   if (photosCard) photosCard.classList.remove('collapsed');
   try { renderSubmitSection(insp, isSubmitted); } catch(e) { console.error('renderSubmitSection failed:', e); }
+  syncAllPhotoRotations();
   checkGate();
 }
 
@@ -3879,6 +3937,8 @@ function renderPhotoGrid(photos, locked) {
     container.appendChild(buildPhotoCard(photo, locked));
   }
 
+  syncAllPhotoRotations();
+
   // Update photo count summary for submit section
   updatePhotoSummary(photos);
 }
@@ -4263,6 +4323,8 @@ function photoAnnotationButton(label, title, attrs = {}) {
 
 function buildPhotoAnnotationToolbar() {
   const toolbar = el('div', { class: 'photo-annotation-toolbar' },
+    photoAnnotationButton('↶ Rotate', 'Rotate photo 90 degrees left', { 'data-action': 'rotate-left' }),
+    photoAnnotationButton('Rotate ↷', 'Rotate photo 90 degrees right', { 'data-action': 'rotate-right' }),
     photoAnnotationButton('Arrow', 'Arrow tool', { 'data-tool': 'arrow' }),
     photoAnnotationButton('Circle', 'Circle tool', { 'data-tool': 'circle' }),
     el('span', { class: 'photo-annotation-color-label' }, 'Color'),
@@ -4277,7 +4339,7 @@ function buildPhotoAnnotationToolbar() {
     el('span', { class: 'photo-annotation-status', 'data-annotation-status': '' }, '')
   );
 
-  toolbar.addEventListener('click', e => {
+  toolbar.addEventListener('click', async e => {
     const btn = e.target.closest('button');
     if (!btn || !_photoModalState) return;
     const tool = btn.dataset.tool;
@@ -4310,6 +4372,20 @@ function buildPhotoAnnotationToolbar() {
       _photoModalState.dirty = true;
       redrawPhotoAnnotationCanvas();
       updatePhotoAnnotationToolbar();
+      return;
+    }
+
+    if (action === 'rotate-left' || action === 'rotate-right') {
+      const delta = action === 'rotate-left' ? -90 : 90;
+      const rotation = normalizePhotoRotation((_photoModalState.rotation || 0) + delta);
+      toolbar.querySelectorAll('[data-action^="rotate-"]').forEach(button => { button.disabled = true; });
+      _photoModalState.rotation = rotation;
+      configurePhotoAnnotationCanvas(_photoModalState);
+      redrawPhotoAnnotationCanvas();
+      const saved = await saveReviewedPhotoRotation(_photoModalState.photoId, rotation);
+      toolbar.querySelectorAll('[data-action^="rotate-"]').forEach(button => { button.disabled = false; });
+      const status = toolbar.querySelector('[data-annotation-status]');
+      if (!saved && status) status.textContent = 'Rotation save failed';
       return;
     }
 
@@ -4354,15 +4430,21 @@ function pointFromCanvasEvent(event, canvas) {
   const rect = canvas.getBoundingClientRect();
   const x = rect.width ? (event.clientX - rect.left) / rect.width : 0;
   const y = rect.height ? (event.clientY - rect.top) / rect.height : 0;
+  const rotation = normalizePhotoRotation(_photoModalState?.rotation || 0);
+  const point = rotation === 90 ? { x: y, y: 1 - x }
+    : rotation === 180 ? { x: 1 - x, y: 1 - y }
+      : rotation === 270 ? { x: 1 - y, y: x }
+        : { x, y };
   return {
-    x: Math.max(0, Math.min(1, x)),
-    y: Math.max(0, Math.min(1, y))
+    x: Math.max(0, Math.min(1, point.x)),
+    y: Math.max(0, Math.min(1, point.y))
   };
 }
 
-function drawPhotoAnnotation(ctx, annotation, draft = false) {
+function drawPhotoAnnotation(ctx, annotation, draft = false, logicalWidth = ctx.canvas.width, logicalHeight = ctx.canvas.height) {
   if (!annotation?.points?.length || annotation.points.length < 2) return;
-  const { width, height } = ctx.canvas;
+  const width = logicalWidth;
+  const height = logicalHeight;
   const [start, end] = annotation.points;
   const x1 = start.x * width;
   const y1 = start.y * height;
@@ -4407,11 +4489,32 @@ function drawPhotoAnnotation(ctx, annotation, draft = false) {
 function redrawPhotoAnnotationCanvas() {
   const state = _photoModalState;
   if (!state?.ctx || !state.imageLoaded) return;
-  const { ctx, canvas, image, annotations, draft } = state;
+  const { ctx, canvas, image, annotations, draft, baseWidth, baseHeight } = state;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-  annotations.forEach(annotation => drawPhotoAnnotation(ctx, annotation));
-  if (draft) drawPhotoAnnotation(ctx, draft, true);
+  ctx.save();
+  const rotation = normalizePhotoRotation(state.rotation || 0);
+  if (rotation === 90) {
+    ctx.translate(canvas.width, 0);
+    ctx.rotate(Math.PI / 2);
+  } else if (rotation === 180) {
+    ctx.translate(canvas.width, canvas.height);
+    ctx.rotate(Math.PI);
+  } else if (rotation === 270) {
+    ctx.translate(0, canvas.height);
+    ctx.rotate(-Math.PI / 2);
+  }
+  ctx.drawImage(image, 0, 0, baseWidth, baseHeight);
+  annotations.forEach(annotation => drawPhotoAnnotation(ctx, annotation, false, baseWidth, baseHeight));
+  if (draft) drawPhotoAnnotation(ctx, draft, true, baseWidth, baseHeight);
+  ctx.restore();
+}
+
+function configurePhotoAnnotationCanvas(state) {
+  if (!state?.canvas || !state.baseWidth || !state.baseHeight) return;
+  const sideways = normalizePhotoRotation(state.rotation || 0) % 180 !== 0;
+  state.canvas.width = sideways ? state.baseHeight : state.baseWidth;
+  state.canvas.height = sideways ? state.baseWidth : state.baseHeight;
+  state.canvas.dataset.photoRotation = String(normalizePhotoRotation(state.rotation || 0));
 }
 
 function bindPhotoAnnotationCanvas(canvas) {
@@ -4546,6 +4649,7 @@ function openPhotoModal(url, caption, photoId = '') {
   inner.appendChild(canvasWrap);
 
   const annotations = getPhotoAnnotations(photoId);
+  const photo = (_inspection?.photos || []).find(item => item.photoId === photoId);
   const image = new Image();
   const state = {
     photoId,
@@ -4554,6 +4658,7 @@ function openPhotoModal(url, caption, photoId = '') {
     tool: 'arrow',
     color: PHOTO_ANNOTATION_COLOR,
     annotations,
+    rotation: normalizePhotoRotation(photo?.rotation || 0),
     dirty: false,
     drawing: false,
     draft: null,
@@ -4574,8 +4679,9 @@ function openPhotoModal(url, caption, photoId = '') {
     const naturalW = image.naturalWidth || 1600;
     const naturalH = image.naturalHeight || 1200;
     const scale = Math.min(1, maxSide / Math.max(naturalW, naturalH));
-    canvas.width = Math.max(1, Math.round(naturalW * scale));
-    canvas.height = Math.max(1, Math.round(naturalH * scale));
+    state.baseWidth = Math.max(1, Math.round(naturalW * scale));
+    state.baseHeight = Math.max(1, Math.round(naturalH * scale));
+    configurePhotoAnnotationCanvas(state);
     state.imageLoaded = true;
     redrawPhotoAnnotationCanvas();
   };

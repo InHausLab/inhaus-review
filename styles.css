@@ -2178,6 +2178,23 @@ mark.report-search-match.active {
 
 .photo-modal.hidden { display: none; }
 
+[data-photo-id] img[data-photo-rotation] {
+  transform-origin: center center;
+  transition: transform .18s ease;
+}
+
+.lib-img-wrap,
+.palette-thumb,
+.picker-thumb,
+.picker-grid-item,
+.room-photo-thumb,
+.kitchen-photo-thumb,
+.photo-thumb-wrap {
+  overflow: hidden;
+}
+
+.lib-img-wrap { cursor: zoom-in; }
+
 .photo-modal-inner {
   position: relative;
   max-width: 90vw;
