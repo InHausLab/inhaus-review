@@ -9,6 +9,9 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
+// Frontend routing token already used by the inspector app for Apps Script posts.
+// This is not a private secret; it only selects the deployed authenticated route.
+const SYNC_SECRET = 'ihl-sync-2026';
 
 const IS_DEMO = (APPS_SCRIPT_URL === 'PLACEHOLDER_URL');
 
@@ -4129,6 +4132,235 @@ function escapeHTML(str) {
 }
 
 /* ============================================================
+   REVIEW PORTAL FEEDBACK
+   Separate from inspection/review storage. This feature never reads or writes
+   reviewedData, review_data, inspection photos, or local review recovery keys.
+   ============================================================ */
+
+let _feedbackScreenshotDataUrl = '';
+let _feedbackScreenshotName = '';
+
+function feedbackId() {
+  return 'REVIEW-FEEDBACK-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function feedbackContext() {
+  const params = getURLParams();
+  return {
+    inspectionId: params.id || '',
+    propertyAddress: _inspection?.propertyAddress || '',
+    inspectorName: 'Review Portal User',
+    screen: document.body.classList.contains('review-page') || location.pathname.includes('review.html')
+      ? 'Review Portal - Inspection Review'
+      : 'Review Portal - Inspection List',
+    stepIndex: '',
+    appVersion: 'review-20260722-02',
+    pageUrl: location.href,
+    userAgent: navigator.userAgent,
+    online: navigator.onLine
+  };
+}
+
+function compressFeedbackImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read screenshot.'));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('Could not open screenshot.'));
+      image.onload = () => {
+        const maxEdge = 1600;
+        const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext('2d');
+        if (!context) {
+          reject(new Error('Screenshot processing is unavailable.'));
+          return;
+        }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function sendPortalFeedback(feedback) {
+  const response = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      action: 'appFeedback',
+      'x-sync-secret': SYNC_SECRET,
+      feedback
+    })
+  });
+  if (!response.ok) throw new Error('Feedback request failed (' + response.status + ').');
+  const responseText = await response.text();
+  let result;
+  try {
+    result = JSON.parse(responseText);
+  } catch (error) {
+    throw new Error(/^\s*</.test(responseText)
+      ? 'Feedback service returned an access page. Please try again.'
+      : 'Feedback service returned an invalid response.');
+  }
+  if (!result || result.status !== 'ok' || result.saved !== true) {
+    throw new Error(result?.message || 'Cloud did not confirm the suggestion save.');
+  }
+  return result;
+}
+
+function closePortalFeedback() {
+  document.getElementById('portal-feedback-overlay')?.remove();
+  _feedbackScreenshotDataUrl = '';
+  _feedbackScreenshotName = '';
+}
+
+function openPortalFeedback() {
+  if (document.getElementById('portal-feedback-overlay')) return;
+  _feedbackScreenshotDataUrl = '';
+  _feedbackScreenshotName = '';
+
+  const overlay = el('div', {
+    id: 'portal-feedback-overlay',
+    class: 'portal-feedback-overlay',
+    role: 'dialog',
+    'aria-modal': 'true',
+    'aria-labelledby': 'portal-feedback-title'
+  });
+  const panel = el('div', { class: 'portal-feedback-panel' });
+  const heading = el('div', { class: 'portal-feedback-heading' });
+  const headingCopy = el('div');
+  headingCopy.append(
+    el('h2', { id: 'portal-feedback-title' }, 'Suggest a Portal Fix'),
+    el('p', {}, 'Tell Matt what should change and attach a screenshot if something looks broken.')
+  );
+  const closeButton = el('button', {
+    type: 'button',
+    class: 'portal-feedback-close',
+    'aria-label': 'Close suggestions'
+  }, '×');
+  closeButton.addEventListener('click', closePortalFeedback);
+  heading.append(headingCopy, closeButton);
+
+  const noteLabel = el('label', { class: 'field-label', for: 'portal-feedback-note' }, 'What should we fix or improve?');
+  const note = el('textarea', {
+    id: 'portal-feedback-note',
+    class: 'field-input portal-feedback-note',
+    rows: '5',
+    placeholder: 'Describe what happened and what you expected…'
+  });
+
+  const screenshotInput = el('input', {
+    id: 'portal-feedback-screenshot',
+    class: 'hidden',
+    type: 'file',
+    accept: 'image/*'
+  });
+  const screenshotButton = el('button', {
+    type: 'button',
+    class: 'btn btn-outline portal-feedback-attach'
+  }, '📷 Attach Screenshot');
+  const screenshotStatus = el('div', { class: 'portal-feedback-media-status' }, 'No screenshot attached');
+  const screenshotPreview = el('div', { class: 'portal-feedback-preview' });
+  screenshotButton.addEventListener('click', () => screenshotInput.click());
+  screenshotInput.addEventListener('change', async () => {
+    const file = screenshotInput.files?.[0];
+    if (!file) return;
+    screenshotButton.disabled = true;
+    screenshotStatus.textContent = 'Preparing screenshot…';
+    try {
+      _feedbackScreenshotDataUrl = await compressFeedbackImage(file);
+      _feedbackScreenshotName = file.name || 'review-portal-screenshot.jpg';
+      const previewImage = el('img', { src: _feedbackScreenshotDataUrl, alt: 'Attached screenshot preview' });
+      screenshotPreview.replaceChildren(previewImage);
+      screenshotStatus.textContent = '✓ Screenshot attached';
+    } catch (error) {
+      _feedbackScreenshotDataUrl = '';
+      _feedbackScreenshotName = '';
+      screenshotPreview.replaceChildren();
+      screenshotStatus.textContent = error.message || 'Could not attach that screenshot.';
+    } finally {
+      screenshotButton.disabled = false;
+    }
+  });
+
+  const sendStatus = el('div', { class: 'portal-feedback-send-status', role: 'status', 'aria-live': 'polite' });
+  const sendButton = el('button', { type: 'button', class: 'btn btn-primary portal-feedback-send' }, 'Send to Matt');
+  sendButton.addEventListener('click', async () => {
+    const typedNote = note.value.trim();
+    if (!typedNote && !_feedbackScreenshotDataUrl) {
+      sendStatus.textContent = 'Add a suggestion or screenshot first.';
+      return;
+    }
+    sendButton.disabled = true;
+    sendButton.textContent = 'Sending…';
+    sendStatus.textContent = '';
+    const feedback = {
+      feedbackId: feedbackId(),
+      submittedAt: new Date().toISOString(),
+      note: typedNote,
+      screenshotDataUrl: _feedbackScreenshotDataUrl,
+      screenshotName: _feedbackScreenshotName,
+      voiceDataUrl: '',
+      voiceMimeType: '',
+      context: feedbackContext()
+    };
+    try {
+      await sendPortalFeedback(feedback);
+      sendStatus.textContent = '✓ Sent to Matt and saved in Things to Fix';
+      sendButton.textContent = 'Sent';
+      setTimeout(closePortalFeedback, 1200);
+    } catch (error) {
+      sendStatus.textContent = error.message || 'Could not send. Your review data was not affected.';
+      sendButton.disabled = false;
+      sendButton.textContent = 'Try Again';
+    }
+  });
+
+  const safetyNote = el('p', { class: 'portal-feedback-safety' }, 'Suggestions are stored separately and do not change this inspection or its review data.');
+  panel.append(
+    heading,
+    noteLabel,
+    note,
+    el('div', { class: 'portal-feedback-section' },
+      el('div', { class: 'field-label' }, 'Screenshot'),
+      el('p', { class: 'portal-feedback-help' }, 'Take a screenshot, then choose it from your device.'),
+      screenshotButton,
+      screenshotInput,
+      screenshotStatus,
+      screenshotPreview
+    ),
+    safetyNote,
+    sendStatus,
+    sendButton
+  );
+  overlay.append(panel);
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) closePortalFeedback();
+  });
+  document.body.append(overlay);
+  note.focus();
+}
+
+function mountPortalFeedbackButton() {
+  if (document.getElementById('portal-feedback-button')) return;
+  const button = el('button', {
+    id: 'portal-feedback-button',
+    class: 'portal-feedback-button',
+    type: 'button',
+    title: 'Suggest a review portal fix',
+    'aria-label': 'Suggest a review portal fix'
+  }, '💡');
+  button.addEventListener('click', openPortalFeedback);
+  document.body.append(button);
+}
+
+/* ============================================================
    GLOBAL INIT — dispatched by each page on DOMContentLoaded
    ============================================================ */
 
@@ -4139,6 +4371,7 @@ window.portalInit = function(page) {
     loadInspection();
   }
   initCollapsibles();
+  mountPortalFeedbackButton();
 };
 
 // Expose for inline HTML event attributes
