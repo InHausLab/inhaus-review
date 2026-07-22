@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V1';
+const REVIEW_PORTAL_VERSION = 'V2';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -691,6 +691,14 @@ async function loadInspection() {
       showToast(`Failed to load inspection: ${err.message}`, 'error');
       return;
     }
+  }
+
+  // Field-active inspections arrive as an export wrapper whose freshest phone
+  // checkpoint is nested under resumeData. Prefer that checkpoint so values
+  // entered late in the inspection are not hidden by stale wrapper fields.
+  if (insp.resumeData && typeof insp.resumeData === 'object' && insp.resumeData.stepData) {
+    const liveCheckpoint = insp.resumeData;
+    insp = { ...insp, ...liveCheckpoint, resumeData: liveCheckpoint };
   }
 
   // Reviewer edits are persisted independently of Apps Script so they survive
@@ -2013,6 +2021,23 @@ function renderIntakeSummary(insp) {
   if (!body) return;
   body.innerHTML = '';
 
+  const utility = insp.stepData?.utility || insp.utilityRoom || {};
+  const ventilation = utility.ventilationType || {};
+  const ventilationLabels = {
+    bathExhaust: 'Bathroom Exhaust Fan(s)',
+    hrv: 'HRV',
+    erv: 'ERV',
+    ventNone: 'None',
+    none: 'None',
+    ventNotSure: 'Not sure',
+    notSure: 'Not sure'
+  };
+  const ventilationValue = insp.ventilationReadable || insp.ventilation ||
+    Object.entries(ventilation)
+      .filter(([, selected]) => selected === true)
+      .map(([key]) => ventilationLabels[key] || key)
+      .join(', ');
+
   const items = [
     { label: 'Property', value: insp.propertyAddress, wide: true },
     { label: 'Client', value: insp.clientName },
@@ -2028,9 +2053,11 @@ function renderIntakeSummary(insp) {
     { label: 'Water Source', value: insp.waterSource },
     { label: 'Filtration', value: insp.waterFiltration },
     { label: 'Softener', value: insp.waterSoftener },
-    { label: 'Heating', value: insp.heating },
-    { label: 'AC', value: insp.ac },
-    { label: 'Ventilation', value: insp.ventilation },
+    { label: 'Carpeted Rooms', value: insp.carpetedRooms },
+    { label: 'Windows Open', value: insp.windowsOpen },
+    { label: 'Heating', value: utility.heatingType || insp.heating },
+    { label: 'AC', value: utility.acType || insp.ac },
+    { label: 'Ventilation', value: ventilationValue },
     { label: 'Weather', value: insp.weatherConditions },
     { label: 'Occupancy', value: insp.occupancyDuringInspection },
     { label: 'Client Concerns', value: insp.clientConcerns, wide: true },
