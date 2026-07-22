@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V7';
+const REVIEW_PORTAL_VERSION = 'V8';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -2517,15 +2517,17 @@ function aiSummaryLooksContradictory(summary, roomPhotos) {
 }
 
 function buildAISummaryBlock(summary, roomPhotos) {
+  const block = buildReadOnlyBlock('AI Summary', summary, 'No AI summary available.');
   if (aiSummaryLooksContradictory(summary, roomPhotos)) {
-    return el('div', { class: 'room-readonly-block ai-summary-warning' },
-      el('div', { class: 'field-label' }, 'AI Summary'),
-      el('div', { class: 'room-readonly-text' },
-        'AI summary needs review: the generated text says a test was not completed, but photos are assigned to this room. Use the source status fields, room photos, and Tanner notes instead.'
-      )
-    );
+    // Never replace saved inspector data with a portal-generated warning.
+    // A room can legitimately have documentation photos even when a specific
+    // test (such as Breeze) was not performed. Keep the exact AI summary visible
+    // and add the review note only as secondary context.
+    block.appendChild(el('div', { class: 'room-readonly-text ai-summary-warning' },
+      'Review note: compare this summary with the source status fields and room photos.'
+    ));
   }
-  return buildReadOnlyBlock('AI Summary', summary, 'No AI summary available.');
+  return block;
 }
 
 function buildRoomPhotoStrip(roomPhotos) {
