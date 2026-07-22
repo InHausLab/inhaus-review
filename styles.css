@@ -1405,6 +1405,23 @@ body {
 }
 .portal-feedback-button:hover { transform: scale(1.07); box-shadow: 0 7px 22px rgba(0, 0, 0, .32); }
 .portal-feedback-button:active { transform: scale(.96); }
+.review-portal-version {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 24px;
+  margin-left: 10px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .12);
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
 .portal-feedback-overlay {
   position: fixed;
   inset: 0;
@@ -1456,6 +1473,7 @@ body {
 @media (max-width: 640px) {
   .portal-feedback-button { left: 12px; bottom: 14px; }
   .portal-feedback-panel { margin-top: 0; padding: 18px; }
+  .review-portal-version { min-width: 32px; margin-left: 5px; padding: 0 7px; }
 }
 
 .photo-caption textarea {

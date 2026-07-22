@@ -9,6 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
+const REVIEW_PORTAL_VERSION = 'V1';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -4408,6 +4409,19 @@ function mountPortalFeedbackButton() {
   document.body.append(button);
 }
 
+function mountPortalVersionBadge() {
+  if (document.getElementById('review-portal-version')) return;
+  const nav = document.querySelector('.nav-bar');
+  if (!nav) return;
+  const badge = el('span', {
+    id: 'review-portal-version',
+    class: 'review-portal-version',
+    title: 'Review Portal ' + REVIEW_PORTAL_VERSION,
+    'aria-label': 'Review Portal version ' + REVIEW_PORTAL_VERSION.slice(1)
+  }, REVIEW_PORTAL_VERSION);
+  nav.append(badge);
+}
+
 /* ============================================================
    GLOBAL INIT — dispatched by each page on DOMContentLoaded
    ============================================================ */
@@ -4419,6 +4433,7 @@ window.portalInit = function(page) {
     loadInspection();
   }
   initCollapsibles();
+  mountPortalVersionBadge();
   mountPortalFeedbackButton();
 };
 
