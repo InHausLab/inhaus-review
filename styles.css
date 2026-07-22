@@ -1861,6 +1861,37 @@ body {
   padding: 0 4px;
 }
 
+.photo-annotation-color-label {
+  color: rgba(255,255,255,.78);
+  font-size: .72rem;
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+.photo-annotation-color {
+  position: relative;
+  min-width: 30px;
+  width: 30px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid rgba(255,255,255,.4);
+  border-radius: 999px;
+  background: var(--annotation-color);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.2);
+}
+
+.photo-annotation-color:hover:not(:disabled) {
+  background: var(--annotation-color);
+  border-color: white;
+}
+
+.photo-annotation-color.active {
+  background: var(--annotation-color);
+  border-color: white;
+  box-shadow: 0 0 0 3px rgba(255,255,255,.35), inset 0 0 0 1px rgba(0,0,0,.22);
+}
+
 .photo-canvas-wrap {
   max-width: 90vw;
   max-height: 58vh;

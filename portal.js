@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V5';
+const REVIEW_PORTAL_VERSION = 'V6';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -3621,6 +3621,12 @@ function updatePhotoSummary(photos) {
    ============================================================ */
 
 const PHOTO_ANNOTATION_COLOR = '#ef4444';
+const PHOTO_ANNOTATION_COLORS = [
+  { name: 'Red', value: '#ef4444' },
+  { name: 'Yellow', value: '#facc15' },
+  { name: 'White', value: '#ffffff' },
+  { name: 'Blue', value: '#3b82f6' }
+];
 let _photoModalState = null;
 
 function normalizePhotoAnnotationPoint(point) {
@@ -3681,6 +3687,12 @@ function buildPhotoAnnotationToolbar() {
   const toolbar = el('div', { class: 'photo-annotation-toolbar' },
     photoAnnotationButton('Arrow', 'Arrow tool', { 'data-tool': 'arrow' }),
     photoAnnotationButton('Circle', 'Circle tool', { 'data-tool': 'circle' }),
+    el('span', { class: 'photo-annotation-color-label' }, 'Color'),
+    ...PHOTO_ANNOTATION_COLORS.map(color => photoAnnotationButton('', `${color.name} annotation color`, {
+      class: 'photo-annotation-color',
+      'data-color': color.value,
+      style: `--annotation-color:${color.value}`
+    })),
     photoAnnotationButton('Undo', 'Undo last annotation', { 'data-action': 'undo' }),
     photoAnnotationButton('Clear', 'Clear annotations', { 'data-action': 'clear' }),
     photoAnnotationButton('Save', 'Save annotations', { class: 'photo-annotation-btn save', 'data-action': 'save' }),
@@ -3691,10 +3703,17 @@ function buildPhotoAnnotationToolbar() {
     const btn = e.target.closest('button');
     if (!btn || !_photoModalState) return;
     const tool = btn.dataset.tool;
+    const color = btn.dataset.color;
     const action = btn.dataset.action;
 
     if (tool) {
       _photoModalState.tool = tool;
+      updatePhotoAnnotationToolbar();
+      return;
+    }
+
+    if (color) {
+      _photoModalState.color = color;
       updatePhotoAnnotationToolbar();
       return;
     }
@@ -3726,9 +3745,14 @@ function buildPhotoAnnotationToolbar() {
 
 function updatePhotoAnnotationToolbar() {
   if (!_photoModalState?.toolbar) return;
-  const { toolbar, tool, annotations, dirty, photoId } = _photoModalState;
+  const { toolbar, tool, color, annotations, dirty, photoId } = _photoModalState;
   toolbar.querySelectorAll('[data-tool]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tool === tool);
+  });
+  toolbar.querySelectorAll('[data-color]').forEach(btn => {
+    const selected = btn.dataset.color === color;
+    btn.classList.toggle('active', selected);
+    btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
   });
 
   const undoBtn = toolbar.querySelector('[data-action="undo"]');
@@ -3823,7 +3847,7 @@ function bindPhotoAnnotationCanvas(canvas) {
     state.startPoint = start;
     state.draft = {
       type: state.tool,
-      color: PHOTO_ANNOTATION_COLOR,
+      color: state.color || PHOTO_ANNOTATION_COLOR,
       points: [start, start]
     };
     redrawPhotoAnnotationCanvas();
@@ -3950,6 +3974,7 @@ function openPhotoModal(url, caption, photoId = '') {
     url,
     caption,
     tool: 'arrow',
+    color: PHOTO_ANNOTATION_COLOR,
     annotations,
     dirty: false,
     drawing: false,
