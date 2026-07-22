@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V10';
+const REVIEW_PORTAL_VERSION = 'V11';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -3214,6 +3214,285 @@ const TEST_DEFS = [
   { key: 'testMoldSwabs',    label: 'Mold Swabs',        sampleKey: 'moldSwabSampleId' }
 ];
 
+function testValuePresent(value) {
+  if (value === undefined || value === null || value === '') return false;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+function collectTestSampleRecords(insp) {
+  const records = [];
+  const keys = new Set();
+  const steps = insp.stepData || {};
+  const confirmed = insp.testsConfirmed || {};
+  const post = steps['post-assessment'] || insp.postAssessment || {};
+  const shipping = post.shipping || {};
+
+  const add = record => {
+    const normalized = {
+      type: sourceDisplayValue(record.type),
+      status: sourceDisplayValue(record.status),
+      location: sourceDisplayValue(record.location),
+      sampleId: sourceDisplayValue(record.sampleId),
+      details: sourceDisplayValue(record.details),
+      source: sourceDisplayValue(record.source)
+    };
+    const key = [normalized.type, normalized.status, normalized.location, normalized.sampleId, normalized.details].join('|').toLowerCase();
+    if (keys.has(key)) return;
+    keys.add(key);
+    records.push(normalized);
+  };
+
+  Object.entries(steps).forEach(([stepId, step]) => {
+    if (!step || typeof step !== 'object') return;
+    if (testValuePresent(step.atpPreRLU) || testValuePresent(step.atpPostRLU) || testValuePresent(step.atpSurface)) {
+      add({
+        type: 'ATP',
+        status: step._completedAt ? 'Completed' : 'Recorded',
+        location: step.atpSurfaceOther || step.atpSurface || step.roomName,
+        sampleId: step.atpSampleId || insp.atpSampleId,
+        details: `Pre ${sourceDisplayValue(step.atpPreRLU)} / ${sourceDisplayValue(step.atpPreStatus)} · Post ${sourceDisplayValue(step.atpPostRLU)} / ${sourceDisplayValue(step.atpPostStatus)} · Cleaned ${sourceDisplayValue(step.atpCleaned)}`,
+        source: step.roomName || stepId
+      });
+    }
+  });
+
+  const water = steps['water-sample'] || {};
+  if (testValuePresent(water.waterPanelPlanned) || testValuePresent(water.waterPanelCollected) || testValuePresent(water.waterSampleId) || shipping.waterPanelShip) {
+    add({
+      type: 'Water Panel',
+      status: isAffirmative(water.waterPanelCollected) ? 'Collected' : (water.waterPanelPlanned || (shipping.waterPanelShip ? 'Prepared for shipping' : 'Recorded')),
+      location: water.waterFaucetLocation || insp.postTestLocWater,
+      sampleId: water.waterSampleId || insp.waterSampleId,
+      details: shipping.waterPanelShip ? 'Shipping checklist complete' : water.notes,
+      source: water.roomName || 'Water Samples'
+    });
+  }
+
+  const device = steps['device-setup'] || {};
+  if (testValuePresent(water.pfasStatus) || testValuePresent(water.pfasSampleId) || testValuePresent(device.pfasSetup) || testValuePresent(device.pfasKitNum) || shipping.pfasShip) {
+    add({
+      type: 'PFAS',
+      status: water.pfasStatus || (shipping.pfasShip ? 'Prepared for shipping' : (isAffirmative(device.pfasSetup) ? 'Set up' : device.pfasSetup)),
+      location: water.pfasLocation || insp.postTestLocPFAS || (isAffirmative(device.pfasSetup) ? 'Kitchen faucet' : ''),
+      sampleId: water.pfasSampleId || insp.pfasSampleId || device.pfasKitNum || insp.pfasKitNum,
+      details: [device.notes, shipping.pfasShip ? 'Shipping checklist complete' : ''].filter(Boolean).join(' · '),
+      source: water.roomName || device.roomName || 'Device Setup'
+    });
+  }
+
+  if (testValuePresent(water.microplasticsStatus) || testValuePresent(water.microplasticsSampleId) || shipping.microplasticsShip) {
+    add({
+      type: 'Microplastics',
+      status: water.microplasticsStatus || (shipping.microplasticsShip ? 'Prepared for shipping' : 'Recorded'),
+      location: water.microplasticsLocation || insp.postTestLocMicroplastics || water.waterFaucetLocation,
+      sampleId: water.microplasticsSampleId || insp.microplasticsSampleId,
+      details: shipping.microplasticsShip ? 'Shipping checklist complete' : water.notes,
+      source: water.roomName || 'Water Samples'
+    });
+  }
+
+  Object.entries(steps).forEach(([stepId, step]) => {
+    if (!step || typeof step !== 'object') return;
+    const room = step.roomName || step._roomName || stepId;
+    if (isAffirmative(step.breezeDone)) {
+      add({
+        type: 'Breeze ET (Mold)',
+        status: 'Conducted',
+        location: step.breezeLocation || room,
+        sampleId: step.breezeSampleId,
+        details: room !== step.breezeLocation ? `Room: ${room}` : '',
+        source: room
+      });
+    }
+    if (isAffirmative(step.qtrakCaptured) || step.qtrakOutdoorDone === true) {
+      add({
+        type: 'Q-Trak / Air Data',
+        status: 'Captured',
+        location: step.qtrakLocation || (step.qtrakOutdoorDone ? 'Outdoor control' : room),
+        sampleId: '',
+        details: step.qtrakOutdoorDone ? 'Outdoor control reading' : '',
+        source: room
+      });
+    }
+  });
+
+  const arrival = steps.arrival || {};
+  const debrief = steps.debrief || {};
+  if (testValuePresent(arrival.boulderBlueSampleId) || testValuePresent(arrival.boulderBlueTestLocation) || testValuePresent(arrival.boulderBlueStartTime) || testValuePresent(debrief.boulderBlueEndTime) || shipping.boulderBlueShip) {
+    add({
+      type: 'Boulder Blue (Allergen)',
+      status: shipping.boulderBlueShip ? 'Prepared for shipping' : 'Recorded',
+      location: arrival.boulderBlueTestLocation || insp.boulderBlueTestLocation || insp.postTestLocBoulderBlue,
+      sampleId: arrival.boulderBlueSampleId || insp.boulderBlueSampleId,
+      details: [
+        arrival.boulderBlueStartTime ? `Start ${arrival.boulderBlueStartTime}` : '',
+        debrief.boulderBlueEndTime ? `End ${debrief.boulderBlueEndTime}` : '',
+        debrief.boulderBlueTestDuration ? `Duration ${debrief.boulderBlueTestDuration}` : '',
+        shipping.boulderBlueShip ? 'Shipping checklist complete' : ''
+      ].filter(Boolean).join(' · '),
+      source: arrival.roomName || 'Arrival & Setup'
+    });
+  }
+
+  const radon = steps.radon || {};
+  const radonLocations = [];
+  if (Array.isArray(radon.radonMonitors)) {
+    radon.radonMonitors.forEach(monitor => radonLocations.push({
+      location: monitor.location || monitor.roomName,
+      sampleId: monitor.sampleId || monitor.serialNumber,
+      details: monitor.notes || ''
+    }));
+  }
+  [
+    { location: radon.radonLocation || insp.radonMonitorLocation, sampleId: radon.radonSampleId || insp.radonSampleId, details: 'Monitor 1' },
+    { location: radon.secondMonitorLocation || insp.secondRadonMonitorLocation, sampleId: radon.secondRadonSampleId || insp.secondRadonSampleId, details: 'Monitor 2' }
+  ].forEach(monitor => {
+    if (testValuePresent(monitor.location) && !/^n\/?a$/i.test(String(monitor.location).trim())) radonLocations.push(monitor);
+  });
+  if (radonLocations.length) {
+    radonLocations.forEach(monitor => add({
+      type: 'Radon',
+      status: confirmed.testRadon ? 'Conducted' : 'Monitor placed',
+      location: monitor.location,
+      sampleId: monitor.sampleId,
+      details: monitor.details,
+      source: radon.roomName || 'Radon Monitor Setup'
+    }));
+  } else if (radon._visited || testValuePresent(radon.radonLocation)) {
+    add({
+      type: 'Radon',
+      status: 'Not conducted',
+      location: radon.radonLocation,
+      sampleId: '',
+      details: radon.notes,
+      source: radon.roomName || 'Radon Monitor Setup'
+    });
+  }
+
+  let moldRecordCount = 0;
+  Object.entries(steps).forEach(([stepId, step]) => {
+    if (!step || typeof step !== 'object') return;
+    const room = step.roomName || step._roomName || stepId;
+    ['moldSamples', 'moldSwabs'].forEach(key => {
+      if (!Array.isArray(step[key])) return;
+      step[key].forEach((sample, index) => {
+        if (!sample || typeof sample !== 'object') return;
+        moldRecordCount += 1;
+        add({
+          type: 'Mold Swab',
+          status: sample.status || 'Collected',
+          location: sample.location || sample.roomName || room,
+          sampleId: sample.sampleId || sample.id,
+          details: sample.notes || `Sample ${index + 1}`,
+          source: room
+        });
+      });
+    });
+    Object.entries(step).forEach(([key, value]) => {
+      const match = key.match(/^mold(?:Swab|Sample)(?:Location)?(\d*)$/i) || key.match(/^moldSwabLocation(\d*)$/i);
+      if (!match || !testValuePresent(value) || typeof value === 'object') return;
+      const index = match[1] || '1';
+      moldRecordCount += 1;
+      add({
+        type: 'Mold Swab',
+        status: 'Collected',
+        location: value || room,
+        sampleId: step[`moldSwabSampleId${index}`] || step[`moldSampleId${index}`] || step.moldSwabSampleId || step.moldSampleId,
+        details: `Room: ${room}`,
+        source: room
+      });
+    });
+  });
+  const confirmedMoldCount = Number(insp.moldSwabSampleCount || steps['final-checks']?.moldSwabSampleCount || 0);
+  if (confirmedMoldCount > moldRecordCount || (confirmed.testMoldSwabs && moldRecordCount === 0)) {
+    add({
+      type: 'Mold Swabs',
+      status: 'Confirmed',
+      location: insp.postTestLocMold,
+      sampleId: insp.moldSwabSampleId,
+      details: confirmedMoldCount ? `${confirmedMoldCount} sample${confirmedMoldCount === 1 ? '' : 's'}` : '',
+      source: 'Before Leaving confirmation'
+    });
+  }
+
+  const typeMatchers = {
+    testBreeze: /Breeze/i,
+    testBoulderBlue: /Boulder Blue/i,
+    testWaterPanel: /Water Panel/i,
+    testPFAS: /^PFAS$/i,
+    testMicroplastics: /Microplastics/i,
+    testRadon: /^Radon$/i,
+    testATP: /^ATP$/i,
+    testMoldSwabs: /Mold Swab/i
+  };
+  TEST_DEFS.forEach(test => {
+    if (!confirmed[test.key] || records.some(record => typeMatchers[test.key]?.test(record.type))) return;
+    add({
+      type: test.label,
+      status: 'Confirmed complete',
+      location: insp[`postTestLoc${test.label.replace(/\W/g, '')}`] || insp.reviewedData?.[`${test.key}_location`],
+      sampleId: insp[test.sampleKey],
+      details: '',
+      source: 'Before Leaving confirmation'
+    });
+  });
+
+  return records;
+}
+
+function renderAutoTestSummary(insp) {
+  const wrap = qs('#tests-auto-summary');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const records = collectTestSampleRecords(insp);
+  const completed = records.filter(record => !/not conducted|not requested|not recorded/i.test(record.status)).length;
+
+  wrap.appendChild(el('div', { class: 'tests-summary-heading' },
+    el('div', {},
+      el('h3', {}, 'Inspection Test & Sample Summary'),
+      el('p', {}, 'Auto-populated from every inspector app step. No manual re-entry required.')
+    ),
+    el('div', { class: 'tests-summary-counts' },
+      el('strong', {}, `${records.length}`),
+      el('span', {}, `${completed} active / completed`)
+    )
+  ));
+
+  if (!records.length) {
+    wrap.appendChild(el('p', { class: 'empty-state' }, 'No tests or samples have been recorded in the inspector app yet.'));
+    return;
+  }
+
+  const tableWrap = el('div', { class: 'tests-summary-table-wrap' });
+  const table = el('table', { class: 'tests-summary-table' });
+  table.appendChild(el('thead', {}, el('tr', {},
+    el('th', {}, 'Test / Sample'),
+    el('th', {}, 'Status'),
+    el('th', {}, 'Location'),
+    el('th', {}, 'Sample / Kit ID'),
+    el('th', {}, 'Details'),
+    el('th', {}, 'App Source')
+  )));
+  const tbody = el('tbody');
+  records.forEach(record => {
+    const statusClass = /not conducted|not requested|not recorded/i.test(record.status)
+      ? 'not-done'
+      : /requested|set up|monitor placed/i.test(record.status) ? 'in-progress' : 'done';
+    tbody.appendChild(el('tr', {},
+      el('td', { class: 'tests-summary-type' }, record.type),
+      el('td', {}, el('span', { class: `tests-summary-status ${statusClass}` }, record.status)),
+      el('td', {}, record.location),
+      el('td', { class: 'tests-summary-id' }, record.sampleId),
+      el('td', {}, record.details),
+      el('td', { class: 'tests-summary-source' }, record.source)
+    ));
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  wrap.appendChild(tableWrap);
+}
+
 function renderFieldTestRecords(insp) {
   const wrap = qs('#field-test-records');
   if (!wrap) return;
@@ -3261,6 +3540,7 @@ function renderFieldTestRecords(insp) {
 }
 
 function renderTestsSection(insp, locked) {
+  renderAutoTestSummary(insp);
   renderFieldTestRecords(insp);
   const tbody = qs('#tests-tbody');
   if (!tbody) return;
@@ -4638,6 +4918,157 @@ async function adminUnlock() {
 }
 
 /* ============================================================
+   REPORT SEARCH
+   ============================================================ */
+
+let _reportSearchMatches = [];
+let _reportSearchIndex = -1;
+let _reportSearchTimer = null;
+
+function clearReportSearchHighlights() {
+  qsa('mark.report-search-match').forEach(mark => {
+    const parent = mark.parentNode;
+    mark.replaceWith(document.createTextNode(mark.textContent || ''));
+    parent?.normalize();
+  });
+  qsa('.report-search-field-match').forEach(field => field.classList.remove('report-search-field-match', 'active'));
+  _reportSearchMatches = [];
+  _reportSearchIndex = -1;
+}
+
+function expandReportSearchMatch(match) {
+  match.closest('.card')?.classList.remove('collapsed');
+  let details = match.closest('details');
+  while (details) {
+    details.open = true;
+    details = details.parentElement?.closest('details');
+  }
+  const roomSection = match.closest('.room-section');
+  if (roomSection) {
+    const body = roomSection.querySelector('.room-body');
+    if (body) body.style.display = '';
+    const icon = roomSection.querySelector('.collapse-icon');
+    if (icon) icon.style.transform = '';
+  }
+  const kitchenPanel = match.closest('.kitchen-photo-panel');
+  if (kitchenPanel?.hidden) {
+    const kitchenBody = kitchenPanel.closest('#kitchen-inspection-body');
+    const panels = Array.from(kitchenBody?.querySelectorAll('.kitchen-photo-panel') || []);
+    const index = panels.indexOf(kitchenPanel);
+    panels.forEach((panel, panelIndex) => panel.hidden = panelIndex !== index);
+    Array.from(kitchenBody?.querySelectorAll('.kitchen-photo-tab') || []).forEach((button, buttonIndex) => {
+      const active = buttonIndex === index;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+  }
+}
+
+function activateReportSearchMatch(index) {
+  if (!_reportSearchMatches.length) return;
+  _reportSearchIndex = (index + _reportSearchMatches.length) % _reportSearchMatches.length;
+  _reportSearchMatches.forEach(match => match.classList.remove('active'));
+  const match = _reportSearchMatches[_reportSearchIndex];
+  expandReportSearchMatch(match);
+  match.classList.add('active');
+  match.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const count = qs('#report-search-count');
+  if (count) count.textContent = `${_reportSearchIndex + 1} / ${_reportSearchMatches.length}`;
+}
+
+function applyReportSearch() {
+  clearReportSearchHighlights();
+  const input = qs('#report-search-input');
+  const count = qs('#report-search-count');
+  const root = qs('.page-wrap');
+  const term = String(input?.value || '').trim();
+  if (!root || term.length < 2) {
+    if (count) count.textContent = term ? 'Type 2+ characters' : '';
+    return;
+  }
+
+  const needle = term.toLocaleLowerCase();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent || !node.nodeValue?.trim()) return NodeFilter.FILTER_REJECT;
+      if (parent.closest('script, style, noscript, mark, .portal-feedback-overlay')) return NodeFilter.FILTER_REJECT;
+      return node.nodeValue.toLocaleLowerCase().includes(needle)
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_REJECT;
+    }
+  });
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+  textNodes.forEach(node => {
+    const text = node.nodeValue || '';
+    const lower = text.toLocaleLowerCase();
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    let found = lower.indexOf(needle, cursor);
+    while (found !== -1) {
+      if (found > cursor) fragment.appendChild(document.createTextNode(text.slice(cursor, found)));
+      const mark = el('mark', { class: 'report-search-match' }, text.slice(found, found + term.length));
+      fragment.appendChild(mark);
+      _reportSearchMatches.push(mark);
+      cursor = found + term.length;
+      found = lower.indexOf(needle, cursor);
+    }
+    if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)));
+    node.replaceWith(fragment);
+  });
+
+  qsa('input, textarea, select', root).forEach(field => {
+    const value = field.tagName === 'SELECT'
+      ? field.options[field.selectedIndex]?.text || field.value
+      : field.value;
+    if (!String(value || '').toLocaleLowerCase().includes(needle)) return;
+    field.classList.add('report-search-field-match');
+    _reportSearchMatches.push(field);
+  });
+
+  if (!_reportSearchMatches.length) {
+    if (count) count.textContent = '0 results';
+    return;
+  }
+  activateReportSearchMatch(0);
+}
+
+function initReportSearch() {
+  const input = qs('#report-search-input');
+  const previous = qs('#report-search-prev');
+  const next = qs('#report-search-next');
+  const clear = qs('#report-search-clear');
+  if (!input || input.dataset.ready === 'true') return;
+  input.dataset.ready = 'true';
+  input.addEventListener('input', () => {
+    clearTimeout(_reportSearchTimer);
+    _reportSearchTimer = setTimeout(applyReportSearch, 140);
+  });
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      activateReportSearchMatch(_reportSearchIndex + (event.shiftKey ? -1 : 1));
+    } else if (event.key === 'Escape') {
+      input.value = '';
+      clearReportSearchHighlights();
+      const count = qs('#report-search-count');
+      if (count) count.textContent = '';
+    }
+  });
+  previous?.addEventListener('click', () => activateReportSearchMatch(_reportSearchIndex - 1));
+  next?.addEventListener('click', () => activateReportSearchMatch(_reportSearchIndex + 1));
+  clear?.addEventListener('click', () => {
+    input.value = '';
+    clearReportSearchHighlights();
+    const count = qs('#report-search-count');
+    if (count) count.textContent = '';
+    input.focus();
+  });
+}
+
+/* ============================================================
    COLLAPSIBLE CARDS
    ============================================================ */
 
@@ -4965,6 +5396,7 @@ window.portalInit = function(page) {
     loadInspection();
   }
   initCollapsibles();
+  initReportSearch();
   mountPortalVersionBadge();
   mountPortalFeedbackButton();
 };
