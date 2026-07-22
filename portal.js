@@ -4154,7 +4154,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'review-20260722-02',
+    appVersion: 'REVIEW-PORTAL-20260722-03',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
@@ -4300,10 +4300,13 @@ function openPortalFeedback() {
     sendButton.disabled = true;
     sendButton.textContent = 'Sending…';
     sendStatus.textContent = '';
+    const feedbackNote = typedNote
+      ? '[REVIEW PORTAL] ' + typedNote
+      : '[REVIEW PORTAL] Screenshot attached';
     const feedback = {
       feedbackId: feedbackId(),
       submittedAt: new Date().toISOString(),
-      note: typedNote,
+      note: feedbackNote,
       screenshotDataUrl: _feedbackScreenshotDataUrl,
       screenshotName: _feedbackScreenshotName,
       voiceDataUrl: '',
