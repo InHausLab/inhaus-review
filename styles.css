@@ -1427,6 +1427,25 @@ body {
 .portal-feedback-close { padding: 0 4px; border: 0; background: transparent; color: var(--gray-500); cursor: pointer; font-size: 2rem; line-height: 1; }
 .portal-feedback-note { width: 100%; min-height: 118px; margin-top: 6px; resize: vertical; }
 .portal-feedback-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--gray-200); }
+.portal-feedback-dropzone {
+  padding: 18px;
+  border: 2px dashed var(--gray-300);
+  border-radius: 12px;
+  background: var(--gray-50);
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+}
+.portal-feedback-dropzone:hover,
+.portal-feedback-dropzone:focus-visible {
+  border-color: var(--green);
+  outline: none;
+}
+.portal-feedback-dropzone.drag-active {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  transform: scale(1.01);
+}
+.portal-feedback-dropzone.processing { cursor: wait; opacity: .78; }
 .portal-feedback-help { margin: 3px 0 10px; color: var(--gray-500); font-size: .76rem; }
 .portal-feedback-attach, .portal-feedback-send { width: 100%; min-height: 46px; }
 .portal-feedback-media-status, .portal-feedback-send-status { margin: 9px 0; color: var(--gray-600); font-size: .8rem; font-weight: 700; }

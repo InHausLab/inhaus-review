@@ -4264,21 +4264,38 @@ function openPortalFeedback() {
   const screenshotButton = el('button', {
     type: 'button',
     class: 'btn btn-outline portal-feedback-attach'
-  }, '📷 Attach Screenshot');
+  }, '📷 Choose Screenshot');
   const screenshotStatus = el('div', { class: 'portal-feedback-media-status' }, 'No screenshot attached');
   const screenshotPreview = el('div', { class: 'portal-feedback-preview' });
-  screenshotButton.addEventListener('click', () => screenshotInput.click());
-  screenshotInput.addEventListener('change', async () => {
-    const file = screenshotInput.files?.[0];
+  const screenshotSection = el('div', {
+    class: 'portal-feedback-section portal-feedback-dropzone',
+    role: 'button',
+    tabindex: '0',
+    'aria-label': 'Drop a screenshot here or choose one from your device'
+  },
+    el('div', { class: 'field-label' }, 'Screenshot'),
+    el('p', { class: 'portal-feedback-help' }, 'Drag and drop a screenshot here, or choose one from your device.'),
+    screenshotButton,
+    screenshotInput,
+    screenshotStatus,
+    screenshotPreview
+  );
+
+  async function prepareScreenshot(file) {
     if (!file) return;
+    if (!String(file.type || '').startsWith('image/')) {
+      screenshotStatus.textContent = 'Please drop an image file.';
+      return;
+    }
     screenshotButton.disabled = true;
+    screenshotSection.classList.add('processing');
     screenshotStatus.textContent = 'Preparing screenshot…';
     try {
       _feedbackScreenshotDataUrl = await compressFeedbackImage(file);
       _feedbackScreenshotName = file.name || 'review-portal-screenshot.jpg';
       const previewImage = el('img', { src: _feedbackScreenshotDataUrl, alt: 'Attached screenshot preview' });
       screenshotPreview.replaceChildren(previewImage);
-      screenshotStatus.textContent = '✓ Screenshot attached';
+      screenshotStatus.textContent = '✓ Screenshot attached: ' + _feedbackScreenshotName;
     } catch (error) {
       _feedbackScreenshotDataUrl = '';
       _feedbackScreenshotName = '';
@@ -4286,7 +4303,42 @@ function openPortalFeedback() {
       screenshotStatus.textContent = error.message || 'Could not attach that screenshot.';
     } finally {
       screenshotButton.disabled = false;
+      screenshotSection.classList.remove('processing');
     }
+  }
+
+  screenshotButton.addEventListener('click', () => screenshotInput.click());
+  screenshotInput.addEventListener('change', () => prepareScreenshot(screenshotInput.files?.[0]));
+  screenshotSection.addEventListener('click', event => {
+    if (event.target === screenshotButton || event.target === screenshotInput) return;
+    screenshotInput.click();
+  });
+  screenshotSection.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      screenshotInput.click();
+    }
+  });
+  ['dragenter', 'dragover'].forEach(type => {
+    screenshotSection.addEventListener(type, event => {
+      event.preventDefault();
+      event.stopPropagation();
+      screenshotSection.classList.add('drag-active');
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    });
+  });
+  ['dragleave', 'dragend'].forEach(type => {
+    screenshotSection.addEventListener(type, event => {
+      event.preventDefault();
+      event.stopPropagation();
+      screenshotSection.classList.remove('drag-active');
+    });
+  });
+  screenshotSection.addEventListener('drop', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    screenshotSection.classList.remove('drag-active');
+    prepareScreenshot(event.dataTransfer?.files?.[0]);
   });
 
   const sendStatus = el('div', { class: 'portal-feedback-send-status', role: 'status', 'aria-live': 'polite' });
@@ -4330,14 +4382,7 @@ function openPortalFeedback() {
     heading,
     noteLabel,
     note,
-    el('div', { class: 'portal-feedback-section' },
-      el('div', { class: 'field-label' }, 'Screenshot'),
-      el('p', { class: 'portal-feedback-help' }, 'Take a screenshot, then choose it from your device.'),
-      screenshotButton,
-      screenshotInput,
-      screenshotStatus,
-      screenshotPreview
-    ),
+    screenshotSection,
     safetyNote,
     sendStatus,
     sendButton
