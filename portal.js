@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V17';
+const REVIEW_PORTAL_VERSION = 'V18';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -2373,6 +2373,9 @@ function renderCompleteInspectionData(insp) {
   const exactDuplicateFindings = sourceFindings.length - displayFindings.length;
   const roomCount = Array.isArray(insp.rooms) ? insp.rooms.length : 0;
   const savedSteps = Object.keys(insp.stepData || {}).length;
+  const roomValueCount = completeDataRows(insp.rooms).length;
+  const stepValueCount = completeDataRows(insp.stepData).length;
+  const uniquePhotoCount = new Set((Array.isArray(insp.photos) ? insp.photos : []).map(photoKey)).size;
   const groups = [
     ['Property & Assessment Conditions', property, true],
     ['Equipment & Pre-Assessment', insp.preAssessmentChecklist],
@@ -2381,7 +2384,7 @@ function renderCompleteInspectionData(insp) {
     ['Exterior Assessment', insp.exteriorAssessment],
     ['Radon Setup', insp.radonSetup],
     ['Rooms & Observations', insp.rooms, false, {
-      countLabel: `${roomCount} room record${roomCount === 1 ? '' : 's'} · ${completeDataRows(insp.rooms).length} raw fields`,
+      countLabel: `${roomCount} room record${roomCount === 1 ? '' : 's'} · ${roomValueCount} captured values`,
       note: 'These are complete room records. Much of the same source data also appears in Step-by-Step below; that is repeated presentation, not additional rooms.'
     }],
     ['Utility, HVAC & Water Systems', insp.utilityRoom],
@@ -2389,7 +2392,7 @@ function renderCompleteInspectionData(insp) {
     ['Customer Debrief', insp.customerDebrief],
     ['Post Assessment', insp.postAssessment],
     ['Step-by-Step Captured Data', insp.stepData, false, {
-      countLabel: `${savedSteps} saved steps · ${completeDataRows(insp.stepData).length} raw fields`,
+      countLabel: `${savedSteps} saved steps · ${stepValueCount} captured values`,
       note: 'This is the diagnostic field-by-field checkpoint view. One saved step can contain many fields, and room steps repeat data summarized elsewhere on this page.'
     }],
     ['Dynamic Room Definitions', insp.dynamicRooms],
@@ -2417,8 +2420,8 @@ function renderCompleteInspectionData(insp) {
   }
 
   body.prepend(el('div', { class: 'complete-data-coverage' },
-    el('strong', {}, 'Cloud field coverage verified'),
-    el('span', {}, `${savedSteps} saved steps · ${roomCount} rooms · ${sourceFindings.length} source findings (${displayFindings.length} unique) · ${renderedGroups} data groups`)
+    el('strong', {}, 'Complete source checkpoint loaded'),
+    el('span', {}, `${savedSteps} saved steps / ${stepValueCount} values · ${roomCount} rooms / ${roomValueCount} values · ${sourceFindings.length} findings (${displayFindings.length} unique) · ${uniquePhotoCount} photos · ${renderedGroups} data groups`)
   ));
 }
 
@@ -5455,7 +5458,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V17',
+    appVersion: 'REVIEW-PORTAL-V18',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine

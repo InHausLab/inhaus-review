@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>InHaus Lab — Inspection Review</title>
-  <link rel="stylesheet" href="styles.css?v=20260723-04">
+  <link rel="stylesheet" href="styles.css?v=20260723-05">
 </head>
 <body>
 
@@ -274,12 +274,18 @@
       </div>
       <div class="card-body" style="padding:0">
         <div id="tests-auto-summary" class="tests-auto-summary"></div>
+        <div class="captured-test-records">
+          <div class="captured-test-records-heading">
+            <h3>Captured App Test Records</h3>
+            <p>Exact field values saved by the inspector. These records remain visible without opening the optional editor.</p>
+          </div>
+          <div id="field-test-records" class="field-test-records"></div>
+        </div>
         <details class="tests-review-details">
           <summary>
             <span>Reviewer confirmation and report-edit fields</span>
             <small>Optional edits — the app summary above is the source record</small>
           </summary>
-          <div id="field-test-records" class="field-test-records"></div>
           <div style="overflow-x:auto">
             <table class="tests-table">
               <thead>
@@ -469,7 +475,7 @@
 <div id="photo-modal" class="photo-modal hidden"></div>
 <div class="toast-container" id="toast-container"></div>
 
-<script src="portal.js?v=20260723-04"></script>
+<script src="portal.js?v=20260723-05"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
     portalInit('review');
