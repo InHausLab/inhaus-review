@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V19';
+const REVIEW_PORTAL_VERSION = 'V20';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -521,15 +521,16 @@ function syncPhotoCaptionViews(photoId, caption) {
   });
 }
 
-async function saveReviewedPhotoCaption(photoId, value) {
+async function saveReviewedPhotoCaption(photoId, value, options = {}) {
   if (!photoId || !_inspection) return false;
+  const notify = options.notify !== false;
   const caption = String(value || '').trim();
   (_inspection.photos || []).forEach(photo => {
     if (photo.photoId === photoId) photo.caption = caption;
   });
   syncPhotoCaptionViews(photoId, caption);
   const saved = await saveField(`photo_${photoId}`, 'caption', caption);
-  if (saved) showToast('Photo caption saved everywhere in the review');
+  if (saved && notify) showToast('Photo caption saved everywhere in the review');
   return saved;
 }
 
@@ -566,7 +567,7 @@ async function deleteReviewedPhoto(photoId) {
   _inspection.photos = (_inspection.photos || []).filter(photo => photo.photoId !== photoId);
   _inspection.photoCount = _inspection.photos.length;
   _selectedPhotoIds.delete(photoId);
-  closePhotoModal();
+  await closePhotoModal({ skipSave: true });
   renderRoomsSection(_inspection, false);
   renderPhotosSection(_inspection, false);
   checkGate();
@@ -4669,7 +4670,7 @@ function buildPhotoAnnotationToolbar() {
     })),
     photoAnnotationButton('Undo', 'Undo last annotation', { 'data-action': 'undo' }),
     photoAnnotationButton('Clear', 'Clear annotations', { 'data-action': 'clear' }),
-    photoAnnotationButton('Save', 'Save annotations', { class: 'photo-annotation-btn save', 'data-action': 'save' }),
+    photoAnnotationButton('Save now', 'Save annotations now', { class: 'photo-annotation-btn save', 'data-action': 'save' }),
     el('span', { class: 'photo-annotation-status', 'data-annotation-status': '' }, '')
   );
 
@@ -4724,7 +4725,7 @@ function buildPhotoAnnotationToolbar() {
     }
 
     if (action === 'save') {
-      saveCurrentPhotoAnnotations();
+      await saveCurrentPhotoAnnotations();
     }
   });
 
@@ -4755,7 +4756,7 @@ function updatePhotoAnnotationToolbar() {
     status.textContent = !photoId
       ? 'No photo ID'
       : dirty
-        ? 'Unsaved changes'
+        ? 'Will save automatically on close'
         : `${annotations.length} saved`;
   }
 }
@@ -4906,20 +4907,63 @@ function bindPhotoAnnotationCanvas(canvas) {
   });
 }
 
-function saveCurrentPhotoAnnotations() {
-  const state = _photoModalState;
+async function saveCurrentPhotoAnnotations(options = {}) {
+  const state = options.state || _photoModalState;
+  const notify = options.notify !== false;
   if (!state?.photoId) {
-    showToast('Cannot save annotation without a photo ID', 'error');
-    return;
+    if (notify) showToast('Cannot save annotation without a photo ID', 'error');
+    return false;
   }
   setPhotoAnnotations(state.photoId, state.annotations);
-  saveField('photoAnnotations', state.photoId, _inspection.reviewedData.photoAnnotations[state.photoId]);
-  state.dirty = false;
-  updatePhotoAnnotationToolbar();
-  showToast('Photo annotations saved', 'success');
+  const saved = await saveField(
+    'photoAnnotations',
+    state.photoId,
+    _inspection.reviewedData.photoAnnotations[state.photoId]
+  );
+  if (saved) state.dirty = false;
+  if (state === _photoModalState) updatePhotoAnnotationToolbar();
+  if (saved && notify) showToast('Photo annotations saved', 'success');
+  return saved;
+}
+
+async function savePhotoModalPendingEdits(state, options = {}) {
+  if (!state?.photoId) return { hadChanges: false, saved: true };
+  const notify = options.notify !== false;
+  const caption = String(state.captionInput?.value ?? state.caption ?? '').trim();
+  const captionChanged = caption !== String(state.caption || '').trim();
+  const annotationsChanged = state.dirty === true;
+  const hadChanges = captionChanged || annotationsChanged;
+  if (!hadChanges) return { hadChanges: false, saved: true };
+
+  let captionSaved = true;
+  let annotationsSaved = true;
+  if (captionChanged) {
+    captionSaved = await saveReviewedPhotoCaption(state.photoId, caption, { notify: false });
+    if (captionSaved) state.caption = caption;
+  }
+  if (annotationsChanged) {
+    annotationsSaved = await saveCurrentPhotoAnnotations({ state, notify: false });
+  }
+
+  const saved = captionSaved && annotationsSaved;
+  if (notify) {
+    showToast(
+      saved
+        ? 'Photo edits saved automatically'
+        : 'Photo edits kept in local recovery; cloud save needs a retry',
+      saved ? 'success' : 'info'
+    );
+  }
+  return { hadChanges, saved };
 }
 
 function openPhotoModal(url, caption, photoId = '') {
+  const currentPhoto = (_inspection?.photos || []).find(item => item.photoId === photoId);
+  if (currentPhoto) {
+    url = currentPhoto.driveUrl || url;
+    caption = currentPhoto.caption ?? caption;
+  }
+
   let modal = qs('#photo-modal');
   if (!modal) {
     modal = el('div', { class: 'photo-modal hidden', id: 'photo-modal' });
@@ -4935,12 +4979,15 @@ function openPhotoModal(url, caption, photoId = '') {
   let closeBtn = modal.querySelector('.photo-modal-close');
   if (!closeBtn) {
     closeBtn = el('button', { class: 'photo-modal-close', type: 'button' }, '✕');
-    closeBtn.addEventListener('click', closePhotoModal);
+    closeBtn.addEventListener('click', () => { void closePhotoModal(); });
     modal.appendChild(closeBtn);
   }
+  closeBtn.disabled = false;
 
   if (!modal.dataset.clickBound) {
-    modal.addEventListener('click', e => { if (e.target === modal) closePhotoModal(); });
+    modal.addEventListener('click', e => {
+      if (e.target === modal) void closePhotoModal();
+    });
     modal.dataset.clickBound = 'true';
   }
 
@@ -4953,7 +5000,7 @@ function openPhotoModal(url, caption, photoId = '') {
   inner.appendChild(toolbar);
 
   const captionEditor = el('div', { class: 'photo-modal-caption-editor' });
-  const captionLabel = el('label', { class: 'photo-modal-caption-label' }, 'Review caption — edits update everywhere');
+  const captionLabel = el('label', { class: 'photo-modal-caption-label' }, 'Review caption — edits update everywhere and save on close');
   const captionInput = el('textarea', {
     class: 'photo-modal-caption-input',
     rows: '2',
@@ -4961,7 +5008,7 @@ function openPhotoModal(url, caption, photoId = '') {
     placeholder: 'Add or correct the caption shown in the room and photo summary…'
   });
   captionInput.value = caption || '';
-  const captionSave = el('button', { class: 'photo-modal-caption-save', type: 'button' }, 'Save Caption');
+  const captionSave = el('button', { class: 'photo-modal-caption-save', type: 'button' }, 'Save now');
   const photoDelete = el('button', { class: 'photo-modal-delete', type: 'button' }, 'Delete Photo');
   const captionStatus = el('span', { class: 'photo-modal-caption-status' }, '');
   captionSave.addEventListener('click', async () => {
@@ -4969,7 +5016,7 @@ function openPhotoModal(url, caption, photoId = '') {
     captionSave.textContent = 'Saving…';
     const saved = await saveReviewedPhotoCaption(photoId, captionInput.value);
     captionSave.disabled = false;
-    captionSave.textContent = 'Save Caption';
+    captionSave.textContent = 'Save now';
     captionStatus.textContent = saved ? 'Saved everywhere' : 'Save failed';
     captionStatus.className = `photo-modal-caption-status${saved ? ' saved' : ' failed'}`;
     if (saved && _photoModalState) _photoModalState.caption = captionInput.value.trim();
@@ -4998,7 +5045,7 @@ function openPhotoModal(url, caption, photoId = '') {
   inner.appendChild(canvasWrap);
 
   const annotations = getPhotoAnnotations(photoId);
-  const photo = (_inspection?.photos || []).find(item => item.photoId === photoId);
+  const photo = currentPhoto;
   const image = new Image();
   const state = {
     photoId,
@@ -5016,7 +5063,12 @@ function openPhotoModal(url, caption, photoId = '') {
     canvas,
     ctx,
     image,
-    imageLoaded: false
+    imageLoaded: false,
+    captionInput,
+    captionStatus,
+    captionSave,
+    closeBtn,
+    closing: false
   };
   _photoModalState = state;
   updatePhotoAnnotationToolbar();
@@ -5044,15 +5096,38 @@ function openPhotoModal(url, caption, photoId = '') {
   document.body.style.overflow = 'hidden';
 }
 
-function closePhotoModal() {
+async function closePhotoModal(options = {}) {
   const modal = qs('#photo-modal');
+  const state = _photoModalState;
+  const skipSave = options && options.skipSave === true;
+  if (state?.closing) return state.closePromise;
+
+  if (state && !skipSave) {
+    state.closing = true;
+    const hasPendingEdits = state.dirty === true ||
+      String(state.captionInput?.value ?? '').trim() !== String(state.caption || '').trim();
+    if (hasPendingEdits) {
+      state.closeBtn.disabled = true;
+      state.captionSave.disabled = true;
+      state.toolbar.querySelectorAll('button').forEach(button => { button.disabled = true; });
+      state.captionStatus.textContent = 'Saving before close…';
+      state.captionStatus.className = 'photo-modal-caption-status';
+      state.closePromise = savePhotoModalPendingEdits(state);
+      await state.closePromise;
+    }
+  }
+
   if (modal) modal.classList.add('hidden');
-  _photoModalState = null;
+  if (_photoModalState === state) _photoModalState = null;
   document.body.style.overflow = '';
+  return true;
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closePhotoModal();
+  if (e.key === 'Escape' && _photoModalState) {
+    e.preventDefault();
+    void closePhotoModal();
+  }
 });
 
 /* ============================================================
@@ -5575,7 +5650,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V19',
+    appVersion: 'REVIEW-PORTAL-V20',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
