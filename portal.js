@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V18';
+const REVIEW_PORTAL_VERSION = 'V19';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -1121,7 +1121,14 @@ function buildSmartPrefillSuggestions(insp) {
   for (const [stepId, step] of Object.entries(stepData)) {
     if (SKIP_STEPS.has(stepId)) continue;
     const roomName = step.roomName || stepId;
-    const note     = (step.notes || step.aiSummary || '').trim();
+    const reviewedStep = insp.reviewedData?.[stepId] || {};
+    const inspectorNotes = Object.prototype.hasOwnProperty.call(reviewedStep, 'inspectorNotes')
+      ? reviewedStep.inspectorNotes
+      : step.notes;
+    const aiSummary = Object.prototype.hasOwnProperty.call(reviewedStep, 'aiSummary')
+      ? reviewedStep.aiSummary
+      : step.aiSummary;
+    const note     = String(inspectorNotes || aiSummary || '').trim();
     const qtrak    = (step.qtrakLocation || '').trim();
     const breeze   = (step.breezeLocation || '').trim();
     if (!note && !qtrak && !breeze) continue;
@@ -2701,22 +2708,83 @@ function buildStatusPill(label, value, warn = false) {
   );
 }
 
-function buildReadOnlyBlock(label, value, emptyText) {
-  const hasValue = value !== undefined && value !== null && String(value).trim() !== '';
-  return el('div', { class: `room-readonly-block${hasValue ? '' : ' empty'}` },
-    el('div', { class: 'field-label' }, label),
-    el('div', { class: 'room-readonly-text' }, hasValue ? String(value) : emptyText)
-  );
-}
-
-function getRoomInspectorNotes(record) {
+function getRoomSourceInspectorNotes(record) {
   const step = record?.step || {};
   const room = record?.room || {};
   return String(step.notes || step.arrivalNotes || room.observations || '').trim();
 }
 
-function roomHasReviewableNotes(record) {
-  return getRoomInspectorNotes(record) !== '';
+function getRoomInspectorNotes(record, insp) {
+  return String(getReviewedField(
+    insp || _inspection || {},
+    record?.stepId,
+    'inspectorNotes',
+    getRoomSourceInspectorNotes(record)
+  ) || '').trim();
+}
+
+function getRoomSourceAISummary(record) {
+  return String(record?.step?.aiSummary || record?.room?.aiSummary || '').trim();
+}
+
+function getRoomAISummary(record, insp) {
+  return String(getReviewedField(
+    insp || _inspection || {},
+    record?.stepId,
+    'aiSummary',
+    getRoomSourceAISummary(record)
+  ) || '').trim();
+}
+
+function roomHasReviewableNotes(record, insp) {
+  return getRoomInspectorNotes(record, insp) !== '';
+}
+
+function buildEditableRoomTextBlock({
+  label,
+  value,
+  originalValue,
+  emptyText,
+  stepId,
+  fieldKey,
+  locked,
+  rows = 3,
+  isGated = false,
+  onInput
+}) {
+  const hasPortalEdit = _inspection?.reviewedData?.[stepId] &&
+    Object.prototype.hasOwnProperty.call(_inspection.reviewedData[stepId], fieldKey);
+  const wrap = el('div', { class: 'room-editable-block', 'data-room-field': fieldKey });
+  wrap.appendChild(el('label', {
+    class: 'field-label',
+    for: `room-${fieldKey}-${stepId}`
+  }, `${label} — editable`));
+  const textarea = el('textarea', {
+    id: `room-${fieldKey}-${stepId}`,
+    class: 'field-textarea room-editable-textarea',
+    rows: String(rows),
+    placeholder: emptyText,
+    ...(locked ? { readonly: '' } : {})
+  });
+  textarea.value = value || '';
+  wrap.appendChild(textarea);
+  wrap.appendChild(el('div', { class: 'room-editable-note' },
+    hasPortalEdit
+      ? 'Portal edit saved separately. Original inspector source remains preserved.'
+      : 'Edits save to the Review Portal without changing the preserved inspector source.'
+  ));
+  if (!locked) {
+    attachReviewedFieldSave(textarea, stepId, fieldKey, isGated);
+    if (onInput) textarea.addEventListener('input', () => onInput(textarea.value, wrap));
+  }
+  if (hasPortalEdit && String(originalValue || '').trim() &&
+      String(originalValue || '').trim() !== String(value || '').trim()) {
+    const original = el('details', { class: 'room-original-text' });
+    original.appendChild(el('summary', {}, `Original ${label.toLowerCase()}`));
+    original.appendChild(el('div', { class: 'room-readonly-text' }, String(originalValue)));
+    wrap.appendChild(original);
+  }
+  return wrap;
 }
 
 function buildRoomAliasMap(roomRecords) {
@@ -2774,16 +2842,37 @@ function aiSummaryLooksContradictory(summary, roomPhotos) {
   return /(?:not completed|not performed|not tested|not been tested|not yet been completed|was not completed|was not performed|was not tested|has not been completed|should be scheduled|follow-up visit)/i.test(summary);
 }
 
-function buildAISummaryBlock(summary, roomPhotos) {
-  const block = buildReadOnlyBlock('AI Summary', summary, 'No AI summary available.');
-  if (aiSummaryLooksContradictory(summary, roomPhotos)) {
+function buildEditableAISummaryBlock(summary, originalSummary, roomPhotos, stepId, locked) {
+  const updateWarning = (value, block) => {
+    let warning = block.querySelector('.ai-summary-warning');
+    const show = aiSummaryLooksContradictory(value, roomPhotos);
+    if (!show && warning) {
+      warning.remove();
+      return;
+    }
+    if (!show || warning) return;
     // Never replace saved inspector data with a portal-generated warning.
     // A room can legitimately have documentation photos even when a specific
     // test (such as Breeze) was not performed. Keep the exact AI summary visible
     // and add the review note only as secondary context.
-    block.appendChild(el('div', { class: 'room-readonly-text ai-summary-warning' },
+    warning = el('div', { class: 'room-readonly-text ai-summary-warning' },
       'Review note: compare this summary with the source status fields and room photos.'
-    ));
+    );
+    block.appendChild(warning);
+  };
+  const block = buildEditableRoomTextBlock({
+    label: 'AI Summary',
+    value: summary,
+    originalValue: originalSummary,
+    emptyText: 'Add or edit the room summary used for report building...',
+    stepId,
+    fieldKey: 'aiSummary',
+    locked,
+    rows: 4,
+    onInput: updateWarning
+  });
+  if (aiSummaryLooksContradictory(summary, roomPhotos)) {
+    updateWarning(summary, block);
   }
   return block;
 }
@@ -2869,8 +2958,9 @@ function renderRoomsSection(insp, locked) {
 
 function buildRoomCard(record, insp, locked, aliasesByStepId) {
   const { stepId, step = {}, room = {} } = record;
-  const hasNotes   = roomHasReviewableNotes(record);
-  const reviewed   = hasNotes && step.voiceReviewed === true;
+  const hasNotes   = roomHasReviewableNotes(record, insp);
+  const voiceReviewedValue = getReviewedField(insp, stepId, 'voiceReviewed', step.voiceReviewed === true);
+  const reviewed   = hasNotes && voiceReviewedValue === true;
   const roomName   = room.roomName || step.roomName || stepId;
   const level      = room.level || step.level || '';
   const type       = room.type || step.type || '';
@@ -2879,8 +2969,10 @@ function buildRoomCard(record, insp, locked, aliasesByStepId) {
   const breezeDone = room.breezeDone || step.breezeDone || '';
   const qtrak      = step.qtrakLocation || '';
   const breeze     = step.breezeLocation || '';
-  const notes      = getRoomInspectorNotes(record);
-  const aiSummary  = step.aiSummary || '';
+  const originalNotes = getRoomSourceInspectorNotes(record);
+  const notes      = getRoomInspectorNotes(record, insp);
+  const originalAISummary = getRoomSourceAISummary(record);
+  const aiSummary  = getRoomAISummary(record, insp);
   const hasConcern = isAffirmative(flirConcerns);
   const roomPhotos = photosForRoomRecord(insp.photos || [], record, aliasesByStepId);
   const tannerNotesKey = `room_${stepId}_tannerNotes`;
@@ -2940,9 +3032,10 @@ function buildRoomCard(record, insp, locked, aliasesByStepId) {
   }
 
   const body = el('div', { class: 'room-body' });
-  if (hasNotes) {
-    body.appendChild(el('div', { class: 'voice-review-row' }, voiceLabel));
-  }
+  const voiceReviewRow = el('div', {
+    class: `voice-review-row${hasNotes ? '' : ' hidden'}`
+  }, voiceLabel);
+  body.appendChild(voiceReviewRow);
 
   const statusRow = el('div', { class: 'room-status-row' },
     buildStatusPill('FLIR done', flirDone),
@@ -2951,8 +3044,28 @@ function buildRoomCard(record, insp, locked, aliasesByStepId) {
   );
   body.appendChild(statusRow);
 
-  body.appendChild(buildReadOnlyBlock('Inspector Notes', notes, 'No inspector notes recorded.'));
-  body.appendChild(buildAISummaryBlock(aiSummary, roomPhotos));
+  body.appendChild(buildEditableRoomTextBlock({
+    label: 'Inspector Notes',
+    value: notes,
+    originalValue: originalNotes,
+    emptyText: 'Add or edit the inspector notes for this room...',
+    stepId,
+    fieldKey: 'inspectorNotes',
+    locked,
+    rows: 3,
+    isGated: true,
+    onInput: value => {
+      const nowHasNotes = String(value || '').trim() !== '';
+      voiceReviewRow.classList.toggle('hidden', !nowHasNotes);
+      const chip = header.querySelector('.voice-chip');
+      if (chip) {
+        chip.className = `voice-chip ${!nowHasNotes ? 'no-notes' : voiceCheck.checked ? 'reviewed' : 'unreviewed'}`;
+        chip.textContent = !nowHasNotes ? 'No Notes' : voiceCheck.checked ? '✓ Notes Reviewed' : '⚠ Review Notes';
+      }
+      updatePhotoSummary(insp.photos || []);
+    }
+  }));
+  body.appendChild(buildEditableAISummaryBlock(aiSummary, originalAISummary, roomPhotos, stepId, locked));
   body.appendChild(buildRoomPhotoStrip(roomPhotos));
 
   const tannerWrap = el('div', { class: 'room-tanner-notes' });
@@ -4465,9 +4578,11 @@ function updatePhotoSummary(photos) {
 
   if (elRev) {
     const roomRecords = _inspection ? buildReviewRoomRecords(_inspection) : [];
-    const roomsWithNotes = roomRecords.filter(roomHasReviewableNotes);
+    const roomsWithNotes = roomRecords.filter(record => roomHasReviewableNotes(record, _inspection));
     const rooms = roomsWithNotes.length;
-    const reviewedRooms = roomsWithNotes.filter(record => record.step?.voiceReviewed === true).length;
+    const reviewedRooms = roomsWithNotes.filter(record =>
+      getReviewedField(_inspection, record.stepId, 'voiceReviewed', record.step?.voiceReviewed === true) === true
+    ).length;
     elRev.textContent = reviewedRooms;
     if (elRooms) elRooms.textContent = rooms;
   }
@@ -4959,8 +5074,10 @@ function evaluateGate(insp) {
 
   // 1. Only rooms that actually contain inspector notes require review.
   // Rooms without notes are neutral and must not block submission.
-  const roomsWithNotes = roomRecords.filter(roomHasReviewableNotes);
-  const notesReviewed = roomsWithNotes.every(record => record.step?.voiceReviewed === true);
+  const roomsWithNotes = roomRecords.filter(record => roomHasReviewableNotes(record, insp));
+  const notesReviewed = roomsWithNotes.every(record =>
+    getReviewedField(insp, record.stepId, 'voiceReviewed', record.step?.voiceReviewed === true) === true
+  );
 
   // 2. All test locations recorded (qtrak + breeze in each room that has those fields)
   const roomsWithLocs = roomRecords.filter(record => 'qtrakLocation' in record.step || 'breezeLocation' in record.step);
@@ -5458,7 +5575,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V18',
+    appVersion: 'REVIEW-PORTAL-V19',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine

@@ -1353,6 +1353,49 @@ mark.report-search-match.active {
   margin-bottom: 14px;
 }
 
+.room-editable-block {
+  margin-bottom: 14px;
+}
+
+.room-editable-textarea {
+  min-height: 86px;
+  resize: vertical;
+  background: #fff;
+}
+
+.room-editable-textarea:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(45, 80, 22, .12);
+  outline: none;
+}
+
+.room-editable-note {
+  margin-top: 5px;
+  color: var(--gray-400);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.room-original-text {
+  margin-top: 7px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: var(--gray-50);
+}
+
+.room-original-text summary {
+  padding: 7px 10px;
+  color: var(--gray-500);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.room-original-text .room-readonly-text {
+  margin: 0 8px 8px;
+  background: #fff;
+}
+
 .room-readonly-text {
   background: var(--gray-50);
   border: 1px solid var(--gray-100);
