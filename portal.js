@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V13';
+const REVIEW_PORTAL_VERSION = 'V14';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -329,13 +329,20 @@ function normalizePhotoUrl(photo) {
 }
 
 function photoKey(photo) {
+  const timestamp = String(photo.timestamp || '').trim();
+  const roomName = String(photo.roomName || '').trim();
+  const stepName = String(photo.stepName || '').trim();
+  const caption = String(photo.caption || '').trim();
+  if (timestamp && (roomName || stepName || caption)) {
+    return `meta:${roomName}|${stepName}|${caption}|${timestamp}`;
+  }
+  if (photo.photoId) return `id:${photo.photoId}`;
   const driveId = getDriveIdFromPhoto(photo);
   if (driveId) return `drive:${driveId}`;
   if (photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl) {
     return `url:${photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl}`;
   }
-  if (photo.photoId) return `id:${photo.photoId}`;
-  return `meta:${photo.roomName || ''}|${photo.stepName || ''}|${photo.caption || ''}|${photo.timestamp || ''}`;
+  return `meta:${roomName}|${stepName}|${caption}|${timestamp}`;
 }
 
 function assignPhotoId(photo, index, usedIds) {
@@ -888,7 +895,24 @@ async function loadInspection() {
     try {
       const cloudReview = await loadCloudReview(id);
       if (cloudReview.fieldData && typeof cloudReview.fieldData === 'object') {
-        insp.reviewedData = mergeReviewData(insp.reviewedData || {}, cloudReview.fieldData);
+        const cloudFields = cloudReview.fieldData;
+        const inspectionRecovery = cloudFields.system?.inspectionRecovery;
+        if (inspectionRecovery && typeof inspectionRecovery === 'object') {
+          // Keep the preserved full checkpoint underneath the current live
+          // summary. Live values win, while missing steps/findings are restored.
+          insp = mergeCheckpointValue(inspectionRecovery, insp);
+        }
+
+        // The recovery payload is inspection source data, not a reviewer field.
+        // Do not copy it into reviewedData or render it as editable report data.
+        const reviewFields = { ...cloudFields };
+        if (reviewFields.system && typeof reviewFields.system === 'object' && !Array.isArray(reviewFields.system)) {
+          const systemFields = { ...reviewFields.system };
+          delete systemFields.inspectionRecovery;
+          if (Object.keys(systemFields).length) reviewFields.system = systemFields;
+          else delete reviewFields.system;
+        }
+        insp.reviewedData = mergeReviewData(insp.reviewedData || {}, reviewFields);
       }
     } catch (reviewErr) {
       console.warn('Cloud review recovery unavailable:', reviewErr);
@@ -5275,7 +5299,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V13',
+    appVersion: 'REVIEW-PORTAL-V14',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
