@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V16';
+const REVIEW_PORTAL_VERSION = 'V17';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -2298,14 +2298,19 @@ function completeDataRows(value, prefix = '', rows = [], seen = new Set()) {
   return rows;
 }
 
-function renderCompleteDataGroup(title, value, open = false) {
+function renderCompleteDataGroup(title, value, open = false, options = {}) {
   const rows = completeDataRows(value);
   if (!rows.length) return null;
   const details = el('details', { class: 'complete-data-group', ...(open ? { open: '' } : {}) });
+  const countLabel = options.countLabel ||
+    `${rows.length} captured value${rows.length === 1 ? '' : 's'}`;
   details.appendChild(el('summary', {},
     el('span', {}, title),
-    el('span', { class: 'complete-data-count' }, `${rows.length} captured value${rows.length === 1 ? '' : 's'}`)
+    el('span', { class: 'complete-data-count' }, countLabel)
   ));
+  if (options.note) {
+    details.appendChild(el('div', { class: 'complete-data-note' }, options.note));
+  }
   const grid = el('div', { class: 'complete-data-grid' });
   rows.forEach(row => {
     grid.appendChild(el('div', { class: 'complete-data-row' },
@@ -2315,6 +2320,23 @@ function renderCompleteDataGroup(title, value, open = false) {
   });
   details.appendChild(grid);
   return details;
+}
+
+function findingDisplayFingerprint(finding) {
+  const copy = { ...(finding || {}) };
+  ['findingId', 'createdAt', 'updatedAt', 'createdBy', 'createdById', 'updatedBy', 'updatedById']
+    .forEach(key => delete copy[key]);
+  return JSON.stringify(copy);
+}
+
+function uniqueFindingsForDisplay(findings) {
+  const seen = new Set();
+  return (Array.isArray(findings) ? findings : []).filter(finding => {
+    const fingerprint = findingDisplayFingerprint(finding);
+    if (seen.has(fingerprint)) return false;
+    seen.add(fingerprint);
+    return true;
+  });
 }
 
 function renderCompleteInspectionData(insp) {
@@ -2346,6 +2368,11 @@ function renderCompleteInspectionData(insp) {
   const supplemental = Object.fromEntries(Object.entries(insp).filter(([key, value]) =>
     !key.startsWith('_') && !reservedTopLevel.has(key) && !completeDataIsEmpty(value)
   ));
+  const sourceFindings = Array.isArray(insp.findings) ? insp.findings : [];
+  const displayFindings = uniqueFindingsForDisplay(sourceFindings);
+  const exactDuplicateFindings = sourceFindings.length - displayFindings.length;
+  const roomCount = Array.isArray(insp.rooms) ? insp.rooms.length : 0;
+  const savedSteps = Object.keys(insp.stepData || {}).length;
   const groups = [
     ['Property & Assessment Conditions', property, true],
     ['Equipment & Pre-Assessment', insp.preAssessmentChecklist],
@@ -2353,26 +2380,33 @@ function renderCompleteInspectionData(insp) {
     ['Device Setup', insp.deviceSetup],
     ['Exterior Assessment', insp.exteriorAssessment],
     ['Radon Setup', insp.radonSetup],
-    ['Rooms & Observations', insp.rooms],
+    ['Rooms & Observations', insp.rooms, false, {
+      countLabel: `${roomCount} room record${roomCount === 1 ? '' : 's'} · ${completeDataRows(insp.rooms).length} raw fields`,
+      note: 'These are complete room records. Much of the same source data also appears in Step-by-Step below; that is repeated presentation, not additional rooms.'
+    }],
     ['Utility, HVAC & Water Systems', insp.utilityRoom],
     ['Before Leaving', insp.wrapUp],
     ['Customer Debrief', insp.customerDebrief],
     ['Post Assessment', insp.postAssessment],
-    ['Step-by-Step Captured Data', insp.stepData],
+    ['Step-by-Step Captured Data', insp.stepData, false, {
+      countLabel: `${savedSteps} saved steps · ${completeDataRows(insp.stepData).length} raw fields`,
+      note: 'This is the diagnostic field-by-field checkpoint view. One saved step can contain many fields, and room steps repeat data summarized elsewhere on this page.'
+    }],
     ['Dynamic Room Definitions', insp.dynamicRooms],
     ['Room Relationships', insp.roomRelationships],
     ['Room Summaries', insp.roomSummaries],
-    ['Findings & Field Observations', insp.findings],
+    ['Findings & Field Observations', displayFindings, false, {
+      countLabel: `${displayFindings.length} unique findings · ${completeDataRows(displayFindings).length} raw fields`,
+      note: `${sourceFindings.length} source finding records were preserved. ${exactDuplicateFindings} exact duplicate record${exactDuplicateFindings === 1 ? ' is' : 's are'} hidden in this view only; no source record was deleted.`
+    }],
     ['Other Captured Inspection Data', supplemental]
   ];
 
   let renderedGroups = 0;
-  let renderedValues = 0;
-  groups.forEach(([title, value, open]) => {
-    const group = renderCompleteDataGroup(title, value, open);
+  groups.forEach(([title, value, open, options]) => {
+    const group = renderCompleteDataGroup(title, value, open, options);
     if (group) {
       renderedGroups += 1;
-      renderedValues += group.querySelectorAll('.complete-data-row').length;
       body.appendChild(group);
     }
   });
@@ -2382,10 +2416,9 @@ function renderCompleteInspectionData(insp) {
     return;
   }
 
-  const savedSteps = Object.keys(insp.stepData || {}).length;
   body.prepend(el('div', { class: 'complete-data-coverage' },
     el('strong', {}, 'Cloud field coverage verified'),
-    el('span', {}, `${savedSteps} saved app steps · ${renderedValues} captured values · ${renderedGroups} data groups`)
+    el('span', {}, `${savedSteps} saved steps · ${roomCount} rooms · ${sourceFindings.length} source findings (${displayFindings.length} unique) · ${renderedGroups} data groups`)
   ));
 }
 
@@ -5422,7 +5455,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V16',
+    appVersion: 'REVIEW-PORTAL-V17',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine

@@ -663,6 +663,16 @@ mark.report-search-match.active {
   white-space: nowrap;
 }
 
+.complete-data-note {
+  padding: 10px 16px;
+  border-top: 1px solid var(--gray-200);
+  border-bottom: 1px solid var(--gray-200);
+  background: #fffbeb;
+  color: #78350f;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .complete-data-coverage {
   display: flex;
   align-items: center;
