@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V24';
+const REVIEW_PORTAL_VERSION = 'V25';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -3120,6 +3120,43 @@ function buildRoomFollowUpEditor(record, insp, locked) {
   return wrap;
 }
 
+function buildCapturedRoomData(record) {
+  const source = { ...(record.room || {}), ...(record.step || {}) };
+  const alreadyRendered = new Set([
+    'roomName', 'name', 'level', 'type',
+    'notes', 'inspectorNotes', 'aiSummary', 'aiSummaryGeneratedAt',
+    'flirDone', 'flirConcerns', 'breezeDone',
+    'qtrakLocation', 'breezeLocation',
+    'followUpNeeded', 'followUpTimeframe', 'followUpNote',
+    'voiceReviewed'
+  ]);
+  const roomData = {};
+  Object.entries(source).forEach(([key, value]) => {
+    if (key.startsWith('_') || alreadyRendered.has(key) || /photo/i.test(key)) return;
+    if (completeDataIsEmpty(value)) return;
+    roomData[key] = value;
+  });
+  const rows = completeDataRows(roomData);
+  if (!rows.length) return null;
+
+  const details = el('details', { class: 'complete-data-group room-captured-data' });
+  details.appendChild(el('summary', {},
+    el('span', {}, 'Captured Inspector Fields'),
+    el('span', { class: 'complete-data-count' },
+      `${rows.length} value${rows.length === 1 ? '' : 's'}`
+    )
+  ));
+  const table = el('div', { class: 'complete-data-table' });
+  rows.forEach(row => {
+    table.appendChild(el('div', { class: 'complete-data-row' },
+      el('div', { class: 'complete-data-label' }, row.label),
+      el('div', { class: 'complete-data-value' }, row.value)
+    ));
+  });
+  details.appendChild(table);
+  return details;
+}
+
 function buildRoomPhotoStrip(roomPhotos) {
   const wrap = el('div', { class: 'room-photo-strip-wrap' });
   wrap.appendChild(el('div', { class: 'field-label' }, `Room Photos (${roomPhotos.length})`));
@@ -3297,6 +3334,8 @@ function buildRoomCard(record, insp, locked, aliasIndex) {
     buildStatusPill('Breeze done', breezeDone)
   );
   body.appendChild(statusRow);
+  const capturedRoomData = buildCapturedRoomData(record);
+  if (capturedRoomData) body.appendChild(capturedRoomData);
 
   body.appendChild(buildEditableRoomTextBlock({
     label: 'Inspector Notes',
@@ -5991,7 +6030,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V24',
+    appVersion: 'REVIEW-PORTAL-V25',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
