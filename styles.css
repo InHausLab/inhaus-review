@@ -1376,6 +1376,31 @@ mark.report-search-match.active {
   line-height: 1.35;
 }
 
+.room-follow-up-block {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid #d8e2d3;
+  border-radius: 12px;
+  background: #f7faf5;
+}
+
+.room-follow-up-title {
+  color: var(--green);
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.room-follow-up-fields {
+  display: grid;
+  grid-template-columns: minmax(150px, .45fr) minmax(240px, 1fr);
+  gap: 12px;
+  margin-top: 10px;
+}
+
+@media (max-width: 720px) {
+  .room-follow-up-fields { grid-template-columns: 1fr; }
+}
+
 .room-original-text {
   margin-top: 7px;
   border: 1px solid var(--gray-200);

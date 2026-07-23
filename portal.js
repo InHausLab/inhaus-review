@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V22';
+const REVIEW_PORTAL_VERSION = 'V23';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -1542,8 +1542,8 @@ function renderPostContentSection(insp, locked) {
   const hasPhotos = key => tryParseIds(key).length > 0;
 
   // ---- Follow-up Actions ----
-  body.appendChild(buildPostSubheading('Follow-Up Actions Needed',
-    'Recommended re-checks for the client report. Add another only when needed.'));
+  body.appendChild(buildPostSubheading('General Follow-Up Actions',
+    'Use the Follow-Up fields inside each room for room-specific items. Add something here only when it applies to the inspection as a whole.'));
   renderProgressivePostGroups(body, {
     insp, locked, sectionKey: 'follow-up', maxCount: 5,
     addLabel: '+ Add another follow-up action',
@@ -2531,7 +2531,6 @@ function renderReviewPage(insp) {
   renderRoomsSection(insp, isSubmitted);
   renderWaterFindingsSection(insp, isSubmitted);
   renderKitchenInspectionSection(insp, isSubmitted);
-  renderFollowUpItemsSection(insp, isSubmitted);
   renderTestsSection(insp, isSubmitted);
   renderBeforeLeavingSection(insp, isSubmitted);
   try { renderPostContentSection(insp, isSubmitted); } catch(e) { console.error('renderPostContentSection failed:', e); }
@@ -3017,6 +3016,88 @@ function buildEditableAISummaryBlock(summary, originalSummary, roomPhotos, stepI
   return block;
 }
 
+function roomFollowUpItems(insp) {
+  return normalizeFollowUpItems(
+    getReviewedJSONField(insp, 'roomData', 'followUpItems', insp.followUpItems || [])
+  );
+}
+
+function findRoomFollowUpItem(items, record, roomName) {
+  const byStepId = items.find(item => item.stepId && item.stepId === record.stepId);
+  if (byStepId) return byStepId;
+  const roomKey = slugifyRoomPart(roomName);
+  return items.find(item => slugifyRoomPart(item.room) === roomKey) || null;
+}
+
+function buildRoomFollowUpEditor(record, insp, locked) {
+  const roomName = record.room?.roomName || record.step?.roomName || record.stepId;
+  let items = roomFollowUpItems(insp);
+  let item = findRoomFollowUpItem(items, record, roomName);
+  if (!item) {
+    item = { stepId: record.stepId, room: roomName, recheckIn: '', watchFor: '' };
+  }
+
+  const wrap = el('div', { class: 'room-follow-up-block' });
+  wrap.appendChild(el('div', { class: 'room-follow-up-title' }, 'Follow-Up for This Room'));
+  wrap.appendChild(el('div', { class: 'room-editable-note' },
+    'Add the timing and watch item while this room is in view. It automatically feeds Tanner’s follow-up summary.'
+  ));
+
+  const fields = el('div', { class: 'room-follow-up-fields' });
+  const recheck = el('input', {
+    type: 'text',
+    class: 'field-input',
+    value: item.recheckIn || '',
+    placeholder: 'e.g. 6 months',
+    ...(locked ? { readonly: '' } : {})
+  });
+  const watchFor = el('textarea', {
+    class: 'field-textarea',
+    rows: '2',
+    placeholder: 'What should the client or Tanner watch for?',
+    ...(locked ? { readonly: '' } : {})
+  });
+  watchFor.value = item.watchFor || '';
+  fields.appendChild(el('div', {},
+    el('label', { class: 'field-label' }, 'Recheck In'),
+    recheck
+  ));
+  fields.appendChild(el('div', {},
+    el('label', { class: 'field-label' }, 'Watch For'),
+    watchFor
+  ));
+  wrap.appendChild(fields);
+
+  if (!locked) {
+    const persist = saveNow => {
+      items = roomFollowUpItems(_inspection || insp);
+      const existing = findRoomFollowUpItem(items, record, roomName);
+      const next = {
+        stepId: record.stepId,
+        room: roomName,
+        recheckIn: recheck.value,
+        watchFor: watchFor.value
+      };
+      if (existing) Object.assign(existing, next);
+      else items.push(next);
+      items = items.filter(entry =>
+        String(entry.recheckIn || '').trim() ||
+        String(entry.watchFor || '').trim()
+      );
+      const jsonValue = JSON.stringify(items);
+      setReviewedField('roomData', 'followUpItems', jsonValue);
+      if (saveNow) saveField('roomData', 'followUpItems', jsonValue);
+      else debouncedSave('roomData', 'followUpItems', jsonValue);
+    };
+    recheck.addEventListener('input', () => persist(false));
+    watchFor.addEventListener('input', () => persist(false));
+    recheck.addEventListener('blur', () => persist(true));
+    watchFor.addEventListener('blur', () => persist(true));
+  }
+
+  return wrap;
+}
+
 function buildRoomPhotoStrip(roomPhotos) {
   const wrap = el('div', { class: 'room-photo-strip-wrap' });
   wrap.appendChild(el('div', { class: 'field-label' }, `Room Photos (${roomPhotos.length})`));
@@ -3217,6 +3298,7 @@ function buildRoomCard(record, insp, locked, aliasIndex) {
     }
   }));
   body.appendChild(buildEditableAISummaryBlock(aiSummary, originalAISummary, roomPhotos, stepId, locked));
+  body.appendChild(buildRoomFollowUpEditor(record, insp, locked));
   body.appendChild(buildRoomPhotoStrip(roomPhotos));
 
   const tannerWrap = el('div', { class: 'room-tanner-notes' });
@@ -3545,6 +3627,7 @@ function renderKitchenInspectionSection(insp) {
 function normalizeFollowUpItems(items) {
   if (!Array.isArray(items)) return [];
   return items.map(item => ({
+    stepId: item?.stepId || '',
     room: item?.room || '',
     recheckIn: item?.recheckIn || '',
     watchFor: item?.watchFor || ''
@@ -5886,7 +5969,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V22',
+    appVersion: 'REVIEW-PORTAL-V23',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
