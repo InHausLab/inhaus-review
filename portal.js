@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V15';
+const REVIEW_PORTAL_VERSION = 'V16';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -2225,6 +2225,19 @@ function displayValue(value) {
   return value === undefined || value === null || value === '' ? '—' : String(value);
 }
 
+function dateInputValue(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function getParticulateMatter(insp) {
   return insp?.particulateMatter ||
     insp?.stepData?.['property-details']?.particulateMatter ||
@@ -2467,6 +2480,7 @@ function renderReviewPage(insp) {
   renderKitchenInspectionSection(insp, isSubmitted);
   renderFollowUpItemsSection(insp, isSubmitted);
   renderTestsSection(insp, isSubmitted);
+  renderBeforeLeavingSection(insp, isSubmitted);
   try { renderPostContentSection(insp, isSubmitted); } catch(e) { console.error('renderPostContentSection failed:', e); }
   try { renderPhotosSection(insp, isSubmitted); } catch(e) { console.error('renderPhotosSection failed:', e); }
   // Keep photos section expanded by default
@@ -2493,7 +2507,7 @@ function renderSummarySection(insp, locked) {
 
   if (clientEl)  { clientEl.value  = insp.reviewedData?.clientName  ?? insp.clientName;  }
   if (addressEl) { addressEl.value = insp.reviewedData?.propertyAddress ?? insp.propertyAddress; }
-  if (dateEl)    { dateEl.value    = insp.reviewedData?.inspectionDate  ?? insp.inspectionDate; }
+  if (dateEl)    { dateEl.value    = dateInputValue(insp.reviewedData?.inspectionDate ?? insp.inspectionDate); }
   if (inspEl)    { inspEl.value    = insp.inspectorName; inspEl.readOnly = true; }
   if (notesEl)   { notesEl.value   = insp.reportBuilderNotes ?? ''; }
 
@@ -3342,6 +3356,92 @@ const TEST_DEFS = [
   { key: 'testATP',          label: 'ATP',               sampleKey: 'atpSampleId' },
   { key: 'testMoldSwabs',    label: 'Mold Swabs',        sampleKey: 'moldSwabSampleId' }
 ];
+
+const BEFORE_LEAVING_ITEMS = [
+  { key: 'breezeCollected', label: 'All Breeze ET tests collected and spore traps packed' },
+  { key: 'boulderBlueDone', label: 'Boulder Blue fan run 2+ hours — filter collected and packed' },
+  { key: 'pfasCollected', label: 'PFAS test collected from kitchen sink' },
+  { key: 'waterLabeled', label: 'Water samples labeled and ready to ship' },
+  { key: 'appliancesRestored', label: 'All appliances returned to original state' },
+  { key: 'doorsLightsRestored', label: 'All doors and lights returned to original state' },
+  { key: 'radonLeftInPlace', label: 'Radon monitor left in place' },
+  { key: 'formComplete', label: 'Technician form fully completed' },
+  { key: 'photosUploaded', label: 'All photos uploaded or captured' },
+  { key: 'boulderBlueRegistered', label: 'Boulder Blue filter registered on Jonah Ventures portal' }
+];
+
+const DEPARTURE_TASK_ITEMS = [
+  { key: 'downloadQtrak', label: 'Download Q-Trak data to computer' },
+  { key: 'shipSamples', label: 'Ship all lab samples' }
+];
+
+function renderBeforeLeavingSection(insp, locked) {
+  const body = qs('#before-leaving-body');
+  if (!body) return;
+  body.innerHTML = '';
+
+  const sourceChecks = insp.stepData?.['final-checks'] || insp.wrapUp || {};
+  const sourceDeparture = insp._departureChecklist || {};
+  const reviewed = insp.reviewedData?.['before-leaving'] || {};
+  const allItems = [
+    ...BEFORE_LEAVING_ITEMS.map(item => ({ ...item, source: sourceChecks, group: 'Final checks' })),
+    ...DEPARTURE_TASK_ITEMS.map(item => ({ ...item, source: sourceDeparture, group: 'Departure tasks' }))
+  ];
+
+  const heading = el('div', { class: 'before-leaving-summary' });
+  const count = el('strong', {});
+  heading.append(
+    el('div', {},
+      el('h3', {}, 'Before Leaving Checklist'),
+      el('p', {}, 'Saved inspector answers are preserved. Items without an app answer can be completed here for the report workflow.')
+    ),
+    count
+  );
+  body.appendChild(heading);
+
+  const list = el('div', { class: 'before-leaving-list' });
+  let lastGroup = '';
+  const updateCount = () => {
+    const completed = list.querySelectorAll('input[type="checkbox"]:checked').length;
+    count.textContent = `${completed} / ${allItems.length} complete`;
+  };
+
+  allItems.forEach(item => {
+    if (item.group !== lastGroup) {
+      list.appendChild(el('div', { class: 'before-leaving-group' }, item.group));
+      lastGroup = item.group;
+    }
+    const sourceRecorded = item.source[item.key] !== undefined;
+    const reviewedRecorded = reviewed[item.key] !== undefined;
+    const checked = reviewedRecorded ? reviewed[item.key] === true : item.source[item.key] === true;
+    const status = el('span', {
+      class: `before-leaving-status ${sourceRecorded ? 'source' : reviewedRecorded ? 'reviewed' : 'missing'}`
+    }, sourceRecorded ? 'Saved by inspector' : reviewedRecorded ? 'Saved in portal' : 'Not recorded in app');
+    const checkbox = el('input', {
+      type: 'checkbox',
+      ...(checked ? { checked: '' } : {}),
+      ...(locked ? { disabled: '' } : {})
+    });
+    const row = el('label', { class: 'before-leaving-item' },
+      checkbox,
+      el('span', { class: 'before-leaving-label' }, item.label),
+      status
+    );
+    if (!locked) {
+      checkbox.addEventListener('change', async () => {
+        status.className = 'before-leaving-status reviewed';
+        status.textContent = 'Saving…';
+        setReviewedField('before-leaving', item.key, checkbox.checked);
+        updateCount();
+        const saved = await saveField('before-leaving', item.key, checkbox.checked);
+        status.textContent = saved ? 'Saved in portal' : 'Local recovery saved';
+      });
+    }
+    list.appendChild(row);
+  });
+  body.appendChild(list);
+  updateCount();
+}
 
 function testValuePresent(value) {
   if (value === undefined || value === null || value === '') return false;
@@ -5322,7 +5422,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V15',
+    appVersion: 'REVIEW-PORTAL-V16',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
