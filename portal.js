@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V14';
+const REVIEW_PORTAL_VERSION = 'V15';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -2225,6 +2225,12 @@ function displayValue(value) {
   return value === undefined || value === null || value === '' ? '—' : String(value);
 }
 
+function getParticulateMatter(insp) {
+  return insp?.particulateMatter ||
+    insp?.stepData?.['property-details']?.particulateMatter ||
+    '';
+}
+
 function completeDataLabel(key) {
   return String(key || '')
     .replace(/^_+/, '')
@@ -2308,9 +2314,13 @@ function renderCompleteInspectionData(insp) {
     'numberOfLevels', 'numberOfBedrooms', 'numberOfBathrooms', 'residenceType', 'yearBuilt',
     'squareFootage', 'basement', 'carpetedRooms', 'fireplace', 'pets', 'smokingVaping',
     'stoveType', 'waterSource', 'waterSourceDescription', 'wifiNetwork', 'clientConcerns',
-    'occupancyDuringInspection', 'weatherConditions', 'knownProblemAreas', 'windowsOpen'
+    'occupancyDuringInspection', 'weatherConditions', 'particulateMatter',
+    'knownProblemAreas', 'windowsOpen'
   ];
-  const property = Object.fromEntries(topLevelKeys.map(key => [key, insp[key]]));
+  const property = Object.fromEntries(topLevelKeys.map(key => [
+    key,
+    key === 'particulateMatter' ? getParticulateMatter(insp) : insp[key]
+  ]));
   const reservedTopLevel = new Set([
     ...topLevelKeys,
     'id', 'inspectionId', 'stepData', 'rooms', 'dynamicRooms', 'roomRelationships',
@@ -2409,6 +2419,7 @@ function renderIntakeSummary(insp) {
     { label: 'AC', value: utility.acType || insp.ac },
     { label: 'Ventilation', value: ventilationValue },
     { label: 'Weather', value: insp.weatherConditions },
+    { label: 'Particulate Matter', value: getParticulateMatter(insp), wide: true },
     { label: 'Occupancy', value: insp.occupancyDuringInspection },
     { label: 'Client Concerns', value: insp.clientConcerns, wide: true },
     { label: 'Known Problem Areas', value: insp.knownProblemAreas, wide: true }
@@ -3388,6 +3399,18 @@ function collectTestSampleRecords(insp) {
   }
 
   const device = steps['device-setup'] || {};
+  const particulateMatter = getParticulateMatter(insp);
+  if (testValuePresent(particulateMatter)) {
+    add({
+      type: 'Particulate Matter',
+      status: 'Recorded',
+      location: 'Property conditions',
+      sampleId: '',
+      details: particulateMatter,
+      source: 'Property Details'
+    });
+  }
+
   if (testValuePresent(water.pfasStatus) || testValuePresent(water.pfasSampleId) || testValuePresent(device.pfasSetup) || testValuePresent(device.pfasKitNum) || shipping.pfasShip) {
     add({
       type: 'PFAS',
@@ -5299,7 +5322,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V14',
+    appVersion: 'REVIEW-PORTAL-V15',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
