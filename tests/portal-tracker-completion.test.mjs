@@ -6,10 +6,16 @@ const portal = readFileSync(new URL('../portal.js', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V25'/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V26'/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
+});
+
+test('portal feedback points Tanner to the shared tracker', () => {
+  assert.match(portal, /Tanner monitors the shared Things to Fix tracker/);
+  assert.match(portal, /Saved in the shared Things to Fix tracker for Tanner/);
+  assert.doesNotMatch(portal, /Send to Matt/);
 });
 
 test('every room has a source-data coverage block for captured app fields', () => {

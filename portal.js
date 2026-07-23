@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V25';
+const REVIEW_PORTAL_VERSION = 'V26';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -6030,7 +6030,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V25',
+    appVersion: 'REVIEW-PORTAL-V26',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
@@ -6113,7 +6113,7 @@ function openPortalFeedback() {
   const headingCopy = el('div');
   headingCopy.append(
     el('h2', { id: 'portal-feedback-title' }, 'Suggest a Portal Fix'),
-    el('p', {}, 'Tell Matt what should change and attach a screenshot if something looks broken.')
+    el('p', {}, 'Describe what should change and attach a screenshot if something looks broken. Tanner monitors the shared Things to Fix tracker.')
   );
   const closeButton = el('button', {
     type: 'button',
@@ -6218,7 +6218,7 @@ function openPortalFeedback() {
   });
 
   const sendStatus = el('div', { class: 'portal-feedback-send-status', role: 'status', 'aria-live': 'polite' });
-  const sendButton = el('button', { type: 'button', class: 'btn btn-primary portal-feedback-send' }, 'Send to Matt');
+  const sendButton = el('button', { type: 'button', class: 'btn btn-primary portal-feedback-send' }, 'Send Suggestion');
   sendButton.addEventListener('click', async () => {
     const typedNote = note.value.trim();
     if (!typedNote && !_feedbackScreenshotDataUrl) {
@@ -6243,7 +6243,7 @@ function openPortalFeedback() {
     };
     try {
       await sendPortalFeedback(feedback);
-      sendStatus.textContent = '✓ Sent to Matt and saved in Things to Fix';
+      sendStatus.textContent = '✓ Saved in the shared Things to Fix tracker for Tanner';
       sendButton.textContent = 'Sent';
       setTimeout(closePortalFeedback, 1200);
     } catch (error) {
