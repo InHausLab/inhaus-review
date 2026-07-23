@@ -9,7 +9,8 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V26';
+const REVIEW_PORTAL_VERSION = 'V27';
+const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -159,6 +160,7 @@ let _saveChain = Promise.resolve(); // serialize backend writes to prevent lost 
 let _pendingSaves = 0;       // count of in-flight saves
 let _currentPage = null;     // 'list' | 'review'
 const _postVisibleCounts = new Map(); // expanded optional post-content rows per inspection
+let _finishTrackerOpen = false;
 
 /* ============================================================
    UTILITIES
@@ -1543,7 +1545,8 @@ function renderPostContentSection(insp, locked) {
 
   // ---- Follow-up Actions ----
   body.appendChild(buildPostSubheading('General Follow-Up Actions',
-    'Use the Follow-Up fields inside each room for room-specific items. Add something here only when it applies to the inspection as a whole.'));
+    'Use the Follow-Up fields inside each room for room-specific items. Add something here only when it applies to the inspection as a whole.',
+    'finish-follow-ups'));
   renderProgressivePostGroups(body, {
     insp, locked, sectionKey: 'follow-up', maxCount: 5,
     addLabel: '+ Add another follow-up action',
@@ -1565,7 +1568,8 @@ function renderPostContentSection(insp, locked) {
 
   // ---- Actions Taken ----
   body.appendChild(buildPostSubheading('Actions Taken During Assessment',
-    'What you physically did on-site. Add another only when needed.'));
+    'What you physically did on-site. Add another only when needed.',
+    'finish-actions'));
   renderProgressivePostGroups(body, {
     insp, locked, sectionKey: 'actions-taken', maxCount: 6,
     addLabel: '+ Add another action taken',
@@ -1584,7 +1588,8 @@ function renderPostContentSection(insp, locked) {
 
   // ---- Assessment Observations ----
   body.appendChild(buildPostSubheading('Assessment Observations',
-    'Notable findings for the report. Start with one and add another only when needed.'));
+    'Notable findings for the report. Start with one and add another only when needed.',
+    'finish-observations'));
 
   // Pre-fill button — only show when room notes exist and slots are empty
   if (!locked) {
@@ -1707,10 +1712,10 @@ function calculateCompletionScore(insp) {
   return {
     total, grade, gradeClass,
     categories: [
-      { label: 'Photos placed',     score: photoScore,   max: 30, detail: photos.length === 0 ? 'No photos' : `${[...new Set([].concat(...[1,2,3,4,5].map(i=>tryParse(`followUp_${i}_photoIds`)), ...[1,2,3,4,5,6].map(i=>tryParse(`actionTaken_${i}_photoIds`)), ...[1,2,3,4,5,6].map(i=>tryParse(`obs_${i}_photoIds`))))].length} of ${photos.length} assigned` },
-      { label: 'Observations',      score: obsScore,     max: 25, detail: `${Math.round(obsFilled)} of 6 complete` },
-      { label: 'Actions taken',     score: actionsScore, max: 25, detail: `${Math.round(actionsFilled)} of 6 complete` },
-      { label: 'Checklist',         score: gateScore,    max: 20, detail: `${gatePassed} of ${gateResults.length} items` }
+      { key: 'score-photos', label: 'Photos placed', score: photoScore, max: 30, detail: photos.length === 0 ? 'No photos' : `${[...new Set([].concat(...[1,2,3,4,5].map(i=>tryParse(`followUp_${i}_photoIds`)), ...[1,2,3,4,5,6].map(i=>tryParse(`actionTaken_${i}_photoIds`)), ...[1,2,3,4,5,6].map(i=>tryParse(`obs_${i}_photoIds`))))].length} of ${photos.length} assigned`, selector: '#photos-card', action: 'reportPhotos' },
+      { key: 'score-observations', label: 'Observations', score: obsScore, max: 25, detail: `${Math.round(obsFilled)} of 6 complete`, selector: '#finish-observations' },
+      { key: 'score-actions', label: 'Actions taken', score: actionsScore, max: 25, detail: `${Math.round(actionsFilled)} of 6 complete`, selector: '#finish-actions' },
+      { key: 'score-checklist', label: 'Checklist', score: gateScore, max: 20, detail: `${gatePassed} of ${gateResults.length} items`, selector: '#gate-section' }
     ]
   };
 }
@@ -1729,13 +1734,18 @@ function renderScoreCard(body, insp) {
   // Right: label + breakdown
   const scoreRight = el('div', { class: 'score-right' });
   const titleRow = el('div', { class: 'score-title-row' });
-  titleRow.appendChild(el('div', { class: 'score-title' }, 'Inspection Score'));
-  titleRow.appendChild(el('div', { class: 'score-subtitle' }, 'Used for inspector performance tracking'));
+  titleRow.appendChild(el('div', { class: 'score-title' }, `${score.total} out of 100 — Inspection Score`));
+  titleRow.appendChild(el('div', { class: 'score-subtitle' }, 'Click any incomplete category to go straight to the work that improves it.'));
   scoreRight.appendChild(titleRow);
 
   const bars = el('div', { class: 'score-bars' });
   score.categories.forEach(cat => {
-    const row = el('div', { class: 'score-bar-row' });
+    const incomplete = cat.score < cat.max;
+    const row = el(incomplete ? 'button' : 'div', {
+      class: `score-bar-row${incomplete ? ' score-bar-link' : ''}`,
+      ...(incomplete ? { type: 'button', 'aria-label': `Improve ${cat.label}` } : {})
+    });
+    if (incomplete) row.addEventListener('click', () => goToFinishItem(cat));
     row.appendChild(el('div', { class: 'score-bar-label' }, cat.label));
     const track = el('div', { class: 'score-bar-track' });
     const fill = el('div', { class: 'score-bar-fill' });
@@ -2168,8 +2178,8 @@ function renderProgressivePostGroups(container, config) {
   container.appendChild(list);
 }
 
-function buildPostSubheading(title, subtitle) {
-  const wrap = el('div', { class: 'post-subheading' });
+function buildPostSubheading(title, subtitle, id = '') {
+  const wrap = el('div', { class: 'post-subheading', ...(id ? { id } : {}) });
   wrap.appendChild(el('div', { class: 'post-subheading-title' }, title));
   if (subtitle) wrap.appendChild(el('div', { class: 'post-subheading-sub' }, subtitle));
   return wrap;
@@ -3407,9 +3417,21 @@ function buildFieldEl(stepId, fieldKey, label, value, isTextarea = false, locked
 
   let input;
   if (isTextarea) {
-    input = el('textarea', { class: 'field-textarea', rows: '3', ...(locked ? { readonly: '' } : {}) });
+    input = el('textarea', {
+      class: 'field-textarea',
+      rows: '3',
+      'data-step': stepId,
+      'data-field': fieldKey,
+      ...(locked ? { readonly: '' } : {})
+    });
   } else {
-    input = el('input', { type: 'text', class: 'field-input', ...(locked ? { readonly: '' } : {}) });
+    input = el('input', {
+      type: 'text',
+      class: 'field-input',
+      'data-step': stepId,
+      'data-field': fieldKey,
+      ...(locked ? { readonly: '' } : {})
+    });
   }
   input.value = value;
 
@@ -3418,7 +3440,7 @@ function buildFieldEl(stepId, fieldKey, label, value, isTextarea = false, locked
   wrap.appendChild(orig);
 
   if (!locked) {
-    attachFieldSave(input, stepId, fieldKey);
+    attachFieldSave(input, stepId, fieldKey, true);
   }
 
   return wrap;
@@ -4359,6 +4381,7 @@ function buildPhotoPlacementDestinations(insp) {
     addRoom(photo.roomName);
     addTask(photo.roomName, photo.stepName);
   });
+  STANDARD_ROOM_CHOICES.forEach(addRoom);
 
   const hasWaterEquipment = (insp.photos || []).some(photo =>
     /utility room/i.test(String(photo.roomName || '')) ||
@@ -4485,7 +4508,10 @@ function renderPhotosSection(insp, locked) {
   // Build room filter options
   const roomSelect = qs('#room-filter');
   if (roomSelect) {
-    const rooms = [...new Set(photos.map(p => p.roomName).filter(Boolean))];
+    const rooms = [...new Set([
+      ...photos.map(p => p.roomName).filter(Boolean),
+      ...STANDARD_ROOM_CHOICES
+    ])].sort((a, b) => a.localeCompare(b));
     roomSelect.innerHTML = '<option value="all">All Rooms</option>' +
       rooms.map(r => `<option value="${escapeHTML(r)}">${escapeHTML(r)}</option>`).join('');
     roomSelect.addEventListener('change', () => {
@@ -5479,6 +5505,7 @@ function checkGate() {
   if (!_inspection) return;
   const results = evaluateGate(_inspection);
   renderGate(results);
+  renderFinishTracker(results);
   updateSubmitButton(results);
 }
 
@@ -5508,12 +5535,16 @@ function evaluateGate(insp) {
     getReviewedField(insp, record.stepId, 'voiceReviewed', record.step?.voiceReviewed === true) === true
   );
   const notesReviewed = reviewedRooms.length === roomsWithNotes.length;
+  const firstUnreviewedRoom = roomsWithNotes.find(record =>
+    getReviewedField(insp, record.stepId, 'voiceReviewed', record.step?.voiceReviewed === true) !== true
+  );
 
   // 2. Require locations only for tests actually conducted in that room.
   // A saved "Breeze: No" must not manufacture a missing Breeze location.
   const roomsWithLocs = roomRecords.filter(record => 'qtrakLocation' in record.step || 'breezeLocation' in record.step);
   let requiredLocations = 0;
   let recordedLocations = 0;
+  let firstMissingLocation = null;
   roomsWithLocs.forEach(record => {
     const reviewedStep = reviewed[record.stepId] || {};
     const qtrakLocation = String(reviewedStep.qtrakLocation ?? record.step.qtrakLocation ?? '').trim();
@@ -5523,10 +5554,12 @@ function evaluateGate(insp) {
     if (qtrakRequired) {
       requiredLocations++;
       if (qtrakLocation) recordedLocations++;
+      else if (!firstMissingLocation) firstMissingLocation = { stepId: record.stepId, field: 'qtrakLocation' };
     }
     if (breezeRequired) {
       requiredLocations++;
       if (breezeLocation) recordedLocations++;
+      else if (!firstMissingLocation) firstMissingLocation = { stepId: record.stepId, field: 'breezeLocation' };
     }
   });
   const locsRecorded = recordedLocations === requiredLocations;
@@ -5553,12 +5586,51 @@ function evaluateGate(insp) {
   const samplesOk = waterOk && boulderOk;
 
   return [
-    { key: 'notes',    label: `All room notes reviewed (${reviewedRooms.length}/${roomsWithNotes.length})`, pass: notesReviewed },
-    { key: 'locs',     label: `All required test locations recorded (${recordedLocations}/${requiredLocations})`, pass: locsRecorded },
-    { key: 'tests',    label: `Tests conducted confirmation complete (${confirmedTestCount} confirmed)`, pass: anyTestConfirmed },
-    { key: 'photos',   label: `All photos marked Include or Exclude (${reviewedPhotoCount}/${photos.length})`, pass: allPhotosReviewed },
-    { key: 'rbnotes',  label: 'Report Builder Notes filled in',       pass: notesNotEmpty },
-    { key: 'samples',  label: 'Sample IDs recorded',                  pass: samplesOk }
+    {
+      key: 'notes',
+      label: `All room notes reviewed (${reviewedRooms.length}/${roomsWithNotes.length})`,
+      pass: notesReviewed,
+      selector: firstUnreviewedRoom ? `.room-section[data-room-step-id="${firstUnreviewedRoom.stepId}"]` : '#rooms-container',
+      focusSelector: firstUnreviewedRoom ? `#vr-${firstUnreviewedRoom.stepId}` : ''
+    },
+    {
+      key: 'locs',
+      label: `All required test locations recorded (${recordedLocations}/${requiredLocations})`,
+      pass: locsRecorded,
+      selector: firstMissingLocation ? `.room-section[data-room-step-id="${firstMissingLocation.stepId}"]` : '#rooms-container',
+      focusSelector: firstMissingLocation ? `[data-step="${firstMissingLocation.stepId}"][data-field="${firstMissingLocation.field}"]` : ''
+    },
+    {
+      key: 'tests',
+      label: `Tests conducted confirmation complete (${confirmedTestCount} confirmed)`,
+      pass: anyTestConfirmed,
+      selector: '.tests-review-details',
+      action: 'openDetails'
+    },
+    {
+      key: 'photos',
+      label: `All photos marked Include or Exclude (${reviewedPhotoCount}/${photos.length})`,
+      pass: allPhotosReviewed,
+      selector: '#photos-card',
+      action: 'unreviewedPhotos'
+    },
+    {
+      key: 'rbnotes',
+      label: 'Report Builder Notes filled in',
+      pass: notesNotEmpty,
+      selector: '#field-report-notes',
+      focusSelector: '#field-report-notes'
+    },
+    {
+      key: 'samples',
+      label: 'Sample IDs recorded',
+      pass: samplesOk,
+      selector: '.tests-review-details',
+      focusSelector: !waterOk
+        ? '[data-step="tests"][data-field="waterSampleId"]'
+        : (!boulderOk ? '[data-step="tests"][data-field="boulderBlueSampleId"]' : ''),
+      action: 'openDetails'
+    }
   ];
 }
 
@@ -5582,12 +5654,199 @@ function renderGate(results) {
   }
 
   for (const item of results) {
-    const gateItem = el('div', { class: 'gate-item' },
+    const gateItem = el(item.pass ? 'div' : 'button', {
+      class: `gate-item${item.pass ? '' : ' gate-item-link'}`,
+      ...(item.pass ? {} : { type: 'button', 'aria-label': `Go to ${item.label}` })
+    },
       el('div', { class: `gate-icon ${item.pass ? 'pass' : 'fail'}` }, item.pass ? '✓' : '✕'),
-      el('span', { class: `gate-item-text ${item.pass ? 'pass' : 'fail'}` }, item.label)
+      el('span', { class: `gate-item-text ${item.pass ? 'pass' : 'fail'}` }, item.label),
+      item.pass ? null : el('span', { class: 'gate-item-go' }, 'Go →')
     );
+    if (!item.pass) gateItem.addEventListener('click', () => goToFinishItem(item));
     list.appendChild(gateItem);
   }
+}
+
+function setFinishTrackerOpen(open) {
+  _finishTrackerOpen = open;
+  const tracker = qs('#finish-tracker');
+  if (tracker) tracker.classList.toggle('open', open);
+  const toggle = qs('#finish-tracker-toggle');
+  if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function expandFinishTarget(target) {
+  const details = target?.matches?.('details') ? target : target?.closest?.('details');
+  if (details) details.open = true;
+
+  const room = target?.matches?.('.room-section') ? target : target?.closest?.('.room-section');
+  if (room) {
+    const body = room.querySelector('.room-body');
+    const icon = room.querySelector('.collapse-icon');
+    if (body) body.style.display = '';
+    if (icon) icon.style.transform = '';
+  }
+
+  const card = target?.matches?.('.card') ? target : target?.closest?.('.card');
+  if (card) card.classList.remove('collapsed');
+}
+
+function highlightFinishTarget(target) {
+  if (!target) return;
+  target.classList.add('finish-target-highlight');
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  window.setTimeout(() => target.classList.remove('finish-target-highlight'), 2600);
+}
+
+function goToFinishItem(item) {
+  if (!item) return;
+  setFinishTrackerOpen(false);
+
+  if (item.action === 'unreviewedPhotos') {
+    const roomFilter = qs('#room-filter');
+    if (roomFilter) {
+      roomFilter.value = 'all';
+      _activeRoomFilter = 'all';
+    }
+    qs('[data-filter="unreviewed"]')?.click();
+  } else if (item.action === 'reportPhotos') {
+    const roomFilter = qs('#room-filter');
+    if (roomFilter) {
+      roomFilter.value = 'all';
+      _activeRoomFilter = 'all';
+    }
+    qs('[data-filter="all"]')?.click();
+  }
+
+  let target = item.selector ? qs(item.selector) : null;
+  if (target) expandFinishTarget(target);
+
+  if (item.action === 'openDetails' && target?.matches?.('details')) {
+    target.open = true;
+  }
+
+  if (item.action === 'reportPhotos') {
+    const unassignedBadge = qs('.photo-assign-badge.not-assigned');
+    target = unassignedBadge?.closest('.photo-card') || target;
+  }
+
+  const focusTarget = item.focusSelector ? qs(item.focusSelector) : null;
+  if (focusTarget) {
+    expandFinishTarget(focusTarget);
+    target = focusTarget;
+  }
+
+  window.requestAnimationFrame(() => {
+    highlightFinishTarget(target);
+    if (focusTarget && typeof focusTarget.focus === 'function') {
+      focusTarget.focus({ preventScroll: true });
+    }
+  });
+}
+
+function renderFinishTracker(results) {
+  const existing = qs('#finish-tracker');
+  if (existing) existing.remove();
+  if (!_inspection || _currentPage !== 'review') return;
+
+  const status = String(_inspection.status || '').toLowerCase();
+  if (status === 'submitted to tanner' || status === 'report complete') return;
+
+  const failures = results.filter(item => !item.pass);
+  const passed = results.length - failures.length;
+  const ready = failures.length === 0;
+  const score = calculateCompletionScore(_inspection);
+  const incompleteScoreItems = score.categories.filter(category => category.score < category.max);
+
+  const tracker = el('aside', {
+    id: 'finish-tracker',
+    class: `finish-tracker${_finishTrackerOpen ? ' open' : ''}`,
+    'aria-label': 'Finish Tracker'
+  });
+
+  const toggle = el('button', {
+    id: 'finish-tracker-toggle',
+    class: `finish-tracker-toggle${ready ? ' ready' : ''}`,
+    type: 'button',
+    'aria-expanded': _finishTrackerOpen ? 'true' : 'false',
+    'aria-controls': 'finish-tracker-panel'
+  },
+    el('span', { class: 'finish-tracker-toggle-icon' }, ready ? '✓' : '☰'),
+    el('span', {}, ready ? 'Ready to submit' : `Finish Tracker · ${failures.length} remaining`)
+  );
+  toggle.addEventListener('click', () => setFinishTrackerOpen(!_finishTrackerOpen));
+  tracker.appendChild(toggle);
+
+  const panel = el('div', { id: 'finish-tracker-panel', class: 'finish-tracker-panel' });
+  const header = el('div', { class: 'finish-tracker-header' },
+    el('div', {},
+      el('div', { class: 'finish-tracker-title' }, 'Finish Tracker'),
+      el('div', { class: 'finish-tracker-safe' }, 'Your inspection data is safe.')
+    ),
+    el('button', {
+      class: 'finish-tracker-close',
+      type: 'button',
+      'aria-label': 'Close Finish Tracker',
+      onclick: () => setFinishTrackerOpen(false)
+    }, '×')
+  );
+  panel.appendChild(header);
+
+  const progress = el('div', { class: 'finish-tracker-progress-wrap' },
+    el('div', { class: 'finish-tracker-progress-label' },
+      el('span', {}, ready ? 'All required items complete' : `${passed} of ${results.length} required items complete`),
+      el('strong', {}, `${Math.round((passed / results.length) * 100)}%`)
+    ),
+    el('div', { class: 'finish-tracker-progress' },
+      el('div', { class: 'finish-tracker-progress-fill', style: `width:${Math.round((passed / results.length) * 100)}%` })
+    )
+  );
+  panel.appendChild(progress);
+
+  const required = el('section', { class: 'finish-tracker-section' });
+  required.appendChild(el('div', { class: 'finish-tracker-section-title' }, ready ? 'Required work complete' : 'Required before submitting'));
+  if (ready) {
+    required.appendChild(el('div', { class: 'finish-tracker-ready-message' }, 'Nothing is blocking submission.'));
+  } else {
+    failures.forEach(item => {
+      const button = el('button', { class: 'finish-tracker-item', type: 'button' },
+        el('span', { class: 'finish-tracker-item-icon' }, '!'),
+        el('span', { class: 'finish-tracker-item-label' }, item.label),
+        el('span', { class: 'finish-tracker-item-go' }, 'Go →')
+      );
+      button.addEventListener('click', () => goToFinishItem(item));
+      required.appendChild(button);
+    });
+  }
+  panel.appendChild(required);
+
+  const optional = el('details', { class: 'finish-tracker-optional' });
+  optional.appendChild(el('summary', {},
+    el('span', {}, `Improve score · ${score.total} out of 100`),
+    el('span', { class: 'finish-tracker-optional-count' }, `${incompleteScoreItems.length} categories`)
+  ));
+  const optionalBody = el('div', { class: 'finish-tracker-optional-body' },
+    el('p', {}, 'These improve inspection quality and performance scoring. They do not add new submission blockers.')
+  );
+  if (!incompleteScoreItems.length) {
+    optionalBody.appendChild(el('div', { class: 'finish-tracker-ready-message' }, 'All score categories are complete.'));
+  } else {
+    incompleteScoreItems.forEach(item => {
+      const button = el('button', { class: 'finish-tracker-score-item', type: 'button' },
+        el('span', {},
+          el('strong', {}, item.label),
+          el('small', {}, item.detail)
+        ),
+        el('span', { class: 'finish-tracker-score-points' }, `${item.score}/${item.max} →`)
+      );
+      button.addEventListener('click', () => goToFinishItem(item));
+      optionalBody.appendChild(button);
+    });
+  }
+  optional.appendChild(optionalBody);
+  panel.appendChild(optional);
+  tracker.appendChild(panel);
+  document.body.appendChild(tracker);
 }
 
 function updateSubmitButton(results) {
@@ -5717,7 +5976,7 @@ function renderSubmitSection(insp, locked) {
     scoreRow.innerHTML = `
       <span class="submit-score-num ${s.gradeClass}">${s.total}</span>
       <span class="submit-score-grade ${s.gradeClass}">${s.grade}</span>
-      <span class="submit-score-label">Inspection Score — used for performance tracking</span>`;
+      <span class="submit-score-label">Inspection Score: ${s.total} out of 100 — open Finish Tracker for next steps</span>`;
     scoreWrap.appendChild(scoreRow);
 
     // Bonus clock
@@ -6030,7 +6289,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V26',
+    appVersion: 'REVIEW-PORTAL-V27',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine

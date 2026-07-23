@@ -1176,6 +1176,31 @@ mark.report-search-match.active {
   color: var(--gray-700);
 }
 
+.gate-item-link {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 4px;
+  margin: -4px;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gate-item-link:hover,
+.gate-item-link:focus-visible {
+  background: var(--red-pale);
+  outline: none;
+}
+
+.gate-item-go {
+  margin-left: auto;
+  color: var(--green);
+  font-size: .78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .gate-icon {
   width: 20px;
   height: 20px;
@@ -1201,6 +1226,310 @@ mark.report-search-match.active {
 
 .gate-item-text.pass { color: var(--gray-500); }
 .gate-item-text.fail { color: var(--gray-900); font-weight: 500; }
+
+/* ================================================
+   FLOATING FINISH TRACKER
+   ================================================ */
+.finish-tracker {
+  position: fixed;
+  top: 128px;
+  right: 18px;
+  z-index: 1450;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.finish-tracker-toggle,
+.finish-tracker-panel {
+  pointer-events: auto;
+}
+
+.finish-tracker-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 15px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 999px;
+  background: var(--green);
+  color: var(--white);
+  box-shadow: 0 8px 24px rgba(17,24,39,.2);
+  font: inherit;
+  font-size: .86rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.finish-tracker-toggle:hover,
+.finish-tracker-toggle:focus-visible {
+  background: var(--green-light);
+  outline: 3px solid rgba(189,215,240,.7);
+}
+
+.finish-tracker-toggle.ready {
+  background: var(--success);
+}
+
+.finish-tracker-toggle-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.16);
+}
+
+.finish-tracker-panel {
+  display: none;
+  width: min(360px, calc(100vw - 36px));
+  max-height: calc(100vh - 198px);
+  overflow-y: auto;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(17,24,39,.24);
+}
+
+.finish-tracker.open .finish-tracker-panel {
+  display: block;
+}
+
+.finish-tracker-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 17px 18px 14px;
+  background: var(--white);
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.finish-tracker-title {
+  color: var(--gray-900);
+  font-size: 1.02rem;
+  font-weight: 800;
+}
+
+.finish-tracker-safe {
+  margin-top: 2px;
+  color: var(--success);
+  font-size: .78rem;
+  font-weight: 650;
+}
+
+.finish-tracker-close {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--gray-100);
+  color: var(--gray-600);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.finish-tracker-progress-wrap {
+  padding: 14px 18px;
+  background: var(--gray-50);
+}
+
+.finish-tracker-progress-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+  color: var(--gray-600);
+  font-size: .75rem;
+}
+
+.finish-tracker-progress-label strong {
+  color: var(--green);
+}
+
+.finish-tracker-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--gray-200);
+}
+
+.finish-tracker-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--success);
+  transition: width .25s ease;
+}
+
+.finish-tracker-section {
+  padding: 16px 18px;
+}
+
+.finish-tracker-section-title {
+  margin-bottom: 9px;
+  color: var(--gray-500);
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.finish-tracker-item,
+.finish-tracker-score-item {
+  width: 100%;
+  border: 1px solid var(--gray-200);
+  background: var(--white);
+  color: var(--gray-900);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.finish-tracker-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+.finish-tracker-item + .finish-tracker-item {
+  margin-top: 7px;
+}
+
+.finish-tracker-item:hover,
+.finish-tracker-score-item:hover,
+.finish-tracker-item:focus-visible,
+.finish-tracker-score-item:focus-visible {
+  border-color: var(--blue-dark);
+  background: var(--blue-pale);
+  outline: none;
+}
+
+.finish-tracker-item-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--amber-pale);
+  color: var(--amber);
+  font-size: .75rem;
+  font-weight: 800;
+}
+
+.finish-tracker-item-label {
+  font-size: .79rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.finish-tracker-item-go {
+  color: var(--green);
+  font-size: .75rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.finish-tracker-ready-message {
+  padding: 11px 12px;
+  border-radius: 9px;
+  background: var(--success-pale);
+  color: #166534;
+  font-size: .8rem;
+  font-weight: 650;
+}
+
+.finish-tracker-optional {
+  border-top: 1px solid var(--gray-100);
+}
+
+.finish-tracker-optional summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  color: var(--gray-700);
+  font-size: .8rem;
+  font-weight: 750;
+  cursor: pointer;
+  list-style: none;
+}
+
+.finish-tracker-optional summary::-webkit-details-marker {
+  display: none;
+}
+
+.finish-tracker-optional-count {
+  color: var(--gray-500);
+  font-size: .72rem;
+  font-weight: 600;
+}
+
+.finish-tracker-optional-body {
+  padding: 0 18px 17px;
+}
+
+.finish-tracker-optional-body > p {
+  margin-bottom: 10px;
+  color: var(--gray-500);
+  font-size: .73rem;
+  line-height: 1.4;
+}
+
+.finish-tracker-score-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 9px;
+}
+
+.finish-tracker-score-item + .finish-tracker-score-item {
+  margin-top: 6px;
+}
+
+.finish-tracker-score-item strong,
+.finish-tracker-score-item small {
+  display: block;
+}
+
+.finish-tracker-score-item strong {
+  font-size: .77rem;
+}
+
+.finish-tracker-score-item small {
+  margin-top: 1px;
+  color: var(--gray-500);
+  font-size: .69rem;
+}
+
+.finish-tracker-score-points {
+  color: var(--green);
+  font-size: .74rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.finish-target-highlight {
+  animation: finish-target-pulse .85s ease-in-out 3;
+  outline: 4px solid rgba(29,78,216,.65) !important;
+  outline-offset: 4px;
+}
+
+@keyframes finish-target-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(29,78,216,.08); }
+  50% { box-shadow: 0 0 0 10px rgba(29,78,216,.16); }
+}
 
 /* ================================================
    ROOM SECTIONS
@@ -3197,7 +3526,28 @@ mark.report-search-match.active {
 .score-subtitle { font-size: 0.82rem; color: var(--gray-500); margin-top: 2px; }
 
 .score-bars { display: flex; flex-direction: column; gap: 7px; }
-.score-bar-row { display: grid; grid-template-columns: 110px 1fr 40px; align-items: center; gap: 8px; }
+.score-bar-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 40px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  padding: 3px 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.score-bar-link {
+  border-radius: 7px;
+  cursor: pointer;
+}
+.score-bar-link:hover,
+.score-bar-link:focus-visible {
+  background: rgba(255,255,255,.65);
+  outline: 2px solid rgba(74,144,200,.45);
+}
 .score-bar-label  { font-size: 0.72rem; font-weight: 600; color: var(--gray-600); }
 .score-bar-track  { height: 7px; background: rgba(0,0,0,0.08); border-radius: 4px; overflow: hidden; }
 .score-bar-fill   { height: 100%; background: var(--green); border-radius: 4px; transition: width 0.4s ease; }
@@ -3440,6 +3790,26 @@ mark.report-search-match.active {
 }
 
 @media (max-width: 640px) {
+  .finish-tracker {
+    top: auto;
+    right: 12px;
+    bottom: 84px;
+  }
+
+  .finish-tracker-panel {
+    position: fixed;
+    right: 12px;
+    bottom: 138px;
+    left: 12px;
+    width: auto;
+    max-height: min(68vh, 610px);
+  }
+
+  .finish-tracker-toggle {
+    min-height: 46px;
+    padding: 10px 14px;
+  }
+
   .intake-summary-grid,
   .field-group.two-col {
     grid-template-columns: 1fr;
