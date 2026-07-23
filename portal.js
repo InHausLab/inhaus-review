@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V23';
+const REVIEW_PORTAL_VERSION = 'V24';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -3029,10 +3029,32 @@ function findRoomFollowUpItem(items, record, roomName) {
   return items.find(item => slugifyRoomPart(item.room) === roomKey) || null;
 }
 
+function sourceRoomFollowUpItem(record, roomName) {
+  const sources = [record.step || {}, record.room || {}];
+  const firstValue = key => {
+    for (const source of sources) {
+      const value = source?.[key];
+      if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+    }
+    return '';
+  };
+  const needed = firstValue('followUpNeeded');
+  const recheckIn = firstValue('followUpTimeframe');
+  const watchFor = firstValue('followUpNote');
+  if (!isAffirmative(needed) && !String(recheckIn).trim() && !String(watchFor).trim()) return null;
+  return {
+    stepId: record.stepId,
+    room: roomName,
+    recheckIn: String(recheckIn || ''),
+    watchFor: String(watchFor || '')
+  };
+}
+
 function buildRoomFollowUpEditor(record, insp, locked) {
   const roomName = record.room?.roomName || record.step?.roomName || record.stepId;
   let items = roomFollowUpItems(insp);
-  let item = findRoomFollowUpItem(items, record, roomName);
+  let item = findRoomFollowUpItem(items, record, roomName) ||
+    sourceRoomFollowUpItem(record, roomName);
   if (!item) {
     item = { stepId: record.stepId, room: roomName, recheckIn: '', watchFor: '' };
   }
@@ -5969,7 +5991,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V23',
+    appVersion: 'REVIEW-PORTAL-V24',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
