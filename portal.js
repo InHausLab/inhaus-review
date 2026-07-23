@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V21';
+const REVIEW_PORTAL_VERSION = 'V22';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -226,8 +226,9 @@ function buildReviewRoomRecords(insp) {
     }
   }
 
+  let records;
   if (rooms.length) {
-    return rooms.map((room, index) => {
+    records = rooms.map((room, index) => {
       const declaredStepId = room.stepId || '';
       const expectedKey = stepKeyForRoom(room);
       const directStep = (declaredStepId && steps[declaredStepId]) || (expectedKey ? steps[expectedKey] : null);
@@ -240,20 +241,22 @@ function buildReviewRoomRecords(insp) {
       const step = { ...room, ...(directStep || nameMatch?.step || {}) };
       return { room, step, stepId };
     });
+  } else {
+    records = Object.entries(steps).map(([stepId, step]) => ({
+      room: {
+        roomName: step.roomName || step.name || stepId,
+        type: step.type || '',
+        level: step.level || '',
+        flirDone: step.flirDone || '',
+        flirConcerns: step.flirConcerns || '',
+        breezeDone: step.breezeDone || ''
+      },
+      step,
+      stepId
+    }));
   }
 
-  return Object.entries(steps).map(([stepId, step]) => ({
-    room: {
-      roomName: step.roomName || step.name || stepId,
-      type: step.type || '',
-      level: step.level || '',
-      flirDone: step.flirDone || '',
-      flirConcerns: step.flirConcerns || '',
-      breezeDone: step.breezeDone || ''
-    },
-    step,
-    stepId
-  }));
+  return ensurePhotoBackedRoomRecords(insp, records);
 }
 
 function getReviewedField(insp, group, key, fallback = '') {
@@ -2794,54 +2797,184 @@ function buildEditableRoomTextBlock({
   return wrap;
 }
 
-function buildRoomAliasMap(roomRecords) {
+function photoRoomNames(photo) {
+  return [
+    photo?.roomName,
+    photo?.reviewRoomName,
+    photo?.assignedRoomName,
+    photo?.assignedRoom,
+    photo?.room,
+    photo?.roomLabel
+  ].filter(Boolean);
+}
+
+function buildRoomAliasIndex(roomRecords, insp) {
+  const candidates = new Map();
   const aliasesByStepId = new Map();
   const groups = {};
+  const byStepId = new Map(roomRecords.map(record => [record.stepId, record]));
+  let order = 0;
+
+  const addCandidate = (record, value, priority) => {
+    const alias = slugifyRoomPart(value);
+    if (!record?.stepId || !alias) return;
+    const current = candidates.get(alias);
+    const candidate = { stepId: record.stepId, priority, order: order++ };
+    if (!current || priority > current.priority ||
+        (priority === current.priority && candidate.order < current.order)) {
+      candidates.set(alias, candidate);
+    }
+  };
 
   roomRecords.forEach(record => {
-    const aliases = new Set();
     const roomName = record.room?.roomName || record.step?.roomName || record.stepId;
-    [roomName, record.step?.roomName].filter(Boolean).forEach(name => aliases.add(slugifyRoomPart(name)));
-    aliasesByStepId.set(record.stepId, aliases);
+    addCandidate(record, roomName, 100);
+    addCandidate(record, record.step?.roomName, 95);
+    addCandidate(record, record.stepId, 40);
+    [
+      ...(Array.isArray(record.room?.aliases) ? record.room.aliases : []),
+      ...(Array.isArray(record.room?.previousNames) ? record.room.previousNames : []),
+      ...(Array.isArray(record.step?.aliases) ? record.step.aliases : []),
+      ...(Array.isArray(record.step?.previousNames) ? record.step.previousNames : [])
+    ].forEach(alias => addCandidate(record, alias, 90));
 
     const type = record.room?.type || record.step?.type || '';
     if (!groups[type]) groups[type] = [];
     groups[type].push(record);
   });
 
-  function addIndexedAliases(type, prefix) {
+  const addIndexedAliases = (type, prefix) => {
     (groups[type] || []).forEach((record, index) => {
-      const aliases = aliasesByStepId.get(record.stepId);
-      aliases.add(slugifyRoomPart(`${prefix} ${index + 1}`));
+      addCandidate(record, `${prefix} ${index + 1}`, 60);
     });
-  }
-
+  };
   addIndexedAliases('bedroom', 'Bedroom');
   addIndexedAliases('bathroom', 'Bathroom');
   addIndexedAliases('additional-room', 'Additional Room');
 
-  return aliasesByStepId;
+  const bathroomRelationships = insp?.roomRelationships?.bathrooms || {};
+  Object.entries(bathroomRelationships).forEach(([bathroomStepId, relationship]) => {
+    const bathroom = byStepId.get(bathroomStepId);
+    if (!bathroom || !relationship || typeof relationship !== 'object') return;
+    addCandidate(bathroom, relationship.lastAutoName, 92);
+    [
+      ...(Array.isArray(relationship.aliases) ? relationship.aliases : []),
+      ...(Array.isArray(relationship.previousNames) ? relationship.previousNames : [])
+    ].forEach(alias => addCandidate(bathroom, alias, 92));
+    (relationship.linkedBedroomIds || []).forEach(bedroomStepId => {
+      const bedroom = byStepId.get(bedroomStepId);
+      const bedroomName = bedroom?.room?.roomName || bedroom?.step?.roomName;
+      if (bedroomName) addCandidate(bathroom, `${bedroomName} — Bathroom`, 92);
+    });
+  });
+
+  const ownerByAlias = new Map();
+  candidates.forEach((candidate, alias) => {
+    ownerByAlias.set(alias, candidate.stepId);
+    if (!aliasesByStepId.has(candidate.stepId)) aliasesByStepId.set(candidate.stepId, new Set());
+    aliasesByStepId.get(candidate.stepId).add(alias);
+  });
+  roomRecords.forEach(record => {
+    if (!aliasesByStepId.has(record.stepId)) aliasesByStepId.set(record.stepId, new Set());
+  });
+  return { aliasesByStepId, ownerByAlias };
 }
 
-function photosForRoomRecord(photos, record, aliasesByStepId) {
-  const aliases = aliasesByStepId.get(record.stepId) || new Set();
+function resolvePhotoRoomStepId(photo, aliasIndex) {
+  for (const name of photoRoomNames(photo)) {
+    const owner = aliasIndex.ownerByAlias.get(slugifyRoomPart(name));
+    if (owner) return owner;
+  }
+  return '';
+}
+
+function ensurePhotoBackedRoomRecords(insp, initialRecords) {
+  const records = initialRecords.slice();
+  const steps = insp.stepData || {};
+  const photos = insp.photos || [];
+  const usedStepIds = new Set(records.map(record => record.stepId));
+  let aliasIndex = buildRoomAliasIndex(records, insp);
+  const photoRoomSlugs = new Set(
+    photos.flatMap(photo => photoRoomNames(photo).map(slugifyRoomPart)).filter(Boolean)
+  );
+
+  // A complete exported rooms array can omit valid system rooms such as
+  // Exterior or Utility. Add those step records only when a photo actually
+  // targets them, keeping the review focused while preventing orphaned photos.
+  Object.entries(steps).forEach(([stepId, step]) => {
+    const roomName = String(step?.roomName || step?.name || '').trim();
+    const roomSlug = slugifyRoomPart(roomName);
+    if (!roomSlug || usedStepIds.has(stepId) || !photoRoomSlugs.has(roomSlug) ||
+        aliasIndex.ownerByAlias.has(roomSlug)) return;
+    records.push({
+      room: {
+        roomName,
+        type: step.type || 'photo-backed-room',
+        level: step.level || '',
+        flirDone: step.flirDone || '',
+        flirConcerns: step.flirConcerns || '',
+        breezeDone: step.breezeDone || ''
+      },
+      step,
+      stepId,
+      photoBacked: true
+    });
+    usedStepIds.add(stepId);
+    aliasIndex = buildRoomAliasIndex(records, insp);
+  });
+
+  // Last-resort protection for future app room types: any named photo that
+  // still has no canonical/relationship/step match receives one stable
+  // photo-backed card rather than disappearing from Rooms & Observations.
+  photos.forEach(photo => {
+    if (resolvePhotoRoomStepId(photo, aliasIndex)) return;
+    const roomName = String(photoRoomNames(photo)[0] || '').trim();
+    const roomSlug = slugifyRoomPart(roomName);
+    if (!roomSlug) return;
+    let stepId = `photo-room-${roomSlug}`;
+    let suffix = 2;
+    while (usedStepIds.has(stepId)) stepId = `photo-room-${roomSlug}-${suffix++}`;
+    const synthetic = {
+      room: { roomName, type: 'photo-only', level: '' },
+      step: { roomName, type: 'photo-only' },
+      stepId,
+      photoBacked: true
+    };
+    records.push(synthetic);
+    usedStepIds.add(stepId);
+    aliasIndex = buildRoomAliasIndex(records, insp);
+  });
+
+  return records;
+}
+
+function photosForRoomRecord(photos, record, aliasIndex) {
   const seen = new Set();
   return (photos || []).filter(photo => {
-    const photoNames = [
-      photo.roomName,
-      photo.assignedRoom,
-      photo.assignedRoomName,
-      photo.reviewRoomName,
-      photo.room,
-      photo.roomLabel
-    ].filter(Boolean);
-    const matches = photoNames.some(name => aliases.has(slugifyRoomPart(name)));
-    if (!matches) return false;
+    if (resolvePhotoRoomStepId(photo, aliasIndex) !== record.stepId) return false;
     const key = photo.photoId || photo.driveId || photo.driveUrl || JSON.stringify(photo);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+function auditPhotoRoomRouting(photos, roomRecords, aliasIndex) {
+  const assignedPhotoIds = new Set();
+  const unmatched = [];
+  (photos || []).forEach((photo, index) => {
+    if (!photoRoomNames(photo).length) return;
+    const owner = resolvePhotoRoomStepId(photo, aliasIndex);
+    const photoId = photo.photoId || photo.driveId || photo.driveUrl || `photo-${index + 1}`;
+    if (owner) assignedPhotoIds.add(photoId);
+    else unmatched.push({ photoId, roomName: String(photoRoomNames(photo)[0] || '') });
+  });
+  return {
+    namedPhotoCount: assignedPhotoIds.size + unmatched.length,
+    assignedPhotoCount: assignedPhotoIds.size,
+    unmatched,
+    roomCount: roomRecords.length
+  };
 }
 
 function aiSummaryLooksContradictory(summary, roomPhotos) {
@@ -2957,13 +3090,24 @@ function renderRoomsSection(insp, locked) {
     return;
   }
 
-  const aliasesByStepId = buildRoomAliasMap(roomRecords);
+  const aliasIndex = buildRoomAliasIndex(roomRecords, insp);
+  const routingAudit = auditPhotoRoomRouting(insp.photos || [], roomRecords, aliasIndex);
+  container.dataset.photoRoutingNamed = String(routingAudit.namedPhotoCount);
+  container.dataset.photoRoutingAssigned = String(routingAudit.assignedPhotoCount);
+  container.dataset.photoRoutingUnmatched = String(routingAudit.unmatched.length);
+  if (routingAudit.unmatched.length) {
+    console.error('Assigned photos missing room destinations:', routingAudit.unmatched);
+    container.appendChild(el('div', {
+      class: 'room-routing-warning',
+      role: 'alert'
+    }, `${routingAudit.unmatched.length} assigned photo${routingAudit.unmatched.length === 1 ? '' : 's'} could not be matched to a room. The photos remain available in the Photos section.`));
+  }
   for (const record of roomRecords) {
-    container.appendChild(buildRoomCard(record, insp, locked, aliasesByStepId));
+    container.appendChild(buildRoomCard(record, insp, locked, aliasIndex));
   }
 }
 
-function buildRoomCard(record, insp, locked, aliasesByStepId) {
+function buildRoomCard(record, insp, locked, aliasIndex) {
   const { stepId, step = {}, room = {} } = record;
   const hasNotes   = roomHasReviewableNotes(record, insp);
   const voiceReviewedValue = getReviewedField(insp, stepId, 'voiceReviewed', step.voiceReviewed === true);
@@ -2981,7 +3125,7 @@ function buildRoomCard(record, insp, locked, aliasesByStepId) {
   const originalAISummary = getRoomSourceAISummary(record);
   const aiSummary  = getRoomAISummary(record, insp);
   const hasConcern = isAffirmative(flirConcerns);
-  const roomPhotos = photosForRoomRecord(insp.photos || [], record, aliasesByStepId);
+  const roomPhotos = photosForRoomRecord(insp.photos || [], record, aliasIndex);
   const tannerNotesKey = `room_${stepId}_tannerNotes`;
   const tannerNotes = getReviewedField(insp, 'roomData', tannerNotesKey, '');
 
@@ -5742,7 +5886,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V21',
+    appVersion: 'REVIEW-PORTAL-V22',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
