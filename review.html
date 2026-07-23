@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>InHaus Lab — Inspection Review</title>
-  <link rel="stylesheet" href="styles.css?v=20260723-07">
+  <link rel="stylesheet" href="styles.css?v=20260723-08">
 </head>
 <body>
 
@@ -391,6 +391,13 @@
           <span class="text-muted" id="photo-filter-count"></span>
         </div>
 
+        <div class="photo-review-bulk-actions">
+          <button id="include-all-unreviewed" class="btn btn-primary btn-sm" type="button">
+            ✓ Include all unreviewed photos
+          </button>
+          <span>Review any exclusions first, then include everything remaining in one step.</span>
+        </div>
+
         <!-- Bulk room/task placement -->
         <div class="photo-placement-toolbar" id="photo-placement-toolbar">
           <strong id="photo-selection-count">0 selected</strong>
@@ -475,7 +482,7 @@
 <div id="photo-modal" class="photo-modal hidden"></div>
 <div class="toast-container" id="toast-container"></div>
 
-<script src="portal.js?v=20260723-07"></script>
+<script src="portal.js?v=20260723-08"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
     portalInit('review');

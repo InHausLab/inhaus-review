@@ -2087,6 +2087,31 @@ mark.report-search-match.active {
   line-height: 1.4;
 }
 
+.photo-review-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 9px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: .78rem;
+  font-weight: 650;
+}
+
+.photo-review-bulk-actions .btn:disabled {
+  opacity: .65;
+}
+
+@media (max-width: 640px) {
+  .photo-review-bulk-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .photo-caption textarea:focus {
   outline: none;
   border-color: var(--blue-dark);

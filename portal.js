@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V20';
+const REVIEW_PORTAL_VERSION = 'V21';
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -433,6 +433,9 @@ function flattenInspectionPhotos(insp) {
 function applyReviewedData(insp) {
   const reviewed = insp.reviewedData || {};
   const summary = reviewed.summary || {};
+  const bulkIncludedPhotoIds = new Set(Array.isArray(reviewed.bulkIncludedPhotoIds)
+    ? reviewed.bulkIncludedPhotoIds
+    : []);
   ['clientName', 'propertyAddress', 'inspectionDate', 'reportBuilderNotes'].forEach(key => {
     if (summary[key] !== undefined) insp[key] = summary[key];
     else if (reviewed[key] !== undefined) insp[key] = reviewed[key];
@@ -460,6 +463,9 @@ function applyReviewedData(insp) {
     const legacyRotation = reviewed[`rotation_${photo.photoId}`];
     if (legacyCaption !== undefined) photo.caption = legacyCaption;
     if (legacyIncluded !== undefined) photo.included = legacyIncluded;
+    if (nested.included === undefined && legacyIncluded === undefined && bulkIncludedPhotoIds.has(photo.photoId)) {
+      photo.included = true;
+    }
     if (legacyRotation !== undefined) photo.rotation = normalizePhotoRotation(legacyRotation);
     if (photo.rotation === undefined) photo.rotation = 0;
   });
@@ -3937,25 +3943,25 @@ function renderTestsSection(insp, locked) {
   if (!tbody) return;
   tbody.innerHTML = '';
 
-  const confirmed = insp.testsConfirmed || {};
+  const reviewedTests = insp.reviewedData?.tests || {};
 
   for (const test of TEST_DEFS) {
     const tr = document.createElement('tr');
-    const sampleVal    = insp[test.sampleKey] || insp.reviewedData?.[test.sampleKey] || '';
-    const locationVal  = insp.reviewedData?.[test.key + '_location'] || '';
-    const notesVal     = insp.reviewedData?.[test.key + '_notes'] || '';
-    const isConfirmed  = !!confirmed[test.key];
+    const sampleVal    = reviewedTests[test.sampleKey] ?? insp.reviewedData?.[test.sampleKey] ?? insp[test.sampleKey] ?? '';
+    const locationVal  = reviewedTests[test.key + '_location'] ?? insp.reviewedData?.[test.key + '_location'] ?? '';
+    const notesVal     = reviewedTests[test.key + '_notes'] ?? insp.reviewedData?.[test.key + '_notes'] ?? '';
+    const isConfirmed  = isTestConfirmedForReview(insp, test.key);
 
-    const qtyVal = insp.reviewedData?.[test.key + '_qty'] || insp[test.key + '_qty'] || '';
+    const qtyVal = reviewedTests[test.key + '_qty'] ?? insp.reviewedData?.[test.key + '_qty'] ?? insp[test.key + '_qty'] ?? '';
     if (test.key === 'testATP') {
       const atp = insp.stepData?.['atp-kitchen'] || {};
-      const surface = insp.reviewedData?.testATP_surface || atp.atpSurface || atp.atpSurfaceOther || '';
-      const pre = insp.reviewedData?.testATP_preRLU ?? atp.atpPreRLU ?? '';
-      const preStatus = insp.reviewedData?.testATP_preStatus || atp.atpPreStatus || '';
-      const post = insp.reviewedData?.testATP_postRLU ?? atp.atpPostRLU ?? '';
-      const postStatus = insp.reviewedData?.testATP_postStatus || atp.atpPostStatus || '';
-      const cleaned = insp.reviewedData?.testATP_cleaned || atp.atpCleaned || '';
-      const atpNotes = insp.reviewedData?.testATP_notes || atp.notes || '';
+      const surface = reviewedTests.testATP_surface ?? insp.reviewedData?.testATP_surface ?? atp.atpSurface ?? atp.atpSurfaceOther ?? '';
+      const pre = reviewedTests.testATP_preRLU ?? insp.reviewedData?.testATP_preRLU ?? atp.atpPreRLU ?? '';
+      const preStatus = reviewedTests.testATP_preStatus ?? insp.reviewedData?.testATP_preStatus ?? atp.atpPreStatus ?? '';
+      const post = reviewedTests.testATP_postRLU ?? insp.reviewedData?.testATP_postRLU ?? atp.atpPostRLU ?? '';
+      const postStatus = reviewedTests.testATP_postStatus ?? insp.reviewedData?.testATP_postStatus ?? atp.atpPostStatus ?? '';
+      const cleaned = reviewedTests.testATP_cleaned ?? insp.reviewedData?.testATP_cleaned ?? atp.atpCleaned ?? '';
+      const atpNotes = reviewedTests.testATP_notes ?? insp.reviewedData?.testATP_notes ?? atp.notes ?? '';
       tr.className = 'atp-test-row';
       tr.innerHTML = `
         <td class="test-name">ATP</td>
@@ -4186,6 +4192,7 @@ function renderPhotosSection(insp, locked) {
     if (!photos.some(photo => photo.photoId === photoId)) _selectedPhotoIds.delete(photoId);
   }
   setupPhotoPlacementToolbar(insp, locked);
+  setupBulkPhotoReview(insp, locked);
 
   // Build room filter options
   const roomSelect = qs('#room-filter');
@@ -4243,6 +4250,52 @@ function renderPhotosSection(insp, locked) {
   }
 
   renderPhotoGrid(photos, locked);
+}
+
+function setupBulkPhotoReview(insp, locked) {
+  const button = qs('#include-all-unreviewed');
+  if (!button) return;
+  button.style.display = locked ? 'none' : '';
+  if (locked) return;
+
+  const updateButton = () => {
+    const count = (insp.photos || []).filter(photo => photo.included === null).length;
+    button.disabled = count === 0;
+    button.textContent = count === 0
+      ? '✓ All photos reviewed'
+      : `✓ Include ${count} unreviewed photo${count === 1 ? '' : 's'}`;
+  };
+  updateButton();
+
+  button.onclick = async () => {
+    const unreviewed = (insp.photos || []).filter(photo => photo.included === null);
+    if (!unreviewed.length) return;
+    if (!confirm(
+      `Include all ${unreviewed.length} currently unreviewed photos?\n\n` +
+      'You can still exclude individual photos afterward.'
+    )) return;
+
+    button.disabled = true;
+    button.textContent = `Saving ${unreviewed.length} photos…`;
+    const priorIds = Array.isArray(insp.reviewedData?.bulkIncludedPhotoIds)
+      ? insp.reviewedData.bulkIncludedPhotoIds
+      : [];
+    const bulkIncludedPhotoIds = Array.from(new Set([
+      ...priorIds,
+      ...unreviewed.map(photo => photo.photoId)
+    ]));
+    unreviewed.forEach(photo => { photo.included = true; });
+    const saved = await saveField('summary', 'bulkIncludedPhotoIds', bulkIncludedPhotoIds);
+    renderPhotoGrid(insp.photos || [], false);
+    checkGate();
+    updateButton();
+    showToast(
+      saved
+        ? `${unreviewed.length} photos included`
+        : 'Photo decisions kept in local recovery; cloud save needs a retry',
+      saved ? 'success' : 'info'
+    );
+  };
 }
 
 function renderPhotoGrid(photos, locked) {
@@ -5141,6 +5194,19 @@ function checkGate() {
   updateSubmitButton(results);
 }
 
+function isTestConfirmedForReview(insp, testKey) {
+  const reviewedValue = insp.reviewedData?.tests?.[`${testKey}_confirmed`];
+  if (reviewedValue !== undefined) return reviewedValue === true;
+  const legacyValue = insp.reviewedData?.[`${testKey}_confirmed`];
+  if (legacyValue !== undefined) return legacyValue === true;
+  return insp.testsConfirmed?.[testKey] === true;
+}
+
+function isConductedValue(value) {
+  if (value === true) return true;
+  return ['yes', 'true', 'done', 'completed', 'recorded'].includes(String(value || '').trim().toLowerCase());
+}
+
 function evaluateGate(insp) {
   const photos  = insp.photos  || [];
   const tests   = insp.testsConfirmed || {};
@@ -5150,22 +5216,40 @@ function evaluateGate(insp) {
   // 1. Only rooms that actually contain inspector notes require review.
   // Rooms without notes are neutral and must not block submission.
   const roomsWithNotes = roomRecords.filter(record => roomHasReviewableNotes(record, insp));
-  const notesReviewed = roomsWithNotes.every(record =>
+  const reviewedRooms = roomsWithNotes.filter(record =>
     getReviewedField(insp, record.stepId, 'voiceReviewed', record.step?.voiceReviewed === true) === true
   );
+  const notesReviewed = reviewedRooms.length === roomsWithNotes.length;
 
-  // 2. All test locations recorded (qtrak + breeze in each room that has those fields)
+  // 2. Require locations only for tests actually conducted in that room.
+  // A saved "Breeze: No" must not manufacture a missing Breeze location.
   const roomsWithLocs = roomRecords.filter(record => 'qtrakLocation' in record.step || 'breezeLocation' in record.step);
-  const locsRecorded  = roomsWithLocs.length === 0 || roomsWithLocs.every(record =>
-    (record.step.qtrakLocation || reviewed[record.stepId]?.qtrakLocation || '').trim() !== '' &&
-    (record.step.breezeLocation || reviewed[record.stepId]?.breezeLocation || '').trim() !== ''
-  );
+  let requiredLocations = 0;
+  let recordedLocations = 0;
+  roomsWithLocs.forEach(record => {
+    const reviewedStep = reviewed[record.stepId] || {};
+    const qtrakLocation = String(reviewedStep.qtrakLocation ?? record.step.qtrakLocation ?? '').trim();
+    const breezeLocation = String(reviewedStep.breezeLocation ?? record.step.breezeLocation ?? '').trim();
+    const qtrakRequired = isConductedValue(record.step.qtrakDone ?? record.step.qtrakCaptured) || qtrakLocation !== '';
+    const breezeRequired = isConductedValue(record.step.breezeDone) || breezeLocation !== '';
+    if (qtrakRequired) {
+      requiredLocations++;
+      if (qtrakLocation) recordedLocations++;
+    }
+    if (breezeRequired) {
+      requiredLocations++;
+      if (breezeLocation) recordedLocations++;
+    }
+  });
+  const locsRecorded = recordedLocations === requiredLocations;
 
-  // 3. Tests conducted confirmation (at least one confirmed)
-  const anyTestConfirmed = Object.values(tests).some(v => v === true);
+  // 3. Tests conducted confirmation (at least one source or portal confirmation)
+  const confirmedTestCount = TEST_DEFS.filter(test => isTestConfirmedForReview(insp, test.key)).length;
+  const anyTestConfirmed = confirmedTestCount > 0;
 
   // 4. All photos marked Include or Exclude (none in unreviewed state)
-  const allPhotosReviewed = photos.length === 0 || photos.every(p => p.included !== null);
+  const reviewedPhotoCount = photos.filter(photo => photo.included !== null).length;
+  const allPhotosReviewed = reviewedPhotoCount === photos.length;
 
   // 5. Report Builder Notes filled in
   const reportNotesEl = qs('#field-report-notes');
@@ -5173,15 +5257,18 @@ function evaluateGate(insp) {
   const notesNotEmpty = reportNotes.length > 0;
 
   // 6. Sample IDs recorded (water + boulder blue if those tests confirmed)
-  const waterOk   = !tests.testWaterPanel  || (insp.waterSampleId || reviewed.waterSampleId || '').trim() !== '';
-  const boulderOk = !tests.testBoulderBlue || (insp.boulderBlueSampleId || reviewed.boulderBlueSampleId || '').trim() !== '';
+  const reviewedTests = reviewed.tests || {};
+  const waterOk   = !isTestConfirmedForReview(insp, 'testWaterPanel') ||
+    String(reviewedTests.waterSampleId ?? reviewed.waterSampleId ?? insp.waterSampleId ?? '').trim() !== '';
+  const boulderOk = !isTestConfirmedForReview(insp, 'testBoulderBlue') ||
+    String(reviewedTests.boulderBlueSampleId ?? reviewed.boulderBlueSampleId ?? insp.boulderBlueSampleId ?? '').trim() !== '';
   const samplesOk = waterOk && boulderOk;
 
   return [
-    { key: 'notes',    label: 'All room notes reviewed',              pass: notesReviewed },
-    { key: 'locs',     label: 'All test locations recorded',          pass: locsRecorded },
-    { key: 'tests',    label: 'Tests conducted confirmation complete', pass: anyTestConfirmed },
-    { key: 'photos',   label: 'All photos marked Include or Exclude', pass: allPhotosReviewed },
+    { key: 'notes',    label: `All room notes reviewed (${reviewedRooms.length}/${roomsWithNotes.length})`, pass: notesReviewed },
+    { key: 'locs',     label: `All required test locations recorded (${recordedLocations}/${requiredLocations})`, pass: locsRecorded },
+    { key: 'tests',    label: `Tests conducted confirmation complete (${confirmedTestCount} confirmed)`, pass: anyTestConfirmed },
+    { key: 'photos',   label: `All photos marked Include or Exclude (${reviewedPhotoCount}/${photos.length})`, pass: allPhotosReviewed },
     { key: 'rbnotes',  label: 'Report Builder Notes filled in',       pass: notesNotEmpty },
     { key: 'samples',  label: 'Sample IDs recorded',                  pass: samplesOk }
   ];
@@ -5216,10 +5303,10 @@ function renderGate(results) {
 }
 
 function updateSubmitButton(results) {
-  const btn = qs('#submit-btn');
-  if (!btn) return;
   const passing = results.every(r => r.pass);
-  btn.disabled = !passing;
+  qsa('#submit-btn, #submit-btn-bottom').forEach(btn => {
+    btn.disabled = !passing;
+  });
 
   const submitSection = qs('#submit-section');
   if (submitSection) {
@@ -5358,11 +5445,10 @@ function renderSubmitSection(insp, locked) {
     notesPreview.className = `notes-preview ${notes ? '' : 'empty'}`;
   }
 
-  const submitBtn = qs('#submit-btn');
-  if (submitBtn && locked) {
+  if (locked) qsa('#submit-btn, #submit-btn-bottom').forEach(submitBtn => {
     submitBtn.disabled = true;
     submitBtn.textContent = 'Already Submitted';
-  }
+  });
 }
 
 async function submitToTanner() {
@@ -5372,8 +5458,11 @@ async function submitToTanner() {
   }
 
   const { id, token } = getURLParams();
-  const btn = qs('#submit-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+  const submitButtons = qsa('#submit-btn, #submit-btn-bottom');
+  submitButtons.forEach(btn => {
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+  });
 
   // Calculate and save score before submitting
   const finalScore   = _inspection ? calculateCompletionScore(_inspection) : null;
@@ -5403,7 +5492,10 @@ async function submitToTanner() {
     });
   } catch (err) {
     showToast(`Submission failed: ${err.message}`, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Submit to Tanner →'; }
+    submitButtons.forEach(btn => {
+      btn.disabled = false;
+      btn.textContent = 'Submit to Tanner →';
+    });
     return;
   }
 
@@ -5426,7 +5518,7 @@ async function submitToTanner() {
     e.disabled = true;
   });
 
-  if (btn) { btn.textContent = 'Submitted ✓'; }
+  submitButtons.forEach(btn => { btn.textContent = 'Submitted ✓'; });
 
   // Update sticky status
   const stickyStatus = qs('#sticky-status');
@@ -5650,7 +5742,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V20',
+    appVersion: 'REVIEW-PORTAL-V21',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
