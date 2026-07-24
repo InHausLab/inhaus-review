@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V28';
+const REVIEW_PORTAL_VERSION = 'V29';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
@@ -3978,10 +3978,29 @@ function renderBeforeLeavingSection(insp, locked) {
 
   const sourceChecks = insp.stepData?.['final-checks'] || insp.wrapUp || {};
   const sourceDeparture = insp._departureChecklist || {};
+  const postAssessment = insp.stepData?.['post-assessment'] || insp.postAssessment || {};
+  const shipping = postAssessment.shipping || {};
+  const dataManagement = postAssessment.dataManagement || {};
+  const finalCheck = postAssessment.finalCheck || {};
+  const firstDefined = (...values) => values.find(value => value !== undefined);
+  const sourceAnswers = {
+    breezeCollected: firstDefined(sourceChecks.breezeCollected, shipping.breezeST),
+    boulderBlueDone: firstDefined(sourceChecks.boulderBlueDone, shipping.boulderBlueShip),
+    pfasCollected: firstDefined(sourceChecks.pfasCollected, shipping.pfasShip),
+    waterLabeled: firstDefined(sourceChecks.waterLabeled, shipping.waterPanelShip),
+    appliancesRestored: sourceChecks.appliancesRestored,
+    doorsLightsRestored: sourceChecks.doorsLightsRestored,
+    radonLeftInPlace: sourceChecks.radonLeftInPlace,
+    formComplete: firstDefined(sourceChecks.formComplete, finalCheck.allSectionsComplete, finalCheck.assessmentComplete),
+    photosUploaded: firstDefined(sourceChecks.photosUploaded, finalCheck.allPhotosUploaded),
+    boulderBlueRegistered: sourceChecks.boulderBlueRegistered,
+    downloadQtrak: firstDefined(sourceDeparture.downloadQtrak, dataManagement.qtrakExported),
+    shipSamples: firstDefined(sourceDeparture.shipSamples, finalCheck.allSamplesShipped)
+  };
   const reviewed = insp.reviewedData?.['before-leaving'] || {};
   const allItems = [
-    ...BEFORE_LEAVING_ITEMS.map(item => ({ ...item, source: sourceChecks, group: 'Final checks' })),
-    ...DEPARTURE_TASK_ITEMS.map(item => ({ ...item, source: sourceDeparture, group: 'Departure tasks' }))
+    ...BEFORE_LEAVING_ITEMS.map(item => ({ ...item, source: sourceAnswers, group: 'Final checks' })),
+    ...DEPARTURE_TASK_ITEMS.map(item => ({ ...item, source: sourceAnswers, group: 'Departure tasks' }))
   ];
 
   const heading = el('div', { class: 'before-leaving-summary' });
@@ -4478,39 +4497,65 @@ function photoPlacementKey(roomName, stepName) {
   return `${String(roomName || '')}\u001f${String(stepName || '')}`;
 }
 
+function placementNameKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function placementRecordIsRoom(record) {
+  const stepId = placementNameKey(record?.stepId);
+  const type = placementNameKey(record?.room?.type || record?.step?.type);
+  const name = placementNameKey(record?.room?.roomName || record?.step?.roomName || record?.stepId);
+  if (/(bedroom|bathroom|additional-room|room-test)/.test(type)) return true;
+  if (/^(bedroom-|bathroom-|lowest-room-|additional-room-)/.test(stepId)) return true;
+  return ['attic', 'crawl space', 'living room', 'laundry room', 'utility room', 'kitchen'].includes(name);
+}
+
 function buildPhotoPlacementDestinations(insp) {
   const rooms = new Map();
   const tasks = new Map();
+  const taskNames = new Set();
   const addRoom = roomName => {
     const room = String(roomName || '').trim();
     if (!room) return;
     const key = photoPlacementKey(room, '');
-    if (!rooms.has(key)) rooms.set(key, { key, roomName: room, stepName: '', label: `Room — ${room}` });
+    if (!rooms.has(key)) rooms.set(key, { key, roomName: room, stepName: '', label: room });
   };
   const addTask = (roomName, stepName, customLabel = '') => {
     const room = String(roomName || '').trim();
     const task = String(stepName || '').trim();
     if (!task) return;
+    if (room && placementNameKey(room) === placementNameKey(task)) return;
     const key = photoPlacementKey(room, task);
     if (!tasks.has(key)) {
       tasks.set(key, {
         key,
         roomName: room,
         stepName: task,
-        label: customLabel || `Task — ${task}${room ? ` (${room})` : ''}`
+        label: customLabel || `${task}${room ? ` — ${room}` : ''}`
       });
     }
   };
 
   buildReviewRoomRecords(insp).forEach(record => {
-    addRoom(record.room?.roomName || record.step?.roomName || record.stepId);
+    const name = record.room?.roomName || record.step?.roomName || record.stepId;
+    if (placementRecordIsRoom(record)) addRoom(name);
+    else {
+      taskNames.add(placementNameKey(name));
+      addTask('', name);
+    }
   });
   (insp.photos || []).forEach(photo => {
-    addRoom(photo.originalRoomName);
-    addTask(photo.originalRoomName, photo.originalStepName);
-    addRoom(photo.roomName);
-    addTask(photo.roomName, photo.stepName);
+    [
+      { roomName: photo.originalRoomName, stepName: photo.originalStepName },
+      { roomName: photo.roomName, stepName: photo.stepName }
+    ].forEach(destination => {
+      const roomIsTask = taskNames.has(placementNameKey(destination.roomName));
+      if (!roomIsTask) addRoom(destination.roomName);
+      addTask(roomIsTask ? '' : destination.roomName, destination.stepName || (roomIsTask ? destination.roomName : ''));
+    });
   });
+  addRoom('Kitchen');
+  addRoom('Utility Room');
   STANDARD_ROOM_CHOICES.forEach(addRoom);
 
   const hasWaterEquipment = (insp.photos || []).some(photo =>
@@ -4519,7 +4564,7 @@ function buildPhotoPlacementDestinations(insp) {
   );
   if (hasWaterEquipment) {
     addRoom('Utility Room');
-    addTask('Utility Room', 'Water Treatment System', 'Task — Water Treatment System (Utility Room)');
+    addTask('Utility Room', 'Water Treatment System', 'Water Treatment System — Utility Room');
   }
 
   const byLabel = (a, b) => a.label.localeCompare(b.label);
@@ -6419,7 +6464,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V28',
+    appVersion: 'REVIEW-PORTAL-V29',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
