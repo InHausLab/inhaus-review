@@ -124,5 +124,23 @@
     "submittedAt": "",
     "reportBuilderNotes": "",
     "reviewToken": ""
+  },
+  {
+    "inspectionId": "INH-20260722-VCMSTE",
+    "clientName": "Hubbard",
+    "propertyAddress": "230 Riverside Dr, Basalt CO 81621",
+    "inspectionDate": "7/22/26",
+    "inspectorName": "Dave",
+    "status": "Waiting on Labs",
+    "photoCount": "0",
+    "missingCount": "0",
+    "spreadsheetId": "",
+    "folderId": "",
+    "syncedAt": "",
+    "reviewedBy": "",
+    "reviewedAt": "",
+    "submittedAt": "",
+    "reportBuilderNotes": "",
+    "reviewToken": "InHaus2026"
   }
 ]
