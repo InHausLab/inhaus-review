@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V27';
+const REVIEW_PORTAL_VERSION = 'V28';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
@@ -2584,6 +2584,136 @@ function renderSummarySection(insp, locked) {
     attachFieldSave(dateEl,    'summary', 'inspectionDate');
     attachFieldSave(notesEl,   'summary', 'reportBuilderNotes', true);
   }
+
+  renderFollowUpPlanSection(insp, locked);
+}
+
+function sourceFollowUpPlan(insp) {
+  return getReviewedField(
+    insp,
+    'summary',
+    'aiFollowUpPlan',
+    insp.stepData?.debrief?.aiFollowUpPlan || insp.aiFollowUpPlan || ''
+  );
+}
+
+function followUpPlanPrompt(insp) {
+  const records = buildReviewRoomRecords(insp);
+  const reviewedItems = roomFollowUpItems(insp);
+  const roomDetails = [];
+
+  records.forEach(record => {
+    const roomName = record.room?.roomName || record.step?.roomName || record.stepId;
+    const summary = String(getRoomAISummary(record, insp) || '').trim();
+    const notes = String(getRoomInspectorNotes(record, insp) || '').trim();
+    const followUp = findRoomFollowUpItem(reviewedItems, record, roomName) ||
+      sourceRoomFollowUpItem(record, roomName);
+    const details = [];
+    if (summary && summary !== 'No concerns identified.') details.push('Summary: ' + summary);
+    if (notes && notes !== summary) details.push('Inspector notes: ' + notes);
+    if (followUp && (followUp.recheckIn || followUp.watchFor)) {
+      details.push('Explicit follow-up: ' +
+        [followUp.recheckIn ? 'recheck in ' + followUp.recheckIn : '', followUp.watchFor || '']
+          .filter(Boolean)
+          .join('; '));
+    }
+    if (details.length) roomDetails.push(roomName + ': ' + details.join(' '));
+  });
+
+  const property = insp.stepData?.['property-details'] || {};
+  const radon = insp.stepData?.radon || {};
+  const utility = insp.stepData?.utility || {};
+  const findingsText = roomDetails.length
+    ? roomDetails.map(detail => '- ' + detail).join('\n')
+    : 'No specific room concerns or follow-up items were recorded.';
+
+  return 'You are a professional home health report reviewer writing a follow-up plan for a client. Write in plain, natural prose with no markdown, bullets, asterisks, or special formatting. Use only the inspection information below. Do not invent concerns, test results, or recommendations.\n\n'
+    + 'Property: ' + (getReviewedField(insp, 'summary', 'propertyAddress', insp.propertyAddress) || 'Not recorded') + '\n'
+    + 'Year Built: ' + (property.yearBuilt || 'Unknown') + '\n'
+    + 'Water Source: ' + (insp.waterSource || property.waterSource || 'Unknown') + '\n'
+    + 'Radon Reading: ' + (radon.radonReading || 'Not recorded') + '\n'
+    + 'HVAC Filter Condition: ' + (utility.filterCondition || 'Not recorded') + '\n'
+    + 'HVAC Filter Age: ' + (utility.filterEstimatedAge || 'Not recorded') + '\n\n'
+    + 'Reviewed findings and explicit follow-ups:\n' + findingsText + '\n\n'
+    + 'Instructions:\n'
+    + 'Write short plain-text sections using only the timeframes supported by the findings: Immediate (within 30 days), 3 to 6 months, 12 months, and annually. '
+    + 'For each item, explain what to check, why it matters, and what action is needed. Preserve any explicit inspector timeframe. '
+    + 'Skip empty timeframes. End with one sentence summarizing the overall home health status. '
+    + 'Each timeframe must be a short label followed by a colon and sentence-form prose. Be direct and specific.';
+}
+
+function setFollowUpPlanStatus(message, state = '') {
+  const status = qs('#follow-up-plan-status');
+  if (!status) return;
+  status.textContent = message;
+  status.className = `follow-up-plan-status${state ? ' is-' + state : ''}`;
+}
+
+function renderFollowUpPlanSection(insp, locked) {
+  const textarea = qs('#field-follow-up-plan');
+  const generate = qs('#follow-up-plan-generate');
+  if (!textarea || !generate) return;
+
+  const existing = String(sourceFollowUpPlan(insp) || '');
+  textarea.value = existing;
+  textarea.readOnly = locked;
+  generate.disabled = locked;
+  generate.textContent = existing ? 'Regenerate Follow-Up Plan' : 'Generate Follow-Up Plan';
+  setFollowUpPlanStatus(
+    locked ? 'This submitted review is locked.' : 'Edits save automatically to the review record.',
+    locked ? '' : 'saved'
+  );
+
+  if (!locked && textarea.dataset.saveReady !== 'true') {
+    textarea.dataset.saveReady = 'true';
+    attachReviewedFieldSave(textarea, 'summary', 'aiFollowUpPlan');
+  }
+
+  if (generate.dataset.ready === 'true') return;
+  generate.dataset.ready = 'true';
+  generate.addEventListener('click', async () => {
+    if (!_inspection || generate.disabled) return;
+    generate.disabled = true;
+    generate.textContent = 'Generating…';
+    setFollowUpPlanStatus('Building a draft from the reviewed inspection data…', 'saving');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+    try {
+      const response = await fetch(VISION_PROXY_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: followUpPlanPrompt(_inspection) }),
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error('AI request failed (' + response.status + ')');
+      const result = await response.json();
+      const plan = String(result.content?.[0]?.text || '').trim();
+      if (!plan) throw new Error('The AI returned an empty plan.');
+
+      const generatedAt = new Date().toISOString();
+      textarea.value = plan;
+      setReviewedField('summary', 'aiFollowUpPlan', plan);
+      setReviewedField('summary', 'aiFollowUpPlanGeneratedAt', generatedAt);
+      const planSaved = await saveField('summary', 'aiFollowUpPlan', plan);
+      const timestampSaved = await saveField('summary', 'aiFollowUpPlanGeneratedAt', generatedAt);
+      if (!planSaved || !timestampSaved) throw new Error('The draft could not be cloud-saved.');
+
+      generate.textContent = 'Regenerate Follow-Up Plan';
+      setFollowUpPlanStatus('Plan generated and cloud-saved. Review and edit it before client handoff.', 'saved');
+    } catch (error) {
+      generate.textContent = textarea.value.trim() ? 'Regenerate Follow-Up Plan' : 'Generate Follow-Up Plan';
+      setFollowUpPlanStatus(
+        error.name === 'AbortError'
+          ? 'Generation timed out. The existing plan and inspection data are unchanged.'
+          : 'Could not generate the plan. The existing plan and inspection data are unchanged.',
+        'error'
+      );
+    } finally {
+      clearTimeout(timeout);
+      generate.disabled = false;
+    }
+  });
 }
 
 /* ============================================================
@@ -6289,7 +6419,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V27',
+    appVersion: 'REVIEW-PORTAL-V28',
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine

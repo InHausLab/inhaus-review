@@ -599,6 +599,61 @@ mark.report-search-match.active {
 .field-textarea { min-height: 80px; }
 .field-textarea.large { min-height: 120px; }
 
+.follow-up-plan-panel {
+  padding: 18px;
+  border: 1px solid var(--gray-300);
+  border-radius: 12px;
+  background: #f8fbf7;
+}
+
+.follow-up-plan-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.follow-up-plan-description {
+  margin-top: 4px;
+  color: var(--gray-500);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.follow-up-plan-heading .btn {
+  flex: 0 0 auto;
+}
+
+.follow-up-plan-status {
+  min-height: 18px;
+  margin-top: 8px;
+  color: var(--gray-500);
+  font-size: 0.8rem;
+}
+
+.follow-up-plan-status.is-saving {
+  color: #92400e;
+}
+
+.follow-up-plan-status.is-saved {
+  color: var(--green);
+}
+
+.follow-up-plan-status.is-error {
+  color: var(--red);
+}
+
+@media (max-width: 720px) {
+  .follow-up-plan-heading {
+    flex-direction: column;
+  }
+
+  .follow-up-plan-heading .btn {
+    width: 100%;
+  }
+}
+
 .intake-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

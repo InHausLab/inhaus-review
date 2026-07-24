@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>InHaus Lab — Inspection Review</title>
-  <link rel="stylesheet" href="styles.css?v=20260723-14">
+  <link rel="stylesheet" href="styles.css?v=20260724-1">
 </head>
 <body>
 
@@ -114,6 +114,17 @@
             <textarea id="field-report-notes" class="field-textarea large" placeholder="e.g. Client's main concern is the basement moisture. Focus Tanner on the east wall findings. Water panel was not ordered — client declined. Mold swab results will arrive separately..."></textarea>
             <div class="field-original"></div>
           </div>
+        </div>
+        <div class="follow-up-plan-panel mt-16">
+          <div class="follow-up-plan-heading">
+            <div>
+              <div class="field-label">Client Follow-Up Plan</div>
+              <div class="follow-up-plan-description">Generate this after reviewing the inspector’s room findings. Edit the draft here before client handoff.</div>
+            </div>
+            <button id="follow-up-plan-generate" type="button" class="btn btn-primary">Generate Follow-Up Plan</button>
+          </div>
+          <textarea id="field-follow-up-plan" class="field-textarea large" rows="10" placeholder="Generate a draft from the inspection findings or write the follow-up plan here…"></textarea>
+          <div id="follow-up-plan-status" class="follow-up-plan-status" aria-live="polite">Edits save automatically to the review record.</div>
         </div>
       </div>
     </div>
@@ -461,7 +472,7 @@
 <div id="photo-modal" class="photo-modal hidden"></div>
 <div class="toast-container" id="toast-container"></div>
 
-<script src="portal.js?v=20260723-14"></script>
+<script src="portal.js?v=20260724-1"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
     portalInit('review');
