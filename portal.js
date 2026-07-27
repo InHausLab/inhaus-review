@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V29';
+const REVIEW_PORTAL_VERSION = 'V30';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
@@ -1654,6 +1654,109 @@ function renderPhotoFAB(allPhotos, slots, rd) {
   document.body.appendChild(fab);
 }
 
+function photoReportSlotDefs() {
+  return [
+    ...Array.from({length:5}, (_,i) => ({ key: `followUp_${i+1}_photoIds`,    label: `Follow-up ${i+1}` })),
+    ...Array.from({length:6}, (_,i) => ({ key: `actionTaken_${i+1}_photoIds`, label: `Action ${i+1}` })),
+    ...Array.from({length:6}, (_,i) => ({ key: `obs_${i+1}_photoIds`,         label: `Obs ${i+1}` }))
+  ];
+}
+
+function collectReportPhotoSlotMap(rd = {}) {
+  const photoSlotMap = {};
+  photoReportSlotDefs().forEach(({ key, label }) => {
+    let ids = [];
+    try { ids = JSON.parse(rd[key] || '[]'); } catch(e) {}
+    ids.forEach(id => {
+      if (!photoSlotMap[id]) photoSlotMap[id] = [];
+      photoSlotMap[id].push(label);
+    });
+  });
+  return photoSlotMap;
+}
+
+function photoIdentityCandidates(photo, index) {
+  return [
+    photo?.photoId,
+    photo?.driveId,
+    getDriveIdFromPhoto(photo),
+    photo?.driveUrl,
+    normalizePhotoUrl(photo || {}),
+    photo?.url,
+    photo?.imageUrl,
+    photo?.localUrl,
+    photo ? photoKey(photo) : '',
+    `photo-${index + 1}`
+  ].filter(value => String(value || '').trim()).map(value => String(value));
+}
+
+function scorePhotoKey(photo, index) {
+  return photoIdentityCandidates(photo, index)[0] || `photo-${index + 1}`;
+}
+
+function hasSpecificPlacementName(value) {
+  const slug = slugifyRoomPart(value);
+  if (!slug) return false;
+  return ![
+    'photo',
+    'photos',
+    'spare',
+    'spare-photos',
+    'unassigned',
+    'not-assigned',
+    'none',
+    'n-a',
+    'na',
+    'unknown'
+  ].includes(slug);
+}
+
+function photoHasExplicitPlacement(photo) {
+  return photoRoomNames(photo).some(hasSpecificPlacementName) ||
+    hasSpecificPlacementName(photo?.stepName) ||
+    hasSpecificPlacementName(photo?.assignedSlot);
+}
+
+function collectPhotoPlacementState(insp = {}) {
+  const photos = insp.photos || [];
+  const slotMap = collectReportPhotoSlotMap(insp.reviewedData || {});
+  const slotIds = new Set(Object.keys(slotMap));
+  const placedKeys = new Set();
+  const roomPlacedKeys = new Set();
+  const reportSlotKeys = new Set();
+  let aliasIndex = null;
+
+  try {
+    const roomRecords = buildReviewRoomRecords(insp);
+    aliasIndex = buildRoomAliasIndex(roomRecords, insp);
+  } catch(e) {
+    aliasIndex = null;
+  }
+
+  photos.forEach((photo, index) => {
+    const key = scorePhotoKey(photo, index);
+    const candidates = photoIdentityCandidates(photo, index);
+    if (candidates.some(candidate => slotIds.has(candidate))) {
+      placedKeys.add(key);
+      reportSlotKeys.add(key);
+    }
+    const routedToRoom = aliasIndex ? resolvePhotoRoomStepId(photo, aliasIndex) : '';
+    if (routedToRoom || photoHasExplicitPlacement(photo)) {
+      placedKeys.add(key);
+      roomPlacedKeys.add(key);
+    }
+  });
+
+  return {
+    total: photos.length,
+    placedCount: Math.min(placedKeys.size, photos.length),
+    placedKeys,
+    roomPlacedKeys,
+    reportSlotKeys,
+    slotMap
+  };
+}
+
 /* ============================================================
    COMPLETION SCORE
    ============================================================ */
@@ -1667,13 +1770,10 @@ function calculateCompletionScore(insp) {
   const tryParse = key => { try { return JSON.parse(rd[key] || '[]'); } catch(e) { return []; } };
 
   // --- Category 1: Photo placement (30 pts) ---
+  const photoPlacement = collectPhotoPlacementState(insp);
   let photoScore = 30; // full credit if no photos
   if (photos.length > 0) {
-    const allSlotIds = new Set();
-    for (let i = 1; i <= 5; i++) tryParse(`followUp_${i}_photoIds`).forEach(id => allSlotIds.add(id));
-    for (let i = 1; i <= 6; i++) tryParse(`actionTaken_${i}_photoIds`).forEach(id => allSlotIds.add(id));
-    for (let i = 1; i <= 6; i++) tryParse(`obs_${i}_photoIds`).forEach(id => allSlotIds.add(id));
-    photoScore = Math.round((allSlotIds.size / photos.length) * 30);
+    photoScore = Math.round((photoPlacement.placedCount / photos.length) * 30);
   }
 
   // --- Category 2: Observations filled (25 pts) ---
@@ -1715,7 +1815,7 @@ function calculateCompletionScore(insp) {
   return {
     total, grade, gradeClass,
     categories: [
-      { key: 'score-photos', label: 'Photos placed', score: photoScore, max: 30, detail: photos.length === 0 ? 'No photos' : `${[...new Set([].concat(...[1,2,3,4,5].map(i=>tryParse(`followUp_${i}_photoIds`)), ...[1,2,3,4,5,6].map(i=>tryParse(`actionTaken_${i}_photoIds`)), ...[1,2,3,4,5,6].map(i=>tryParse(`obs_${i}_photoIds`))))].length} of ${photos.length} assigned`, selector: '#photos-card', action: 'reportPhotos' },
+      { key: 'score-photos', label: 'Photos placed', score: photoScore, max: 30, detail: photos.length === 0 ? 'No photos' : `${photoPlacement.placedCount} of ${photos.length} placed`, selector: '#photos-card', action: 'reportPhotos' },
       { key: 'score-observations', label: 'Observations', score: obsScore, max: 25, detail: `${Math.round(obsFilled)} of 6 complete`, selector: '#finish-observations' },
       { key: 'score-actions', label: 'Actions taken', score: actionsScore, max: 25, detail: `${Math.round(actionsFilled)} of 6 complete`, selector: '#finish-actions' },
       { key: 'score-checklist', label: 'Checklist', score: gateScore, max: 20, detail: `${gatePassed} of ${gateResults.length} items`, selector: '#gate-section' }
@@ -1768,24 +1868,12 @@ function renderScoreCard(body, insp) {
 function renderPhotoLibrary(body, allPhotos, rd, insp) {
   if (!allPhotos || allPhotos.length === 0) return;
 
-  // Build reverse lookup: photoId → slot label
-  const photoSlotMap = {};
-  const slotDefs = [
-    ...Array.from({length:5}, (_,i) => ({ key: `followUp_${i+1}_photoIds`,    label: `Follow-up ${i+1}` })),
-    ...Array.from({length:6}, (_,i) => ({ key: `actionTaken_${i+1}_photoIds`, label: `Action ${i+1}` })),
-    ...Array.from({length:6}, (_,i) => ({ key: `obs_${i+1}_photoIds`,         label: `Obs ${i+1}` }))
-  ];
-  slotDefs.forEach(({ key, label }) => {
-    let ids = [];
-    try { ids = JSON.parse(rd[key] || '[]'); } catch(e) {}
-    ids.forEach(id => {
-      if (!photoSlotMap[id]) photoSlotMap[id] = [];
-      photoSlotMap[id].push(label);
-    });
-  });
-
-  const assigned   = allPhotos.filter(p => photoSlotMap[p.photoId]);
-  const unassigned = allPhotos.filter(p => !photoSlotMap[p.photoId]);
+  const scoringInspection = { ...(insp || {}), photos: allPhotos, reviewedData: rd };
+  const placementState = collectPhotoPlacementState(scoringInspection);
+  const photoSlotMap = placementState.slotMap;
+  const placed = allPhotos.filter((photo, index) => placementState.placedKeys.has(scorePhotoKey(photo, index)));
+  const inReportSections = allPhotos.filter(p => photoSlotMap[p.photoId]);
+  const unplaced = allPhotos.length - placed.length;
 
   const section = el('div', { class: 'photo-library-section' });
 
@@ -1793,9 +1881,12 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
   const hdr = el('div', { class: 'photo-library-header' });
   hdr.appendChild(el('div', { class: 'photo-library-title' }, '\uD83D\uDDBC\uFE0F Photo Library'));
   const summary = el('div', { class: 'photo-library-summary' });
-  summary.appendChild(el('span', { class: 'lib-badge lib-badge-assigned' }, `${assigned.length} assigned`));
-  if (unassigned.length > 0) {
-    summary.appendChild(el('span', { class: 'lib-badge lib-badge-unassigned' }, `${unassigned.length} not placed`));
+  summary.appendChild(el('span', { class: 'lib-badge lib-badge-assigned' }, `${placed.length} placed in rooms/tasks`));
+  if (inReportSections.length > 0) {
+    summary.appendChild(el('span', { class: 'lib-badge lib-badge-assigned' }, `${inReportSections.length} in report sections`));
+  }
+  if (unplaced > 0) {
+    summary.appendChild(el('span', { class: 'lib-badge lib-badge-unassigned' }, `${unplaced} not placed`));
   }
   hdr.appendChild(summary);
   section.appendChild(hdr);
@@ -1821,11 +1912,15 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
   const grid = el('div', { class: 'photo-library-grid' });
   grid.style.setProperty('--lib-thumb-size', SIZES[libSize]);
 
-  allPhotos.forEach(photo => {
-    const slots = photoSlotMap[photo.photoId];
-    const isAssigned = !!slots;
+  allPhotos.forEach((photo, index) => {
+    const slots = photoSlotMap[photo.photoId] || [];
+    const isInReportSection = slots.length > 0;
+    const isPlaced = placementState.placedKeys.has(scorePhotoKey(photo, index));
+    const placementLabel = [photo.roomName, photo.stepName]
+      .filter(hasSpecificPlacementName)
+      .join(' — ') || 'Placed';
     const card = el('div', {
-      class: `lib-card${isAssigned ? ' lib-assigned' : ' lib-unassigned'}`,
+      class: `lib-card${isPlaced ? ' lib-assigned' : ' lib-unassigned'}`,
       'data-photo-id': photo.photoId
     });
 
@@ -1838,8 +1933,10 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
       imgWrap.appendChild(el('div', { class: 'lib-img-placeholder' }, (photo.photoId || '').slice(-4)));
     }
     // Status badge
-    if (isAssigned) {
+    if (isInReportSection) {
       imgWrap.appendChild(el('div', { class: 'lib-slot-badge' }, slots.join(', ')));
+    } else if (isPlaced) {
+      imgWrap.appendChild(el('div', { class: 'lib-slot-badge' }, placementLabel));
     } else {
       imgWrap.appendChild(el('div', { class: 'lib-unplaced-badge' }, 'Not placed'));
     }
@@ -1870,11 +1967,11 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
       ...Array.from({length:6}, (_,i) => ({ label: `Observation ${i+1}`,  slotKey: `obs_${i+1}_photoIds` }))
     ];
     const moveBtn = el('button', {
-      class: `lib-move-btn${isAssigned ? '' : ' lib-move-btn-urgent'}`,
+      class: `lib-move-btn${isInReportSection ? '' : ' lib-move-btn-urgent'}`,
       type: 'button',
       id: `assign-badge-${photo.photoId}`
-    }, isAssigned ? `\uD83D\uDCCC ${slots.join(', ')}` : '\u2014 Not in any section');
-    moveBtn.className = `lib-move-btn photo-assign-badge${isAssigned ? ' is-assigned' : ' not-assigned'}`;
+    }, isInReportSection ? `\uD83D\uDCCC ${slots.join(', ')}` : '+ Add to report section');
+    moveBtn.className = `lib-move-btn photo-assign-badge${isInReportSection ? ' is-assigned' : ' not-assigned'}`;
     moveBtn.id = `assign-badge-${photo.photoId}`;
     moveBtn.addEventListener('click', () => openAssignPhotoModal(photo, allPhotos, allSlots, rd));
     card.appendChild(moveBtn);
