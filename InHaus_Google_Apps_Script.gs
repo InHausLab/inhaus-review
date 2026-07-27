@@ -306,6 +306,8 @@ function doPost(e) {
       result = saveReviewData(data);
     } else if (data.action === 'submit') {
       result = submitReviewToTanner(data);
+    } else if (data.action === 'submitSmoke') {
+      result = submitReviewSmokeCheck(data);
     } else if (data.action === 'adminUnlock') {
       result = adminUnlockReview(data);
     } else if (data.action === 'commentLibraryCandidate') {
@@ -1028,6 +1030,20 @@ function submitReviewToTanner(data) {
   }
   notifyTannerSubmission(data, saved.reviewedData);
   return { submitted: true, id: id, status: 'Submitted to Tanner', submittedAt: submittedAt };
+}
+
+function submitReviewSmokeCheck(data) {
+  var id = data.id || data.inspectionId || 'INH-READINESS-PROBE';
+  if (!data.token) throw new Error('Missing review token');
+  requireReviewTokenForInspectionId(id, data.token);
+  return {
+    smoke: true,
+    id: id,
+    authorized: true,
+    statusChanged: false,
+    emailSent: false,
+    message: 'Submit auth path accepted without changing inspection status or emailing Tanner.'
+  };
 }
 
 function adminUnlockReview(data) {

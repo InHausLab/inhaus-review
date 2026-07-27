@@ -61,6 +61,30 @@ That flattens photos into each inspection's top-level `photos` array, keeps Driv
 
 ---
 
+## Non-Negotiable QA Protocol
+
+A review portal QA pass is not complete until the production submit path passes a safe smoke test. Loading the page, checking photos, saving notes, and inspecting UI state are not enough.
+
+Before anyone says the portal is ready:
+
+1. Run the static tests:
+
+```bash
+node --test tests/*.test.mjs
+```
+
+2. Run the production submit-path smoke test:
+
+```bash
+node scripts/smoke-submit-path.mjs
+```
+
+The smoke test uses `INH-READINESS-PROBE` by default and calls the Apps Script `submitSmoke` action. That action must validate the same review token path as real Submit, but it must not change inspection status and must not email Tanner. If this test fails, the site is not ready, even if the UI looks correct.
+
+If the Apps Script source changes, deploy Apps Script before running the production smoke test. A GitHub Pages push alone does not update Apps Script.
+
+---
+
 ## Demo / Placeholder Mode
 
 If `APPS_SCRIPT_URL` is still `'PLACEHOLDER_URL'`, the portal runs in **demo mode**:
@@ -137,11 +161,14 @@ Returns all inspections summary:
 ### GET `?action=get&id={id}&token={reviewToken}`
 Returns full inspection JSON (raw or reviewed, whichever is latest).
 
-### POST `{ action: "saveReview", id, token, field: { stepId, key, value } }`
+### POST `{ action: "saveReview", id, token, "x-sync-secret", field: { stepId, key, value } }`
 Saves a single field edit to the reviewed JSON in Drive.
 
-### POST `{ action: "submit", id, token }`
+### POST `{ action: "submit", id, token, "x-sync-secret" }`
 Locks the inspection, sets status → "Submitted to Tanner", emails Tanner.
+
+### POST `{ action: "submitSmoke", id, token, "x-sync-secret" }`
+Validates the production submit auth path without changing status or emailing Tanner. Required for smoke-test signoff.
 
 ### POST `{ action: "adminUnlock", id, token, adminToken }`
 Reopens a submitted inspection (admin only).
