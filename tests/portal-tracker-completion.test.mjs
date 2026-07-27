@@ -6,7 +6,7 @@ const portal = readFileSync(new URL('../portal.js', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V31'/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V32'/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
@@ -22,10 +22,11 @@ test('finish tracker uses the live submission gate and supports exact navigation
 });
 
 test('inspection score is explained out of 100 and links incomplete categories', () => {
-  assert.match(portal, /out of 100 — Inspection Score/);
-  assert.match(portal, /Click any incomplete category to go straight to the work that improves it/);
+  assert.match(portal, /No submitted review score yet/);
+  assert.match(portal, /Submitted Review Score/);
+  assert.match(portal, /becomes the review score only after Submit to Tanner succeeds/);
   assert.match(portal, /score-bar-link/);
-  assert.match(portal, /open Finish Tracker for next steps/);
+  assert.match(portal, /Review score to be submitted/);
 });
 
 test('Attic and Crawl Space are standard room choices across photo selectors', () => {

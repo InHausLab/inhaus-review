@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V31';
+const REVIEW_PORTAL_VERSION = 'V32';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
@@ -1837,20 +1837,27 @@ function calculateCompletionScore(insp) {
 
 function renderScoreCard(body, insp) {
   const score = calculateCompletionScore(insp);
+  const submission = insp.reviewedData?.submission || {};
+  const submittedAt = submission.submittedAt || insp.submittedAt || insp.submittedToTannerAt || '';
+  const isSubmittedScore = Boolean(submittedAt);
 
   const card = el('div', { class: `score-card ${score.gradeClass}` });
 
   // Left: big number + grade
   const scoreLeft = el('div', { class: 'score-left' });
-  scoreLeft.appendChild(el('div', { class: 'score-number' }, String(score.total)));
-  scoreLeft.appendChild(el('div', { class: 'score-grade' }, score.grade));
+  scoreLeft.appendChild(el('div', { class: 'score-number' }, isSubmittedScore ? String(score.total) : 'Draft'));
+  scoreLeft.appendChild(el('div', { class: 'score-grade' }, isSubmittedScore ? score.grade : `${score.total}/100`));
   card.appendChild(scoreLeft);
 
   // Right: label + breakdown
   const scoreRight = el('div', { class: 'score-right' });
   const titleRow = el('div', { class: 'score-title-row' });
-  titleRow.appendChild(el('div', { class: 'score-title' }, `${score.total} out of 100 — Inspection Score`));
-  titleRow.appendChild(el('div', { class: 'score-subtitle' }, 'Click any incomplete category to go straight to the work that improves it.'));
+  titleRow.appendChild(el('div', { class: 'score-title' }, isSubmittedScore
+    ? `${score.total} out of 100 — Submitted Review Score`
+    : 'No submitted review score yet'));
+  titleRow.appendChild(el('div', { class: 'score-subtitle' }, isSubmittedScore
+    ? 'This score is saved from the review portal submission package.'
+    : `Current draft progress is ${score.total} out of 100. It becomes the review score only after Submit to Tanner succeeds.`));
   scoreRight.appendChild(titleRow);
 
   const bars = el('div', { class: 'score-bars' });
@@ -6111,11 +6118,11 @@ function renderFinishTracker(results) {
 
   const optional = el('details', { class: 'finish-tracker-optional' });
   optional.appendChild(el('summary', {},
-    el('span', {}, `Improve score · ${score.total} out of 100`),
+    el('span', {}, `Improve draft review · ${score.total} out of 100`),
     el('span', { class: 'finish-tracker-optional-count' }, `${incompleteScoreItems.length} categories`)
   ));
   const optionalBody = el('div', { class: 'finish-tracker-optional-body' },
-    el('p', {}, 'These improve inspection quality and performance scoring. They do not add new submission blockers.')
+    el('p', {}, 'These improve the review package that will be scored when submitted. They do not add new submission blockers.')
   );
   if (!incompleteScoreItems.length) {
     optionalBody.appendChild(el('div', { class: 'finish-tracker-ready-message' }, 'All score categories are complete.'));
@@ -6265,7 +6272,7 @@ function renderSubmitSection(insp, locked) {
     scoreRow.innerHTML = `
       <span class="submit-score-num ${s.gradeClass}">${s.total}</span>
       <span class="submit-score-grade ${s.gradeClass}">${s.grade}</span>
-      <span class="submit-score-label">Inspection Score: ${s.total} out of 100 — open Finish Tracker for next steps</span>`;
+      <span class="submit-score-label">Review score to be submitted: ${s.total} out of 100 — open Finish Tracker for next steps</span>`;
     scoreWrap.appendChild(scoreRow);
 
     // Bonus clock
