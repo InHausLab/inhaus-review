@@ -6,10 +6,19 @@ const portal = readFileSync(new URL('../portal.js', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V32'/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V33'/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
+});
+
+test('submitted state must come from server-confirmed review package', () => {
+  assert.match(portal, /function stripLocalOnlySubmissionState\(/);
+  assert.match(portal, /delete data\.submission/);
+  assert.match(portal, /delete data\.submittedToTannerAt/);
+  assert.match(portal, /function getServerSubmittedReviewState\(/);
+  assert.match(portal, /hasSubmittedPackage/);
+  assert.match(portal, /Submission was not confirmed by the server/);
 });
 
 test('finish tracker uses the live submission gate and supports exact navigation', () => {

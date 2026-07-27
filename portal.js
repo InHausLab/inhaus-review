@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V32';
+const REVIEW_PORTAL_VERSION = 'V33';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
@@ -710,6 +710,45 @@ async function loadCloudReview(inspectionId) {
   return data;
 }
 
+function stripLocalOnlySubmissionState(data) {
+  if (!data || typeof data !== 'object') return data;
+  delete data.submission;
+  delete data.status;
+  delete data.submittedAt;
+  delete data.submittedToTannerAt;
+  delete data.completionScore;
+  delete data.completionGrade;
+  if (data.summary && typeof data.summary === 'object' && !Array.isArray(data.summary)) {
+    delete data.summary.submission;
+    delete data.summary.status;
+    delete data.summary.submittedAt;
+    delete data.summary.submittedToTannerAt;
+    delete data.summary.completionScore;
+    delete data.summary.completionGrade;
+  }
+  return data;
+}
+
+function getServerSubmittedReviewState(insp = {}) {
+  const submission = insp.reviewedData?.submission && typeof insp.reviewedData.submission === 'object'
+    ? insp.reviewedData.submission
+    : null;
+  const submittedAt = String(submission?.submittedAt || '').trim();
+  const status = String(insp.status || '').toLowerCase();
+  const hasSubmittedPackage = Boolean(submission && (
+    submittedAt ||
+    submission.completionScore !== undefined ||
+    submission.completionGrade !== undefined ||
+    submission.status
+  ));
+  return {
+    submitted: hasSubmittedPackage,
+    statusSubmitted: /submitted to tanner|report complete/.test(status),
+    submittedAt,
+    submission
+  };
+}
+
 async function saveCloudReviewField(inspectionId, field) {
   const response = await fetch(PHOTO_WORKER_URL + '/save-review', {
     method: 'POST',
@@ -961,6 +1000,7 @@ async function loadInspection() {
   if (!IS_DEMO && id) {
     try {
       const saved = JSON.parse(localStorage.getItem('inhaus_review_' + id) || '{}');
+      stripLocalOnlySubmissionState(saved);
       ['summary', 'post'].forEach(group => {
         if (saved[group] && typeof saved[group] === 'object' && !Array.isArray(saved[group])) {
           Object.assign(saved, saved[group]);
@@ -1837,9 +1877,8 @@ function calculateCompletionScore(insp) {
 
 function renderScoreCard(body, insp) {
   const score = calculateCompletionScore(insp);
-  const submission = insp.reviewedData?.submission || {};
-  const submittedAt = submission.submittedAt || insp.submittedAt || insp.submittedToTannerAt || '';
-  const isSubmittedScore = Boolean(submittedAt);
+  const submittedReview = getServerSubmittedReviewState(insp);
+  const isSubmittedScore = submittedReview.submitted;
 
   const card = el('div', { class: `score-card ${score.gradeClass}` });
 
@@ -2646,7 +2685,8 @@ function renderReviewPage(insp) {
   if (stickyStatus)  stickyStatus.innerHTML   = statusBadgeHTML(insp.status);
   if (stickyOwner)   stickyOwner.textContent  = `Owner: ${insp.inspectorName}`;
 
-  const isSubmitted = insp.status === 'Submitted to Tanner' || insp.status === 'Report Complete';
+  const submittedReview = getServerSubmittedReviewState(insp);
+  const isSubmitted = submittedReview.submitted || submittedReview.statusSubmitted;
 
   // Submitted banner
   if (isSubmitted) {
@@ -2654,7 +2694,7 @@ function renderReviewPage(insp) {
     if (banner) {
       banner.classList.remove('hidden');
       const bannerText = qs('#submitted-banner-text');
-      if (bannerText) bannerText.textContent = `Submitted ${formatDateTime(insp.submittedToTannerAt || '')} — editing is locked.`;
+      if (bannerText) bannerText.textContent = `Submitted ${formatDateTime(submittedReview.submittedAt || '')} — editing is locked.`;
     }
   }
 
@@ -6333,6 +6373,12 @@ async function submitToTanner() {
       reportBuilderNotes: _inspection?.reportBuilderNotes || '',
       photos:           _inspection?.photos || []
     });
+    const verified = await apiFetch({ action: 'get', id, token });
+    const verifiedInspection = verified.inspection || verified;
+    const verifiedSubmission = getServerSubmittedReviewState(verifiedInspection);
+    if (!verifiedSubmission.submitted) {
+      throw new Error('Submission was not confirmed by the server. Please retry.');
+    }
   } catch (err) {
     showToast(`Submission failed: ${err.message}`, 'error');
     submitButtons.forEach(btn => {
