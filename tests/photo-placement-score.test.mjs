@@ -61,7 +61,7 @@ globalThis.__calculateCompletionScore = calculateCompletionScore;`, context);
   return context;
 }
 
-test('room-placed photos count toward photo placement score without report-section slots', () => {
+test('source app room labels do not count toward review portal photo score', () => {
   const context = loadPortalContext();
   const inspection = context.__normalizeInspectionForReview({
     inspectionId: 'INH-SCORE-ROOM-PHOTOS',
@@ -72,8 +72,8 @@ test('room-placed photos count toward photo placement score without report-secti
       'bedroom-7': { roomName: 'Bedroom 7', type: 'bedroom', notes: 'Inspector notes present.', voiceReviewed: true }
     },
     photos: [
-      { roomName: 'Bedroom 7', stepName: 'Photos', driveUrl: 'https://drive.google.com/file/d/roomPhotoOne/view' },
-      { roomName: 'Bedroom 7', stepName: 'FLIR Thermal Scan', driveUrl: 'https://drive.google.com/file/d/roomPhotoTwo/view' }
+      { photoId: 'room-1', roomName: 'Bedroom 7', stepName: 'Photos', driveUrl: 'https://drive.google.com/file/d/roomPhotoOne/view' },
+      { photoId: 'room-2', roomName: 'Bedroom 7', stepName: 'FLIR Thermal Scan', driveUrl: 'https://drive.google.com/file/d/roomPhotoTwo/view' }
     ],
     reviewedData: {},
     testsConfirmed: {}
@@ -82,8 +82,38 @@ test('room-placed photos count toward photo placement score without report-secti
   const score = context.__calculateCompletionScore(inspection);
   const photoCategory = score.categories.find(category => category.key === 'score-photos');
 
+  assert.equal(photoCategory.score, 0);
+  assert.equal(photoCategory.detail, '0 of 2 portal placed');
+});
+
+test('portal-saved placement and report-section slots count toward photo score', () => {
+  const context = loadPortalContext();
+  const inspection = context.__normalizeInspectionForReview({
+    inspectionId: 'INH-SCORE-PORTAL-PHOTOS',
+    rooms: [
+      { roomName: 'Bedroom 7', type: 'bedroom', stepId: 'bedroom-7', observations: 'Inspector notes present.' }
+    ],
+    stepData: {
+      'bedroom-7': { roomName: 'Bedroom 7', type: 'bedroom', notes: 'Inspector notes present.', voiceReviewed: true }
+    },
+    photos: [
+      { photoId: 'room-1', roomName: 'Bedroom 7', stepName: 'Photos', driveUrl: 'https://drive.google.com/file/d/roomPhotoOne/view' },
+      { photoId: 'room-2', roomName: 'Bedroom 7', stepName: 'FLIR Thermal Scan', driveUrl: 'https://drive.google.com/file/d/roomPhotoTwo/view' }
+    ],
+    reviewedData: {
+      'photo_room-1': {
+        placement: { roomName: 'Bedroom 7', stepName: 'Photos' }
+      },
+      obs_1_photoIds: JSON.stringify(['room-2'])
+    },
+    testsConfirmed: {}
+  });
+
+  const score = context.__calculateCompletionScore(inspection);
+  const photoCategory = score.categories.find(category => category.key === 'score-photos');
+
   assert.equal(photoCategory.score, 30);
-  assert.equal(photoCategory.detail, '2 of 2 placed');
+  assert.equal(photoCategory.detail, '2 of 2 portal placed');
 });
 
 test('generic photo buckets without a room are not treated as placed', () => {
@@ -102,5 +132,5 @@ test('generic photo buckets without a room are not treated as placed', () => {
   const photoCategory = score.categories.find(category => category.key === 'score-photos');
 
   assert.equal(photoCategory.score, 0);
-  assert.equal(photoCategory.detail, '0 of 2 placed');
+  assert.equal(photoCategory.detail, '0 of 2 portal placed');
 });

@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V30';
+const REVIEW_PORTAL_VERSION = 'V31';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
@@ -1711,27 +1711,37 @@ function hasSpecificPlacementName(value) {
   ].includes(slug);
 }
 
-function photoHasExplicitPlacement(photo) {
-  return photoRoomNames(photo).some(hasSpecificPlacementName) ||
-    hasSpecificPlacementName(photo?.stepName) ||
-    hasSpecificPlacementName(photo?.assignedSlot);
+function parsePortalPhotoPlacement(value) {
+  let placement = value;
+  if (typeof placement === 'string') {
+    try { placement = JSON.parse(placement); } catch(e) { placement = null; }
+  }
+  if (!placement || typeof placement !== 'object') return null;
+  const roomName = String(placement.roomName || '').trim();
+  const stepName = String(placement.stepName || '').trim();
+  if (!hasSpecificPlacementName(roomName) && !hasSpecificPlacementName(stepName)) return null;
+  return { roomName, stepName };
+}
+
+function getPortalPhotoPlacement(rd, photo, index) {
+  for (const candidate of photoIdentityCandidates(photo, index)) {
+    const reviewedPhoto = rd?.[`photo_${candidate}`];
+    if (!reviewedPhoto || typeof reviewedPhoto !== 'object') continue;
+    const placement = parsePortalPhotoPlacement(reviewedPhoto.placement);
+    if (placement) return placement;
+  }
+  return null;
 }
 
 function collectPhotoPlacementState(insp = {}) {
   const photos = insp.photos || [];
-  const slotMap = collectReportPhotoSlotMap(insp.reviewedData || {});
+  const rd = insp.reviewedData || {};
+  const slotMap = collectReportPhotoSlotMap(rd);
   const slotIds = new Set(Object.keys(slotMap));
   const placedKeys = new Set();
-  const roomPlacedKeys = new Set();
+  const portalPlacementKeys = new Set();
   const reportSlotKeys = new Set();
-  let aliasIndex = null;
-
-  try {
-    const roomRecords = buildReviewRoomRecords(insp);
-    aliasIndex = buildRoomAliasIndex(roomRecords, insp);
-  } catch(e) {
-    aliasIndex = null;
-  }
+  const portalPlacementByKey = new Map();
 
   photos.forEach((photo, index) => {
     const key = scorePhotoKey(photo, index);
@@ -1740,10 +1750,11 @@ function collectPhotoPlacementState(insp = {}) {
       placedKeys.add(key);
       reportSlotKeys.add(key);
     }
-    const routedToRoom = aliasIndex ? resolvePhotoRoomStepId(photo, aliasIndex) : '';
-    if (routedToRoom || photoHasExplicitPlacement(photo)) {
+    const portalPlacement = getPortalPhotoPlacement(rd, photo, index);
+    if (portalPlacement) {
       placedKeys.add(key);
-      roomPlacedKeys.add(key);
+      portalPlacementKeys.add(key);
+      portalPlacementByKey.set(key, portalPlacement);
     }
   });
 
@@ -1751,7 +1762,8 @@ function collectPhotoPlacementState(insp = {}) {
     total: photos.length,
     placedCount: Math.min(placedKeys.size, photos.length),
     placedKeys,
-    roomPlacedKeys,
+    portalPlacementKeys,
+    portalPlacementByKey,
     reportSlotKeys,
     slotMap
   };
@@ -1815,7 +1827,7 @@ function calculateCompletionScore(insp) {
   return {
     total, grade, gradeClass,
     categories: [
-      { key: 'score-photos', label: 'Photos placed', score: photoScore, max: 30, detail: photos.length === 0 ? 'No photos' : `${photoPlacement.placedCount} of ${photos.length} placed`, selector: '#photos-card', action: 'reportPhotos' },
+      { key: 'score-photos', label: 'Photos placed', score: photoScore, max: 30, detail: photos.length === 0 ? 'No photos' : `${photoPlacement.placedCount} of ${photos.length} portal placed`, selector: '#photos-card', action: 'reportPhotos' },
       { key: 'score-observations', label: 'Observations', score: obsScore, max: 25, detail: `${Math.round(obsFilled)} of 6 complete`, selector: '#finish-observations' },
       { key: 'score-actions', label: 'Actions taken', score: actionsScore, max: 25, detail: `${Math.round(actionsFilled)} of 6 complete`, selector: '#finish-actions' },
       { key: 'score-checklist', label: 'Checklist', score: gateScore, max: 20, detail: `${gatePassed} of ${gateResults.length} items`, selector: '#gate-section' }
@@ -1881,7 +1893,7 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
   const hdr = el('div', { class: 'photo-library-header' });
   hdr.appendChild(el('div', { class: 'photo-library-title' }, '\uD83D\uDDBC\uFE0F Photo Library'));
   const summary = el('div', { class: 'photo-library-summary' });
-  summary.appendChild(el('span', { class: 'lib-badge lib-badge-assigned' }, `${placed.length} placed in rooms/tasks`));
+  summary.appendChild(el('span', { class: 'lib-badge lib-badge-assigned' }, `${placed.length} portal placed`));
   if (inReportSections.length > 0) {
     summary.appendChild(el('span', { class: 'lib-badge lib-badge-assigned' }, `${inReportSections.length} in report sections`));
   }
@@ -1915,10 +1927,12 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
   allPhotos.forEach((photo, index) => {
     const slots = photoSlotMap[photo.photoId] || [];
     const isInReportSection = slots.length > 0;
-    const isPlaced = placementState.placedKeys.has(scorePhotoKey(photo, index));
-    const placementLabel = [photo.roomName, photo.stepName]
+    const placementKey = scorePhotoKey(photo, index);
+    const isPlaced = placementState.placedKeys.has(placementKey);
+    const portalPlacement = placementState.portalPlacementByKey.get(placementKey);
+    const placementLabel = [portalPlacement?.roomName, portalPlacement?.stepName]
       .filter(hasSpecificPlacementName)
-      .join(' — ') || 'Placed';
+      .join(' — ') || 'Portal placed';
     const card = el('div', {
       class: `lib-card${isPlaced ? ' lib-assigned' : ' lib-unassigned'}`,
       'data-photo-id': photo.photoId
