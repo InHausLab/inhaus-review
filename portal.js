@@ -685,8 +685,11 @@ async function apiFetch(params, method = 'GET', body = null) {
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const opts = { method };
   if (body) {
+    const payload = body && typeof body === 'object' && !Array.isArray(body)
+      ? { ...body, 'x-sync-secret': body['x-sync-secret'] || SYNC_SECRET }
+      : body;
     opts.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
-    opts.body = JSON.stringify(body);
+    opts.body = JSON.stringify(payload);
   }
   const res = await fetch(url.toString(), opts);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

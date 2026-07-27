@@ -21,3 +21,7 @@ test('photo placement separates real rooms from inspection tasks', () => {
   assert.doesNotMatch(portal, /label: `Room — \$\{room\}`/);
   assert.doesNotMatch(portal, /label: customLabel \|\| `Task —/);
 });
+
+test('Apps Script POST requests include the shared sync auth key', () => {
+  assert.match(portal, /'x-sync-secret': body\['x-sync-secret'\] \|\| SYNC_SECRET/);
+});
