@@ -199,6 +199,7 @@ function normalizeInspection(raw) {
   insp.rooms = Array.isArray(insp.rooms) ? insp.rooms : [];
   insp.stepData = insp.stepData || {};
   insp.photos = Array.isArray(insp.photos) ? insp.photos : collectNestedPhotos(insp);
+  applyReviewedPhotoState(insp);
   return insp;
 }
 
@@ -207,6 +208,37 @@ function readReviewed(insp, key) {
   if (rd.summary && rd.summary[key] != null) return rd.summary[key];
   if (rd[key] != null) return rd[key];
   return '';
+}
+
+function parseMaybeJson(value, fallback = null) {
+  if (value == null || value === '') return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch (err) {
+    return fallback;
+  }
+}
+
+function applyReviewedPhotoState(insp) {
+  const rd = insp.reviewedData || {};
+  (insp.photos || []).forEach(photo => {
+    if (!photo || !photo.photoId) return;
+    const nested = parseMaybeJson(rd[`photo_${photo.photoId}`], {}) || {};
+    if (photo.originalRoomName === undefined) photo.originalRoomName = photo.roomName || '';
+    if (photo.originalStepName === undefined) photo.originalStepName = photo.stepName || '';
+    if (nested.caption !== undefined) photo.caption = nested.caption;
+    if (nested.included !== undefined) photo.included = nested.included;
+    const placement = parseMaybeJson(nested.placement, nested.placement);
+    if (placement && typeof placement === 'object') {
+      photo.roomName = String(placement.roomName || photo.roomName || '');
+      photo.stepName = String(placement.stepName || photo.stepName || '');
+    }
+    const legacyCaption = rd[`caption_${photo.photoId}`];
+    const legacyIncluded = rd[`included_${photo.photoId}`];
+    if (legacyCaption !== undefined) photo.caption = legacyCaption;
+    if (legacyIncluded !== undefined) photo.included = legacyIncluded;
+  });
 }
 
 function collectNestedPhotos(insp) {
@@ -373,6 +405,12 @@ function renderRoomFindings(insp, findings) {
       metrics.forEach(metric => strip.appendChild(textEl('span', 'metric-pill', metric)));
       body.appendChild(strip);
     }
+    const roomPhotos = getReportPhotosForRoom(insp, room);
+    if (roomPhotos.length) {
+      const photoStrip = div('room-photo-strip');
+      roomPhotos.forEach(photo => photoStrip.appendChild(renderPhotoFigure(photo, 'photo-card room-photo-card')));
+      body.appendChild(photoStrip);
+    }
     card.appendChild(body);
     wrap.appendChild(card);
   });
@@ -430,32 +468,34 @@ function renderPhotoAppendix(photos) {
     return section;
   }
   const grid = div('photo-grid');
-  photos.forEach(photo => {
-    const fig = document.createElement('figure');
-    fig.className = 'photo-card';
-    const img = document.createElement('img');
-    const candidates = photoUrls(photo);
-    img.src = candidates[0];
-    img.alt = photo.caption || photo.roomName || photo.photoId || 'Inspection photo';
-    img.loading = 'lazy';
-    img.referrerPolicy = 'no-referrer-when-downgrade';
-    img.onerror = () => {
-      const nextIndex = Number(img.dataset.candidateIndex || 0) + 1;
-      if (nextIndex < candidates.length) {
-        img.dataset.candidateIndex = String(nextIndex);
-        img.src = candidates[nextIndex];
-      } else {
-        const placeholder = div('photo-placeholder');
-        placeholder.textContent = 'Photo unavailable';
-        img.replaceWith(placeholder);
-      }
-    };
-    fig.appendChild(img);
-    fig.appendChild(textEl('figcaption', '', [photo.roomName, photo.caption || photo.stepName].filter(Boolean).join(' - ') || photo.photoId || 'Photo'));
-    grid.appendChild(fig);
-  });
+  photos.forEach(photo => grid.appendChild(renderPhotoFigure(photo)));
   section.appendChild(grid);
   return section;
+}
+
+function renderPhotoFigure(photo, className = 'photo-card') {
+  const fig = document.createElement('figure');
+  fig.className = className;
+  const img = document.createElement('img');
+  const candidates = photoUrls(photo);
+  img.src = candidates[0];
+  img.alt = photo.caption || photo.roomName || photo.photoId || 'Inspection photo';
+  img.loading = 'lazy';
+  img.referrerPolicy = 'no-referrer-when-downgrade';
+  img.onerror = () => {
+    const nextIndex = Number(img.dataset.candidateIndex || 0) + 1;
+    if (nextIndex < candidates.length) {
+      img.dataset.candidateIndex = String(nextIndex);
+      img.src = candidates[nextIndex];
+    } else {
+      const placeholder = div('photo-placeholder');
+      placeholder.textContent = 'Photo unavailable';
+      img.replaceWith(placeholder);
+    }
+  };
+  fig.appendChild(img);
+  fig.appendChild(textEl('figcaption', '', [photo.roomName, photo.caption || photo.stepName].filter(Boolean).join(' - ') || photo.photoId || 'Photo'));
+  return fig;
 }
 
 function reportSection(title, number) {
@@ -526,7 +566,8 @@ function tableEl(headers, rows) {
 
 function buildRooms(insp) {
   if (insp.stepData && Object.keys(insp.stepData).length) {
-    return Object.values(insp.stepData).map(step => ({
+    return Object.entries(insp.stepData).map(([stepId, step]) => ({
+      stepId,
       name: step.roomName || step.name || step.stepName || step.stepId || 'Room',
       type: step.type || step.stepId || '',
       level: step.level || '',
@@ -539,6 +580,7 @@ function buildRooms(insp) {
     }));
   }
   return (insp.rooms || []).map(room => ({
+    stepId: room.stepId || '',
     name: room.roomName || room.name || room.type || 'Room',
     type: room.type || '',
     level: room.level || '',
@@ -605,6 +647,30 @@ function getReportPhotos(insp) {
   const photos = insp.photos || [];
   const included = photos.filter(photo => photo.included === true);
   return (included.length ? included : photos).filter(photo => photoUrls(photo).length).slice(0, 80);
+}
+
+function roomNameKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function getReportPhotosForRoom(insp, room) {
+  const nameKey = roomNameKey(room.name);
+  const stepId = String(room.stepId || '').toLowerCase();
+  const typeKey = roomNameKey(room.type);
+  return getReportPhotos(insp)
+    .filter(photo => {
+      const photoRoom = roomNameKey(photo.roomName);
+      const photoStep = String(photo.stepId || photo.stepName || '').toLowerCase();
+      if (photoRoom && photoRoom === nameKey) return true;
+      if (stepId && photoStep === stepId) return true;
+      if (typeKey && photoRoom && photoRoom === typeKey) return true;
+      return false;
+    })
+    .slice(0, 6);
 }
 
 function photoUrls(photo) {

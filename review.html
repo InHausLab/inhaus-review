@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>InHaus Lab — Inspection Review</title>
-  <link rel="stylesheet" href="styles.css?v=20260727-submit-auth">
+  <link rel="stylesheet" href="styles.css?v=20260729-13">
 </head>
 <body>
 
@@ -65,6 +65,8 @@
     </div>
   </div>
 
+  <div id="data-health-banner" class="data-health-banner hidden" aria-live="polite"></div>
+
   <!-- ========== SECTION 1 — INSPECTION SUMMARY ========== -->
   <div class="review-section">
     <div class="card">
@@ -73,7 +75,7 @@
           <span class="section-number">1</span>
           <div>
             <div class="card-title">Inspection Summary</div>
-            <div class="card-subtitle">Core details and report builder notes</div>
+            <div class="card-subtitle">Editable source details, report builder notes, and client follow-up plan</div>
           </div>
         </div>
         <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -82,29 +84,7 @@
       </div>
       <div class="card-body">
         <div id="intake-summary-body" class="intake-summary-grid"></div>
-        <div class="field-group two-col">
-          <div>
-            <label class="field-label" for="field-client-name">Client Name</label>
-            <input type="text" id="field-client-name" class="field-input" placeholder="Client name">
-            <div class="field-original"></div>
-          </div>
-          <div>
-            <label class="field-label" for="field-property-address">Property Address</label>
-            <input type="text" id="field-property-address" class="field-input" placeholder="Property address">
-            <div class="field-original"></div>
-          </div>
-        </div>
-        <div class="field-group two-col mt-12">
-          <div>
-            <label class="field-label" for="field-inspection-date">Inspection Date</label>
-            <input type="date" id="field-inspection-date" class="field-input">
-            <div class="field-original"></div>
-          </div>
-          <div class="field-display-only">
-            <label class="field-label" for="field-inspector-name">Lead Inspector</label>
-            <input type="text" id="field-inspector-name" class="field-input" readonly placeholder="Inspector name">
-          </div>
-        </div>
+        <div id="tanner-package-check" class="tanner-package-check mt-16" aria-live="polite"></div>
         <div class="field-group single mt-16">
           <div>
             <label class="field-label" for="field-report-notes">
@@ -119,26 +99,27 @@
           <div class="follow-up-plan-heading">
             <div>
               <div class="field-label">Client Follow-Up Plan</div>
-              <div class="follow-up-plan-description">Generate this after reviewing the inspector’s room findings. Edit the draft here before client handoff.</div>
+              <div class="follow-up-plan-description">Inspector writes the plan first. AI can polish the wording from that draft without adding new findings.</div>
             </div>
-            <button id="follow-up-plan-generate" type="button" class="btn btn-primary">Generate Follow-Up Plan</button>
+            <button id="follow-up-plan-generate" type="button" class="btn btn-primary">Polish with AI</button>
           </div>
-          <textarea id="field-follow-up-plan" class="field-textarea large" rows="10" placeholder="Generate a draft from the inspection findings or write the follow-up plan here…"></textarea>
+          <textarea id="field-follow-up-plan" class="field-textarea large" rows="10" placeholder="Write the client follow-up plan in your own words first. Then use AI only to clean up wording..."></textarea>
+          <div id="follow-up-suggestions" class="follow-up-suggestions"></div>
           <div id="follow-up-plan-status" class="follow-up-plan-status" aria-live="polite">Edits save automatically to the review record.</div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ========== COMPLETE INSPECTOR DATA ========== -->
+  <!-- ========== SOURCE DATA / AUDIT VIEW ========== -->
   <div class="review-section">
-    <div class="card">
+    <div class="card collapsed">
       <div class="card-header" data-toggle>
         <div class="card-header-left">
-          <span class="section-number">ALL</span>
+          <span class="section-number">AUDIT</span>
           <div>
-            <div class="card-title">Complete Inspector Data</div>
-            <div class="card-subtitle">Every captured app section, including property conditions, equipment, rooms, HVAC, setup, and departure data</div>
+            <div class="card-title">Source Data / Audit View</div>
+            <div class="card-subtitle">Raw app output preserved for troubleshooting. Working fields above are the editable review source.</div>
           </div>
         </div>
         <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -151,35 +132,6 @@
     </div>
   </div>
 
-  <!-- ========== SECTION 2 — COMPLETENESS GATE ========== -->
-  <div class="review-section">
-    <div class="card">
-      <div class="card-header" data-toggle>
-        <div class="card-header-left">
-          <span class="section-number">2</span>
-          <div>
-            <div class="card-title">Before You Can Submit</div>
-            <div class="card-subtitle">All items must be complete before submission unlocks</div>
-          </div>
-        </div>
-        <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <polyline points="5 8 10 13 15 8"/>
-        </svg>
-      </div>
-      <div class="card-body" style="padding:0">
-        <div class="gate-section gate-failing" id="gate-section">
-          <div class="gate-header">
-            <span class="gate-title">Completeness checklist</span>
-            <span class="gate-status-text failing" id="gate-status-text">Checking…</span>
-          </div>
-          <div class="gate-list" id="gate-list">
-            <!-- Populated by JS -->
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- ========== SECTION 3 — ROOMS & OBSERVATIONS ========== -->
   <div class="review-section">
     <div class="card">
@@ -188,7 +140,7 @@
           <span class="section-number">3</span>
           <div>
             <div class="card-title">Rooms &amp; Observations</div>
-            <div class="card-subtitle">Room notes, follow-ups, FLIR/Breeze status, AI summaries, and room photos</div>
+            <div class="card-subtitle">Editable room notes, explicit no-issue rooms, test locations, follow-ups, and room photos</div>
           </div>
         </div>
         <svg class="collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -388,6 +340,8 @@
           <span>Review any exclusions first, then include everything remaining in one step.</span>
         </div>
 
+        <div id="photo-placement-audit" class="photo-placement-audit" aria-live="polite"></div>
+
         <!-- Bulk room/task placement -->
         <div class="photo-placement-toolbar" id="photo-placement-toolbar">
           <strong id="photo-selection-count">0 selected</strong>
@@ -432,21 +386,6 @@
       <div class="card-body">
         <div id="submit-score-wrap"></div>
 
-        <div class="submit-summary">
-          <div class="submit-stat">
-            <div class="stat-num" id="summary-included">—</div>
-            <div class="stat-label">Photos Included</div>
-          </div>
-          <div class="submit-stat">
-            <div class="stat-num" id="summary-reviewed">—</div>
-            <div class="stat-label">Room Notes Reviewed</div>
-          </div>
-          <div class="submit-stat">
-            <div class="stat-num" id="summary-rooms">—</div>
-            <div class="stat-label">Rooms With Notes</div>
-          </div>
-        </div>
-
         <div style="margin-bottom:8px">
           <label class="field-label">Report Builder Notes Preview</label>
         </div>
@@ -472,7 +411,7 @@
 <div id="photo-modal" class="photo-modal hidden"></div>
 <div class="toast-container" id="toast-container"></div>
 
-<script src="portal.js?v=20260727-server-confirmed-submit"></script>
+<script src="portal.js?v=20260729-13"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
     portalInit('review');

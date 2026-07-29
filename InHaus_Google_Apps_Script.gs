@@ -65,31 +65,13 @@ function getReviewAccessToken() {
 // Store here since Apps Script runs server-side
 const SUPABASE_URL = 'https://kvpaqvieacccojkkxqul.supabase.co';
 const SUPABASE_ENABLED = true; // set false to disable without removing code
-const PHOTO_REVIEW_PROXY_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev/photo';
-// SUPABASE_KEY is stored in Script Properties (not hardcoded). The legacy
-// SUPABASE_SERVICE_KEY name remains supported for older deployments.
+// SUPABASE_SERVICE_KEY is stored in Script Properties (not hardcoded)
+// To set it: Apps Script → Project Settings → Script Properties → add SUPABASE_SERVICE_KEY
 function getSupabaseKey() {
-  var properties = PropertiesService.getScriptProperties();
-  return properties.getProperty('SUPABASE_KEY') || properties.getProperty('SUPABASE_SERVICE_KEY');
+  return PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
 }
 
-function getExistingAssessmentNumber(inspectionId) {
-  if (!inspectionId || !SUPABASE_ENABLED || !SUPABASE_URL || !getSupabaseKey()) return '';
-  try {
-    var rows = getFromSupabase(
-      'ihl_assessments',
-      'select=assessment_num&inspection_id=eq.' + encodeURIComponent(inspectionId) + '&limit=1'
-    );
-    return rows && rows.length && rows[0].assessment_num
-      ? String(rows[0].assessment_num)
-      : '';
-  } catch (e) {
-    console.warn('Existing assessment number lookup failed:', e.message);
-    return '';
-  }
-}
-
-function postToSupabase(table, payload, conflictColumn) {
+function postToSupabase(table, payload) {
   if (!SUPABASE_ENABLED || !SUPABASE_URL || !getSupabaseKey()) return null;
   try {
     var options = {
@@ -104,7 +86,6 @@ function postToSupabase(table, payload, conflictColumn) {
       muteHttpExceptions: true
     };
     var url = SUPABASE_URL + '/rest/v1/' + table;
-    if (conflictColumn) url += '?on_conflict=' + encodeURIComponent(conflictColumn);
     var response = UrlFetchApp.fetch(url, options);
     var code = response.getResponseCode();
     if (code >= 200 && code < 300) {
@@ -137,11 +118,7 @@ function syncToSupabase(data, driveResult) {
   if (!SUPABASE_ENABLED) return;
   try {
     // 1. Upsert assessment record
-    var existingAssessmentNum = getExistingAssessmentNumber(data.inspectionId);
     var assessment = {
-      assessment_num: existingAssessmentNum || (driveResult && driveResult.assessmentNum
-        ? String(driveResult.assessmentNum)
-        : String(data.assessmentNum || data.inspectionId || '')),
       inspection_id: data.inspectionId,
       report_id: null,
       inspector_name: data.inspectorName || null,
@@ -171,10 +148,7 @@ function syncToSupabase(data, driveResult) {
       source_system: 'apps_script',
       source_id: data.inspectionId
     };
-    var assessmentRows = postToSupabase('ihl_assessments', assessment, 'inspection_id');
-    if (!assessmentRows || !assessmentRows.length) {
-      throw new Error('Supabase rejected the assessment record');
-    }
+    postToSupabase('ihl_assessments', assessment);
 
     // 2. Upsert room air quality records
     var rooms = data.rooms || [];
@@ -213,7 +187,6 @@ function syncToSupabase(data, driveResult) {
   } catch(e) {
     console.error('syncToSupabase error:', e.message);
     logSyncRun(data.inspectionId, 'partial', e.message, 0, 0, data.appVersion);
-    throw e;
   }
 }
 
@@ -306,16 +279,8 @@ function doPost(e) {
       result = saveReviewData(data);
     } else if (data.action === 'submit') {
       result = submitReviewToTanner(data);
-    } else if (data.action === 'submitSmoke') {
-      result = submitReviewSmokeCheck(data);
     } else if (data.action === 'adminUnlock') {
       result = adminUnlockReview(data);
-    } else if (data.action === 'commentLibraryCandidate') {
-      result = submitCommentLibraryCandidate(data);
-    } else if (data.action === 'commentLibraryAdmin') {
-      result = updateCommentLibraryAdmin(data);
-    } else if (data.action === 'teamMerge') {
-      result = mergeTeamInspection(data);
     } else if (data.photoUploadOnly) {
       result = processPhotoUpload(data);
     } else {
@@ -336,18 +301,6 @@ function doPost(e) {
 
 function doGet(e) {
   var params = e ? e.parameter : {};
-  if (params.action === 'capabilities') {
-    try {
-      requirePortalAccess(params.token);
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: 'ok', capabilities: { teamFieldMerge: true, companyCommentLibrary: true, recoveryAudit: true } }))
-        .setMimeType(ContentService.MimeType.JSON);
-    } catch (err) {
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-  }
   if (params.action === 'list') {
     try {
       var listResult = listReviewInspections(params.token);
@@ -374,7 +327,6 @@ function doGet(e) {
   }
   if (params.action === 'getReview' && params.id) {
     try {
-      requireReviewTokenForInspectionId(params.id, params.token);
       var result = getReviewData(params.id, params.token);
       return ContentService
         .createTextOutput(JSON.stringify({ status: 'ok', ...result }))
@@ -384,23 +336,6 @@ function doGet(e) {
         .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-  }
-  if (params.action === 'commentLibrary') {
-    try {
-      requirePortalAccess(params.token);
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: 'ok', libraryVersion: 1, comments: getApprovedCommentLibrary() }))
-        .setMimeType(ContentService.MimeType.JSON);
-    } catch (err) {
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-  }
-  if (params.action === 'commentLibraryAdmin') {
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: 'error', message: 'Admin library requests require POST' }))
-      .setMimeType(ContentService.MimeType.JSON);
   }
   return ContentService
     .createTextOutput(JSON.stringify({ status: 'ok', message: 'InHaus Inspector Bridge is running' }))
@@ -447,50 +382,43 @@ function saveReviewData(data) {
   var token = data.token;
   var field = data.field; // { stepId, key, value }
   if (!id || !field) throw new Error('Missing id or field');
-  requireReviewTokenForInspectionId(id, token);
 
-  var lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    var sheet = getOrCreateReviewSheet();
-    var rows = sheet.getDataRange().getValues();
-    var rowIndex = -1;
-    var existing = {};
+  var sheet = getOrCreateReviewSheet();
+  var rows = sheet.getDataRange().getValues();
+  var rowIndex = -1;
+  var existing = {};
 
-    for (var i = 1; i < rows.length; i++) {
-      if (rows[i][0] === id) {
-        rowIndex = i + 1; // 1-indexed
-        try { existing = JSON.parse(rows[i][1] || '{}'); } catch(e) { existing = {}; }
-        break;
-      }
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0] === id) {
+      rowIndex = i + 1; // 1-indexed
+      try { existing = JSON.parse(rows[i][1] || '{}'); } catch(e) { existing = {}; }
+      break;
     }
-
-    // Merge the new field value into existing data
-    var stepId = field.stepId;
-    var key = field.key;
-    var value = field.value;
-
-    if (stepId === 'summary' || stepId === 'post' || stepId === 'photo') {
-      existing[key] = value;
-    } else {
-      if (!existing[stepId]) existing[stepId] = {};
-      existing[stepId][key] = value;
-    }
-
-    var now = new Date().toISOString();
-    var json = JSON.stringify(existing);
-
-    if (rowIndex > 0) {
-      sheet.getRange(rowIndex, 2).setValue(json);
-      sheet.getRange(rowIndex, 3).setValue(now);
-    } else {
-      sheet.appendRow([id, json, now]);
-    }
-
-    return { saved: true, id: id, lastUpdated: now };
-  } finally {
-    lock.releaseLock();
   }
+
+  // Merge the new field value into existing data
+  var stepId = field.stepId;
+  var key = field.key;
+  var value = field.value;
+
+  if (stepId === 'summary' || stepId === 'photo') {
+    existing[key] = value;
+  } else {
+    if (!existing[stepId]) existing[stepId] = {};
+    existing[stepId][key] = value;
+  }
+
+  var now = new Date().toISOString();
+  var json = JSON.stringify(existing);
+
+  if (rowIndex > 0) {
+    sheet.getRange(rowIndex, 2).setValue(json);
+    sheet.getRange(rowIndex, 3).setValue(now);
+  } else {
+    sheet.appendRow([id, json, now]);
+  }
+
+  return { saved: true, id: id };
 }
 
 function getReviewData(id, token) {
@@ -521,22 +449,9 @@ function requirePortalAccess(token) {
 function requireReviewTokenForInspection(insp, token) {
   if (isPortalAccessToken(token)) return;
   if (!token) throw new Error('Missing review token');
-  var expected = insp && (insp.reviewToken || String(insp.inspectionId || insp.id || '').toLowerCase());
-  if (!expected || expected !== token) {
+  if (insp && insp.reviewToken && insp.reviewToken !== token) {
     throw new Error('Invalid review token');
   }
-}
-
-function requireReviewTokenForInspectionId(id, token) {
-  if (isPortalAccessToken(token)) return;
-  var rows = getFromSupabase(
-    'ihl_assessments',
-    'select=inspection_id,raw_jsonb&inspection_id=eq.' + encodeURIComponent(id) + '&limit=1'
-  );
-  if (!rows.length) throw new Error('Inspection not found: ' + id);
-  var insp = parseRawJsonb(rows[0].raw_jsonb);
-  insp.inspectionId = insp.inspectionId || rows[0].inspection_id || id;
-  requireReviewTokenForInspection(insp, token);
 }
 
 function getReviewAdminToken() {
@@ -724,95 +639,10 @@ function mergeDriveFolderPhotosForReview(photos, folderId) {
   return photos;
 }
 
-function mergeSupabasePhotosForReview(photos, inspectionId) {
-  if (!inspectionId) return photos;
-  var existing = {};
-  photos.forEach(function(photo) {
-    existing[photoReviewKey(photo)] = photo;
-    if (photo.photoId) existing['id:' + photo.photoId] = photo;
-  });
-
-  try {
-    var rows = getFromSupabase(
-      'inspector_photo_uploads',
-      'select=photo_id,room_name,step_name,caption,slot,drive_url,storage_path' +
-        '&inspection_id=eq.' + encodeURIComponent(inspectionId) +
-        '&order=photo_id.asc'
-    );
-    rows.forEach(function(row) {
-      if (!row || !row.photo_id || !row.storage_path) return;
-      var driveId = extractDriveIdForReview({ driveUrl: row.drive_url });
-      var proxyUrl = PHOTO_REVIEW_PROXY_URL +
-        '?inspectionId=' + encodeURIComponent(inspectionId) +
-        '&photoId=' + encodeURIComponent(row.photo_id) +
-        '&token=' + encodeURIComponent(String(inspectionId).toLowerCase());
-      var photo = {
-        photoId: String(row.photo_id),
-        driveId: driveId || '',
-        driveUrl: proxyUrl,
-        originalDriveUrl: driveId
-          ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(driveId) + '&sz=w1600'
-          : String(row.drive_url || ''),
-        caption: row.caption || '',
-        roomName: row.room_name || '',
-        stepName: row.step_name || '',
-        assignedSlot: row.slot === null || row.slot === undefined ? null : row.slot,
-        storagePath: row.storage_path || '',
-        timestamp: '',
-        included: null
-      };
-      var driveKey = photoReviewKey(photo);
-      var idKey = 'id:' + photo.photoId;
-      var matched = existing[idKey];
-      if (!matched && driveId) {
-        var originalDrivePhoto = {
-          driveId: driveId,
-          driveUrl: 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(driveId) + '&sz=w1600'
-        };
-        matched = existing[photoReviewKey(originalDrivePhoto)];
-      }
-      if (matched) {
-        matched.photoId = photo.photoId;
-        matched.driveUrl = proxyUrl;
-        matched.originalDriveUrl = photo.originalDriveUrl;
-        matched.storagePath = photo.storagePath;
-        matched.caption = matched.caption || photo.caption;
-        matched.roomName = matched.roomName === 'Drive Folder' ? photo.roomName : (matched.roomName || photo.roomName);
-        matched.stepName = matched.stepName === 'Unassigned Drive Photo' ? photo.stepName : (matched.stepName || photo.stepName);
-        matched.assignedSlot = matched.assignedSlot === undefined ? photo.assignedSlot : matched.assignedSlot;
-        existing[idKey] = matched;
-        return;
-      }
-      photos.push(photo);
-      existing[driveKey] = photo;
-      existing[idKey] = photo;
-    });
-  } catch (err) {
-    console.error('mergeSupabasePhotosForReview failed:', err.message);
-  }
-  return photos;
-}
-
 function normalizeInspectionForReviewApi(data) {
   data.id = data.id || data.inspectionId;
   data.inspectionId = data.inspectionId || data.id;
-  // Supabase is the authoritative current photo source and can be queried in a
-  // single request. Only scan Drive for older inspections that have no photo
-  // metadata at all; a Drive folder scan adds tens of seconds to every load.
-  data.photos = mergeSupabasePhotosForReview(
-    flattenInspectionPhotosForReview(data),
-    data.inspectionId
-  );
-  // A deleted photo can still exist in Supabase while devices converge. Keep
-  // the shared tombstone authoritative so it cannot reappear in the portal.
-  var photoTombstones = data.photoTombstones || {};
-  data.photos = data.photos.filter(function(photo) {
-    var photoId = String((photo && (photo.id || photo.photoId || photo.clientPhotoId)) || '');
-    return !(photoId && photoTombstones[photoId] && photoTombstones[photoId].status === 'deleted');
-  });
-  if (!data.photos.length && data.folderId) {
-    data.photos = mergeDriveFolderPhotosForReview(data.photos, data.folderId);
-  }
+  data.photos = mergeDriveFolderPhotosForReview(flattenInspectionPhotosForReview(data), data.folderId || '');
   data.photoCount = data.photos.length;
   return data;
 }
@@ -852,51 +682,19 @@ function listEntryForReview(data) {
   };
 }
 
-function getSupabasePhotoCountsForReview() {
-  var counts = {};
-  var seen = {};
-  try {
-    var rows = getFromSupabase(
-      'inspector_photo_uploads',
-      'select=inspection_id,photo_id&order=inspection_id.asc,photo_id.asc'
-    );
-    rows.forEach(function(row) {
-      if (!row || !row.inspection_id || !row.photo_id) return;
-      var uniqueKey = row.inspection_id + ':' + row.photo_id;
-      if (seen[uniqueKey]) return;
-      seen[uniqueKey] = true;
-      counts[row.inspection_id] = (counts[row.inspection_id] || 0) + 1;
-    });
-  } catch (err) {
-    console.error('getSupabasePhotoCountsForReview failed:', err.message);
-  }
-  return counts;
-}
-
 function listReviewInspections(token) {
   requirePortalAccess(token);
   var rows = getFromSupabase(
     'ihl_assessments',
     'select=inspection_id,status,drive_folder_id,assessment_folder_url,raw_jsonb&order=inspection_id.desc'
   );
-  // Keep the fixed deployment smoke-test record out of inspector and reviewer
-  // work queues. Direct GET remains available for backend verification.
-  rows = rows.filter(function(row) {
-    return row.inspection_id !== 'INH-TEST' && row.inspection_id !== 'INH-READINESS-PROBE';
-  });
-  // The list only needs counts. Scanning every Drive folder and loading full
-  // photo metadata made page load time grow linearly with every inspection.
-  var photoCounts = getSupabasePhotoCountsForReview();
   var inspections = rows.map(function(row) {
     var data = parseRawJsonb(row.raw_jsonb);
     data.inspectionId = data.inspectionId || row.inspection_id;
     data.id = data.id || data.inspectionId;
     data.status = row.status || data.status;
     data.folderId = data.folderId || row.drive_folder_id;
-    data.photos = flattenInspectionPhotosForReview(data);
-    var entry = listEntryForReview(data);
-    entry.photoCount = Math.max(entry.photoCount || 0, photoCounts[data.inspectionId] || 0);
-    return entry;
+    return listEntryForReview(normalizeInspectionForReviewApi(data));
   });
   return {
     generatedAt: new Date().toISOString(),
@@ -966,6 +764,25 @@ function upsertReviewDataRecord(id, patch) {
   return { reviewedData: merged, lastUpdated: now };
 }
 
+function reviewPortalHandoffReviewPatch(handoffResult) {
+  if (!handoffResult) return {};
+  return {
+    reviewPortalData: handoffResult,
+    folderId: handoffResult.folderId || '',
+    folderUrl: handoffResult.folderUrl || '',
+    assessmentFolderId: handoffResult.folderId || '',
+    assessmentFolderUrl: handoffResult.folderUrl || '',
+    reviewPortalDataSpreadsheetId: handoffResult.spreadsheetId || '',
+    reviewPortalDataSpreadsheetUrl: handoffResult.spreadsheetUrl || '',
+    reviewPortalDataUrl: handoffResult.spreadsheetUrl || '',
+    rawReviewDataUrl: handoffResult.rawJsonUrl || '',
+    rawReviewDataJsonUrl: handoffResult.rawJsonUrl || '',
+    system: {
+      tannerHandoff: handoffResult
+    }
+  };
+}
+
 function notifyTannerSubmission(data, reviewedData) {
   var id = data.id || data.inspectionId;
   var subject = 'InHaus review submitted - ' + (data.propertyAddress || id);
@@ -985,6 +802,9 @@ function notifyTannerSubmission(data, reviewedData) {
     'Report Builder Notes:',
     data.reportBuilderNotes || (reviewedData && reviewedData.reportBuilderNotes) || '',
     '',
+    data.reviewPortalDataUrl ? 'Review Portal Data Sheet:' : '',
+    data.reviewPortalDataUrl || '',
+    data.reviewPortalDataUrl ? '' : '',
     'Open review:',
     reviewUrl
   ].join('\n');
@@ -1000,7 +820,6 @@ function submitReviewToTanner(data) {
   var id = data.id || data.inspectionId;
   if (!id) throw new Error('Missing inspection id');
   if (!data.token) throw new Error('Missing review token');
-  requireReviewTokenForInspectionId(id, data.token);
   var submittedAt = data.submittedAt || new Date().toISOString();
   var patch = deepMergeReviewData({}, data.reviewedData || {});
   patch.reportBuilderNotes = data.reportBuilderNotes || patch.reportBuilderNotes || '';
@@ -1028,21 +847,39 @@ function submitReviewToTanner(data) {
   } catch(e) {
     console.error('Submit Supabase status update failed:', e.message);
   }
+  var handoffResult = null;
+  var handoffWarning = '';
+  try {
+    handoffResult = ensureReviewPortalDataHandoff(id, data, saved.reviewedData);
+    if (handoffResult) {
+      var handoffPatch = reviewPortalHandoffReviewPatch(handoffResult);
+      saved = upsertReviewDataRecord(id, handoffPatch);
+      data.reviewPortalData = handoffResult;
+      data.reviewPortalDataUrl = handoffResult.spreadsheetUrl || '';
+      data.folderId = handoffResult.folderId || data.folderId || '';
+      data.folderUrl = handoffResult.folderUrl || data.folderUrl || '';
+      try {
+        postToSupabase('ihl_assessments', {
+          inspection_id: id,
+          drive_folder_id: handoffResult.folderId || null,
+          assessment_folder_url: handoffResult.folderUrl || null
+        });
+      } catch(updateErr) {
+        console.error('Submit Supabase handoff link update failed:', updateErr.message);
+      }
+    }
+  } catch(e) {
+    handoffWarning = e.message || String(e);
+    console.error('Review Portal Data handoff failed:', handoffWarning);
+  }
   notifyTannerSubmission(data, saved.reviewedData);
-  return { submitted: true, id: id, status: 'Submitted to Tanner', submittedAt: submittedAt };
-}
-
-function submitReviewSmokeCheck(data) {
-  var id = data.id || data.inspectionId || 'INH-READINESS-PROBE';
-  if (!data.token) throw new Error('Missing review token');
-  requireReviewTokenForInspectionId(id, data.token);
   return {
-    smoke: true,
+    submitted: true,
     id: id,
-    authorized: true,
-    statusChanged: false,
-    emailSent: false,
-    message: 'Submit auth path accepted without changing inspection status or emailing Tanner.'
+    status: 'Submitted to Tanner',
+    submittedAt: submittedAt,
+    reviewPortalData: handoffResult,
+    handoffWarning: handoffWarning
   };
 }
 
@@ -1068,23 +905,278 @@ function adminUnlockReview(data) {
   return { unlocked: true, id: id, status: 'Needs Review', unlockedAt: unlockedAt, lastUpdated: saved.lastUpdated };
 }
 
+// ── REVIEW PORTAL DATA HANDOFF ───────────────────────────
+
+const RAW_REVIEW_DATA_TAB_NAME = 'Raw Review Data';
+const REVIEW_PORTAL_DATA_TAB_NAME = 'Review Portal Data';
+const SHEETS_SAFE_CELL_CHAR_LIMIT = 45000;
+
+function ensureReviewPortalDataHandoff(id, submitData, reviewedData) {
+  var fieldData = reviewedData || {};
+  var source = buildReviewHandoffSource(id, submitData || {}, fieldData);
+  var folder = getOrCreateReviewHandoffFolder(source);
+  var ss = getOrCreateReviewPortalDataSpreadsheet(folder, source);
+  var rawJsonUrl = createRawReviewDataJsonBackup(folder, id, fieldData);
+
+  writeReviewPortalDataSpreadsheet(ss, source, fieldData, rawJsonUrl);
+
+  return {
+    folderId: folder.getId(),
+    folderUrl: folder.getUrl(),
+    spreadsheetId: ss.getId(),
+    spreadsheetUrl: ss.getUrl(),
+    rawJsonUrl: rawJsonUrl,
+    rawKeyCount: Object.keys(fieldData).length,
+    dynamicFieldCount: getDynamicReviewFieldRows(fieldData).length
+  };
+}
+
+function buildReviewHandoffSource(id, submitData, reviewedData) {
+  var source = {};
+  try {
+    var rows = getFromSupabase(
+      'ihl_assessments',
+      'select=inspection_id,status,drive_folder_id,assessment_folder_url,raw_jsonb&inspection_id=eq.' +
+        encodeURIComponent(id) + '&limit=1'
+    );
+    if (rows && rows.length) {
+      source = parseRawJsonb(rows[0].raw_jsonb) || {};
+      source.inspectionId = source.inspectionId || rows[0].inspection_id || id;
+      source.folderId = source.folderId || rows[0].drive_folder_id || '';
+      source.assessmentFolderUrl = source.assessmentFolderUrl || rows[0].assessment_folder_url || '';
+      source.status = rows[0].status || source.status || '';
+    }
+  } catch(e) {
+    console.warn('Could not hydrate assessment source for handoff:', e.message);
+  }
+  source = deepMergeReviewData(source || {}, submitData || {});
+  source.inspectionId = source.inspectionId || id;
+  source.id = source.id || source.inspectionId;
+  source.reviewedData = reviewedData || {};
+  source.status = (reviewedData && reviewedData.submission && reviewedData.submission.status) ||
+    submitData.status || source.status || 'Submitted to Tanner';
+  return source;
+}
+
+function getOrCreateReviewHandoffFolder(source) {
+  var folderId = source.folderId || source.driveFolderId || source.drive_folder_id || '';
+  if (folderId) return DriveApp.getFolderById(folderId);
+
+  var assessmentNum = getNextAssessmentNumber();
+  var folderName = generateFolderName(assessmentNum, source);
+  return USE_SHARED_DRIVE
+    ? getOrCreateInspectionFolderInSharedDrive(DRIVE_FOLDER_ID, folderName, source.inspectionId)
+    : DriveApp.getFolderById(DRIVE_FOLDER_ID).createFolder(folderName);
+}
+
+function getOrCreateReviewPortalDataSpreadsheet(folder, source) {
+  var id = source.inspectionId || source.id || '';
+  var lastName = getClientLastName(source.clientName || '');
+  var targetName = 'Review Portal Data — ' + lastName + ' — ' + id;
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var file = files.next();
+    if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) continue;
+    var name = file.getName() || '';
+    if (name.indexOf('Review Portal Data') > -1 && (!id || name.indexOf(id) > -1)) {
+      return SpreadsheetApp.openById(file.getId());
+    }
+  }
+
+  var ss = SpreadsheetApp.create(targetName);
+  ss.getSheets()[0].setName(REVIEW_PORTAL_DATA_TAB_NAME);
+  var ssFile = DriveApp.getFileById(ss.getId());
+  folder.addFile(ssFile);
+  try { DriveApp.getRootFolder().removeFile(ssFile); } catch(e) {}
+  return ss;
+}
+
+function createRawReviewDataJsonBackup(folder, id, fieldData) {
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss');
+  var name = 'Raw Review Data — ' + id + ' — ' + stamp + '.json';
+  var payload = JSON.stringify({ inspectionId: id, fieldData: fieldData || {} }, null, 2);
+  var blob = Utilities.newBlob(payload, 'application/json', name);
+  var file = folder.createFile(blob);
+  return file.getUrl();
+}
+
+function writeReviewPortalDataSpreadsheet(ss, source, fieldData, rawJsonUrl) {
+  var formatted = getOrResetSheet(ss, REVIEW_PORTAL_DATA_TAB_NAME, 0);
+  writeFormattedReviewPortalData(formatted, source, fieldData);
+
+  var raw = getOrResetSheet(ss, RAW_REVIEW_DATA_TAB_NAME, 1);
+  writeRawReviewData(raw, fieldData, rawJsonUrl);
+}
+
+function getOrResetSheet(ss, title, zeroBasedIndex) {
+  var sheet = ss.getSheetByName(title);
+  if (!sheet) {
+    sheet = ss.insertSheet(title, Math.max(0, zeroBasedIndex));
+  } else {
+    sheet.clear();
+  }
+  ss.setActiveSheet(sheet);
+  ss.moveActiveSheet(zeroBasedIndex + 1);
+  return sheet;
+}
+
+function naturalReviewKeyCompare(a, b) {
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function serializeReviewValueForSheet(key, value, rawJsonUrl) {
+  var type;
+  var text;
+  if (value === null || value === undefined) {
+    return { value: '', type: 'null' };
+  }
+  if (Array.isArray(value)) {
+    type = 'list';
+    text = value.map(function(item) {
+      return item && typeof item === 'object' ? JSON.stringify(item) : String(item);
+    }).join(', ');
+  } else if (typeof value === 'object') {
+    type = 'json';
+    text = JSON.stringify(value);
+  } else if (typeof value === 'boolean') {
+    type = 'boolean';
+    text = value ? 'TRUE' : 'FALSE';
+  } else if (typeof value === 'number') {
+    type = 'number';
+    text = String(value);
+  } else {
+    type = 'string';
+    text = String(value);
+  }
+
+  if (text.length > SHEETS_SAFE_CELL_CHAR_LIMIT) {
+    return {
+      value: 'Full value exceeds Google Sheets single-cell limit. Complete unfiltered raw backup file: ' + rawJsonUrl,
+      type: type + '-overflow'
+    };
+  }
+  return { value: text, type: type };
+}
+
+function writeRawReviewData(sheet, fieldData, rawJsonUrl) {
+  var rows = [['Key', 'Value', 'Type']];
+  Object.keys(fieldData || {}).sort(naturalReviewKeyCompare).forEach(function(key) {
+    var serialized = serializeReviewValueForSheet(key, fieldData[key], rawJsonUrl);
+    rows.push([key, serialized.value, serialized.type]);
+  });
+  if (rows.length > 1) {
+    sheet.getRange(1, 1, rows.length, 3).setValues(rows);
+  } else {
+    sheet.getRange(1, 1, 1, 3).setValues(rows);
+  }
+  sheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#e8f1dc');
+  sheet.setFrozenRows(1);
+  sheet.setColumnWidth(1, 240);
+  sheet.setColumnWidth(2, 620);
+  sheet.setColumnWidth(3, 140);
+}
+
+function getDynamicReviewFieldRows(fieldData) {
+  var re = /^(obs_\d+_(location|note|photoIds)|actionTaken_\d+_(desc|photoIds)|followUp_\d+_(desc|timeframe|photoIds))$/;
+  return Object.keys(fieldData || {})
+    .filter(function(key) { return re.test(key); })
+    .sort(naturalReviewKeyCompare)
+    .map(function(key) {
+      var serialized = serializeReviewValueForSheet(key, fieldData[key], '');
+      return [key, serialized.value, serialized.type];
+    });
+}
+
+function writeFormattedReviewPortalData(sheet, source, fieldData) {
+  var rows = [
+    ['Review Portal Data', source.clientName || '', source.inspectionId || ''],
+    ['Field', 'Value', 'Notes'],
+    ['Status', source.status || '', 'From review portal submit'],
+    ['Submitted At', source.submittedAt || (fieldData.submission && fieldData.submission.submittedAt) || '', ''],
+    ['Completion Score', source.completionScore || (fieldData.submission && fieldData.submission.completionScore) || '', ''],
+    ['Completion Grade', source.completionGrade || (fieldData.submission && fieldData.submission.completionGrade) || '', ''],
+    ['Review Updated At', new Date().toISOString(), ''],
+    ['Report Builder Notes', fieldData.reportBuilderNotes || source.reportBuilderNotes || '', 'Tanner-facing note from review portal'],
+    ['', '', '']
+  ];
+
+  appendTestRows(rows, source, fieldData);
+  appendDynamicReviewFieldRows(rows, fieldData);
+  appendPhotoDecisionRows(rows, fieldData);
+
+  var width = 3;
+  var padded = rows.map(function(row) {
+    var out = row.slice(0, width);
+    while (out.length < width) out.push('');
+    return out;
+  });
+  sheet.getRange(1, 1, padded.length, width).setValues(padded);
+  sheet.getRange(1, 1, 1, width).setFontWeight('bold').setBackground('#e8f1dc');
+  sheet.setFrozenRows(2);
+  sheet.setColumnWidth(1, 220);
+  sheet.setColumnWidth(2, 520);
+  sheet.setColumnWidth(3, 220);
+}
+
+function appendTestRows(rows, source, fieldData) {
+  var tests = (fieldData && fieldData.tests) || source.tests || {};
+  rows.push(['Testing IDs / Confirmations', '', '']);
+  rows.push(['Test', 'ID / Value', 'Confirmed']);
+  rows.push(['PFAS', tests.pfasSampleId || source.pfasSampleId || '', yesNoText(tests.testPFAS_confirmed)]);
+  rows.push(['Water Panel', tests.waterSampleId || source.waterSampleId || '', yesNoText(tests.testWaterPanel_confirmed)]);
+  rows.push(['Boulder Blue', tests.boulderBlueSampleId || source.boulderBlueSampleId || '', yesNoText(tests.testBoulderBlue_confirmed)]);
+  rows.push(['Breeze', tests.breezeSampleId || source.breezeSampleId || '', yesNoText(tests.testBreeze_confirmed)]);
+  rows.push(['Radon', tests.radonSampleId || source.radonSampleId || '', yesNoText(tests.testRadon_confirmed)]);
+  rows.push(['Microplastics', tests.microplasticsSampleId || source.microplasticsSampleId || '', yesNoText(tests.testMicroplastics_confirmed)]);
+  rows.push(['ATP', tests.atpSampleId || source.atpSampleId || '', yesNoText(tests.testATP_confirmed)]);
+  rows.push(['', '', '']);
+}
+
+function appendDynamicReviewFieldRows(rows, fieldData) {
+  var dynamicRows = getDynamicReviewFieldRows(fieldData);
+  rows.push(['Dynamic Review Fields', '', '']);
+  rows.push(['Key', 'Value', 'Type']);
+  if (!dynamicRows.length) {
+    rows.push(['No dynamic observation/action/follow-up fields recorded.', '', '']);
+  } else {
+    dynamicRows.forEach(function(row) { rows.push(row); });
+  }
+  rows.push(['', '', '']);
+}
+
+function appendPhotoDecisionRows(rows, fieldData) {
+  var photoKeys = Object.keys(fieldData || {}).filter(function(key) {
+    return /^photo_/.test(key);
+  }).sort(naturalReviewKeyCompare);
+  rows.push(['Included Photo Decisions', '', '']);
+  rows.push(['Photo ID', 'Included', 'Caption']);
+  if (!photoKeys.length) {
+    rows.push(['No review photo decision fields recorded.', '', '']);
+    return;
+  }
+  photoKeys.forEach(function(key) {
+    var value = fieldData[key] || {};
+    if (typeof value === 'string') {
+      try { value = JSON.parse(value); } catch(e) { value = {}; }
+    }
+    rows.push([
+      key.replace(/^photo_/, ''),
+      value.included === true ? 'Yes' : (value.included === false ? 'No' : ''),
+      value.caption || ''
+    ]);
+  });
+}
+
+function yesNoText(value) {
+  if (value === true) return 'Yes';
+  if (value === false) return 'No';
+  if (value === undefined || value === null || value === '') return '';
+  return String(value);
+}
+
 // ── MAIN PROCESSING ──────────────────────────────────────
 
 function processInspection(data) {
-  // Checkpoints must be fast and must never rebuild the Drive workbook. The
-  // raw inspection JSON in Supabase is what powers Continue Inspection and the
-  // review portal between steps.
-  if (data._checkpoint) {
-    try {
-      syncToSupabase(data, null);
-    } catch (supaErr) {
-      // A checkpoint is still a best-effort backup. A final submit will retry
-      // the complete Drive + Supabase write and surface any real failure.
-      console.warn('Supabase checkpoint sync skipped:', supaErr.message);
-    }
-    return { checkpointed: true, inspectionId: data.inspectionId };
-  }
-
   var result;
   // Option A: Append to master sheet as a row
   if (MASTER_SHEET_ID) {
@@ -1189,15 +1281,11 @@ function createInspectionSheet(data) {
   var inspId = data.inspectionId || '';
 
   // Determine assessment number and canonical folder name (new format: ### – YYYY-MM-DD – LastName – Street)
-  // Retries must retain the original number. Generating a fresh number for an
-  // existing inspection can collide with another assessment_num and make an
-  // otherwise idempotent inspection_id upsert fail.
-  var assessmentNum = getExistingAssessmentNumber(inspId) || getNextAssessmentNumber();
+  var assessmentNum = getNextAssessmentNumber();
   var folderName    = generateFolderName(assessmentNum, data);
   // Deduplicate: search for existing folder/sheet with this inspectionId
   var inspFolder = null;
   var ss = null;
-  var summary = null;
 
   if (USE_SHARED_DRIVE) {
     inspFolder = getOrCreateInspectionFolderInSharedDrive(DRIVE_FOLDER_ID, folderName, inspId);
@@ -1237,7 +1325,6 @@ function createInspectionSheet(data) {
   if (!ss) {
     const sheetName = 'InHaus Inspection \u2014 ' + (data.inspectionId || 'Unknown');
     ss = SpreadsheetApp.create(sheetName);
-    summary = ss.getSheets()[0];
     if (USE_SHARED_DRIVE) {
       moveFileToSharedDriveFolder(ss.getId(), inspFolder.getId());
     } else {
@@ -1246,18 +1333,16 @@ function createInspectionSheet(data) {
       DriveApp.getRootFolder().removeFile(file);
     }
   } else {
-    // Keep a stable reference to the first sheet and make it active before
-    // deleting the others. getActiveSheet() can otherwise return a stale
-    // deleted tab and throw "A sheet with ID ... does not exist" on retries.
+    // Clear all sheets for rewrite; keep at least one sheet to avoid errors
     var existingSheets = ss.getSheets();
-    summary = existingSheets[0];
-    ss.setActiveSheet(summary);
     for (var i = existingSheets.length - 1; i > 0; i--) {
       ss.deleteSheet(existingSheets[i]);
     }
-    summary.clearContents();
+    existingSheets[0].clearContents();
+    existingSheets[0].setName('Summary');
   }
-
+  
+  const summary = ss.getActiveSheet();
   summary.setName('Summary');
   writeSummary(summary, data);
   
@@ -1288,7 +1373,6 @@ function createInspectionSheet(data) {
     spreadsheetId: ss.getId(),
     folderUrl: inspFolder.getUrl(),
     folderId: inspFolder.getId(),
-    assessmentNum: assessmentNum,
     inspectionId: data.inspectionId,
     photosUploaded: photoResults.length
   };

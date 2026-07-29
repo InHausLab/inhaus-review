@@ -9,8 +9,9 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V34';
+const REVIEW_PORTAL_VERSION = 'V50';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
+const API_FETCH_TIMEOUT_MS = 12000;
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
@@ -161,6 +162,39 @@ let _pendingSaves = 0;       // count of in-flight saves
 let _currentPage = null;     // 'list' | 'review'
 const _postVisibleCounts = new Map(); // expanded optional post-content rows per inspection
 let _finishTrackerOpen = false;
+let _reviewDataHealth = null;
+
+const REVIEW_ACTIVITY_IDLE_MS = 90000;
+const REVIEW_ACTIVITY_TICK_MS = 10000;
+const REVIEW_ACTIVITY_FLUSH_SECONDS = 30;
+const REVIEW_ACTIVITY_REVIEWER_KEY = 'inhaus_review_reviewer_name';
+const REVIEW_ACTIVITY_DEVICE_KEY = 'inhaus_review_device_id';
+const REVIEW_ACTIVITY_INTERNAL_STEPS = new Set([
+  '_reviewActivityEvents',
+  '_reviewActivitySessions',
+  '_reviewActivityMeta'
+]);
+
+let _reviewActivitySaveChain = Promise.resolve();
+let _reviewActivityTickTimer = null;
+let _reviewActivityStarted = false;
+let _reviewActivity = {
+  sessionId: '',
+  reviewerName: '',
+  deviceId: '',
+  startedAt: '',
+  lastActiveAt: '',
+  lastInteractionAt: 0,
+  lastTickAt: 0,
+  activeSeconds: 0,
+  pendingSeconds: 0,
+  saveCount: 0,
+  sections: {},
+  currentSection: 'Review Portal',
+  cloudSessions: {},
+  cloudEvents: {},
+  loadWarning: ''
+};
 
 /* ============================================================
    UTILITIES
@@ -200,6 +234,406 @@ function formatDateTime(iso) {
 function formatTime(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDuration(totalSeconds) {
+  const seconds = Math.max(0, Math.round(Number(totalSeconds) || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  if (minutes) return `${minutes}m`;
+  return `${seconds}s`;
+}
+
+function reviewActivityId(prefix = 'act') {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function getReviewDeviceId() {
+  try {
+    let id = localStorage.getItem(REVIEW_ACTIVITY_DEVICE_KEY);
+    if (!id) {
+      id = reviewActivityId('device');
+      localStorage.setItem(REVIEW_ACTIVITY_DEVICE_KEY, id);
+    }
+    return id;
+  } catch(e) {
+    return reviewActivityId('device');
+  }
+}
+
+function getReviewActivityStorageReviewer() {
+  const params = new URLSearchParams(window.location.search);
+  const urlName = String(params.get('reviewer') || params.get('actor') || '').trim();
+  if (urlName) {
+    try { localStorage.setItem(REVIEW_ACTIVITY_REVIEWER_KEY, urlName); } catch(e) {}
+    return urlName;
+  }
+  try {
+    return String(localStorage.getItem(REVIEW_ACTIVITY_REVIEWER_KEY) || '').trim();
+  } catch(e) {
+    return '';
+  }
+}
+
+function setReviewActivityReviewer(name) {
+  const cleanName = String(name || '').trim() || 'Review Portal User';
+  _reviewActivity.reviewerName = cleanName;
+  try { localStorage.setItem(REVIEW_ACTIVITY_REVIEWER_KEY, cleanName); } catch(e) {}
+  const button = qs('#review-actor-button');
+  if (button) button.textContent = `Reviewer: ${cleanName}`;
+  return cleanName;
+}
+
+function ensureReviewActivityReviewer(promptIfMissing = false) {
+  const current = String(_reviewActivity.reviewerName || getReviewActivityStorageReviewer()).trim();
+  if (current) return setReviewActivityReviewer(current);
+  if (!promptIfMissing) return setReviewActivityReviewer('Review Portal User');
+  const entered = window.prompt('Who is reviewing this inspection?', '');
+  return setReviewActivityReviewer(entered || 'Review Portal User');
+}
+
+function extractReviewActivityData(fieldData = {}) {
+  const sessions = fieldData._reviewActivitySessions;
+  const events = fieldData._reviewActivityEvents;
+  _reviewActivity.cloudSessions = sessions && typeof sessions === 'object' && !Array.isArray(sessions)
+    ? { ...sessions }
+    : {};
+  _reviewActivity.cloudEvents = events && typeof events === 'object' && !Array.isArray(events)
+    ? { ...events }
+    : {};
+  REVIEW_ACTIVITY_INTERNAL_STEPS.forEach(key => delete fieldData[key]);
+  return fieldData;
+}
+
+function sanitizeReviewActivityFieldData(fieldData = {}) {
+  const sanitized = { ...fieldData };
+  REVIEW_ACTIVITY_INTERNAL_STEPS.forEach(key => delete sanitized[key]);
+  return sanitized;
+}
+
+function activitySectionFromTarget(target) {
+  if (!target || !target.closest) return _reviewActivity.currentSection || 'Review Portal';
+  if (target.closest('.photo-modal')) return 'Photo Review';
+  if (target.closest('.finish-tracker')) return 'Finish Review';
+  if (target.closest('.portal-feedback-overlay')) return 'Portal Feedback';
+  if (target.closest('.review-activity-overlay')) return 'Review Activity';
+  const card = target.closest('.card');
+  const title = card?.querySelector('.card-title')?.textContent?.trim();
+  return title || _reviewActivity.currentSection || 'Review Portal';
+}
+
+function updateReviewActivityClock(now = Date.now()) {
+  if (!_reviewActivityStarted || !_reviewActivity.sessionId) return;
+  if (!_reviewActivity.lastTickAt) {
+    _reviewActivity.lastTickAt = now;
+    return;
+  }
+  const elapsedMs = Math.max(0, Math.min(now - _reviewActivity.lastTickAt, REVIEW_ACTIVITY_TICK_MS + 2000));
+  _reviewActivity.lastTickAt = now;
+  const isActive = !document.hidden && now - _reviewActivity.lastInteractionAt <= REVIEW_ACTIVITY_IDLE_MS;
+  if (!isActive || !elapsedMs) return;
+  const seconds = elapsedMs / 1000;
+  _reviewActivity.activeSeconds += seconds;
+  _reviewActivity.pendingSeconds += seconds;
+  const section = _reviewActivity.currentSection || 'Review Portal';
+  _reviewActivity.sections[section] = (_reviewActivity.sections[section] || 0) + seconds;
+}
+
+function markReviewActivity(section = '') {
+  if (!_reviewActivityStarted) return;
+  updateReviewActivityClock();
+  const now = Date.now();
+  _reviewActivity.lastInteractionAt = now;
+  _reviewActivity.lastActiveAt = new Date(now).toISOString();
+  if (section) _reviewActivity.currentSection = section;
+}
+
+function describeReviewActivityValue(value) {
+  if (value === null || value === undefined) return { type: 'blank', size: 0 };
+  if (typeof value === 'string') return { type: 'text', size: value.length };
+  if (typeof value === 'boolean') return { type: 'boolean', size: 1 };
+  if (typeof value === 'number') return { type: 'number', size: 1 };
+  if (Array.isArray(value)) return { type: 'array', size: value.length };
+  if (typeof value === 'object') return { type: 'object', size: Object.keys(value).length };
+  return { type: typeof value, size: 1 };
+}
+
+function queueReviewActivityField(stepId, key, value) {
+  if (IS_DEMO || !_inspection?.inspectionId) return;
+  _reviewActivitySaveChain = _reviewActivitySaveChain
+    .then(() => saveCloudReviewField(_inspection.inspectionId, { stepId, key, value }))
+    .catch(err => {
+      _reviewActivity.loadWarning = err?.message || 'Activity save failed';
+      console.warn('Review activity save failed:', err);
+    });
+}
+
+function currentReviewActivitySessionPayload(reason = 'heartbeat') {
+  return {
+    sessionId: _reviewActivity.sessionId,
+    reviewerName: _reviewActivity.reviewerName || 'Review Portal User',
+    deviceId: _reviewActivity.deviceId,
+    inspectionId: _inspection?.inspectionId || '',
+    startedAt: _reviewActivity.startedAt,
+    lastActiveAt: _reviewActivity.lastActiveAt || _reviewActivity.startedAt,
+    updatedAt: new Date().toISOString(),
+    activeSeconds: Math.round(_reviewActivity.activeSeconds),
+    saveCount: _reviewActivity.saveCount,
+    sections: Object.fromEntries(Object.entries(_reviewActivity.sections)
+      .map(([key, value]) => [key, Math.round(value)])),
+    portalVersion: REVIEW_PORTAL_VERSION,
+    reason
+  };
+}
+
+function flushReviewActivitySession(reason = 'heartbeat', force = false) {
+  if (!_reviewActivityStarted || !_reviewActivity.sessionId) return;
+  updateReviewActivityClock();
+  if (!force && _reviewActivity.pendingSeconds < REVIEW_ACTIVITY_FLUSH_SECONDS) return;
+  _reviewActivity.pendingSeconds = 0;
+  const payload = currentReviewActivitySessionPayload(reason);
+  _reviewActivity.cloudSessions[payload.sessionId] = payload;
+  queueReviewActivityField('_reviewActivitySessions', payload.sessionId, payload);
+}
+
+function recordReviewActivityEvent(type, detail = {}) {
+  if (!_reviewActivityStarted || !_inspection?.inspectionId) return;
+  markReviewActivity(detail.section || '');
+  const reviewerName = ensureReviewActivityReviewer(type === 'save');
+  if (type === 'save') _reviewActivity.saveCount += 1;
+  const eventId = reviewActivityId('event');
+  const event = {
+    eventId,
+    type,
+    reviewerName,
+    sessionId: _reviewActivity.sessionId,
+    deviceId: _reviewActivity.deviceId,
+    inspectionId: _inspection.inspectionId,
+    occurredAt: new Date().toISOString(),
+    section: detail.section || _reviewActivity.currentSection || 'Review Portal',
+    stepId: detail.stepId || '',
+    fieldKey: detail.fieldKey || '',
+    valueMeta: describeReviewActivityValue(detail.value),
+    portalVersion: REVIEW_PORTAL_VERSION
+  };
+  _reviewActivity.cloudEvents[eventId] = event;
+  queueReviewActivityField('_reviewActivityEvents', eventId, event);
+  flushReviewActivitySession(type, true);
+}
+
+function recordReviewFieldSaveActivity(stepId, fieldKey, value) {
+  if (REVIEW_ACTIVITY_INTERNAL_STEPS.has(stepId)) return;
+  recordReviewActivityEvent('save', {
+    stepId,
+    fieldKey,
+    value,
+    section: sectionLabelForActivityStep(stepId)
+  });
+}
+
+function sectionLabelForActivityStep(stepId) {
+  const raw = String(stepId || '');
+  if (raw === 'summary') return 'Inspection Summary';
+  if (raw === 'post') return 'Post-Inspection Report Content';
+  if (raw === 'roomData') return 'Rooms & Observations';
+  if (raw.startsWith('photo_')) return 'Photos';
+  const step = _inspection?.stepData?.[raw];
+  return step?.roomName || step?.name || raw || 'Review Portal';
+}
+
+function startReviewActivityTracking(insp) {
+  if (_reviewActivityStarted || !insp?.inspectionId) return;
+  const now = new Date();
+  _reviewActivityStarted = true;
+  _reviewActivity.sessionId = reviewActivityId('session');
+  _reviewActivity.deviceId = getReviewDeviceId();
+  _reviewActivity.startedAt = now.toISOString();
+  _reviewActivity.lastActiveAt = now.toISOString();
+  _reviewActivity.lastInteractionAt = now.getTime();
+  _reviewActivity.lastTickAt = now.getTime();
+  _reviewActivity.activeSeconds = 0;
+  _reviewActivity.pendingSeconds = 0;
+  _reviewActivity.saveCount = 0;
+  _reviewActivity.sections = {};
+  _reviewActivity.currentSection = 'Review Portal';
+  ensureReviewActivityReviewer(false);
+
+  const activityHandler = event => markReviewActivity(activitySectionFromTarget(event.target));
+  document.addEventListener('pointerdown', activityHandler, true);
+  document.addEventListener('keydown', activityHandler, true);
+  document.addEventListener('input', activityHandler, true);
+  document.addEventListener('change', activityHandler, true);
+  document.addEventListener('scroll', () => markReviewActivity('Scrolling Review'), { passive: true });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushReviewActivitySession('hidden', true);
+    else markReviewActivity('Review Portal');
+  });
+  window.addEventListener('beforeunload', () => flushReviewActivitySession('unload', true));
+
+  _reviewActivityTickTimer = window.setInterval(() => {
+    updateReviewActivityClock();
+    flushReviewActivitySession('heartbeat');
+  }, REVIEW_ACTIVITY_TICK_MS);
+  recordReviewActivityEvent('session_start', { section: 'Review Portal' });
+}
+
+function activityDateLabel(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+function summarizeReviewActivity(sessionsById, eventsById) {
+  const reviewers = new Map();
+  const sessions = Object.values(sessionsById || {});
+  const events = Object.values(eventsById || {});
+  const ensure = name => {
+    const reviewer = String(name || 'Review Portal User').trim() || 'Review Portal User';
+    if (!reviewers.has(reviewer)) {
+      reviewers.set(reviewer, {
+        reviewer,
+        activeSeconds: 0,
+        sessions: 0,
+        saves: 0,
+        lastActiveAt: '',
+        sections: {}
+      });
+    }
+    return reviewers.get(reviewer);
+  };
+  sessions.forEach(session => {
+    const row = ensure(session.reviewerName);
+    row.activeSeconds += Number(session.activeSeconds) || 0;
+    row.sessions += 1;
+    row.saves += Number(session.saveCount) || 0;
+    if (!row.lastActiveAt || Date.parse(session.lastActiveAt || '') > Date.parse(row.lastActiveAt || '')) {
+      row.lastActiveAt = session.lastActiveAt || '';
+    }
+    Object.entries(session.sections || {}).forEach(([section, seconds]) => {
+      row.sections[section] = (row.sections[section] || 0) + (Number(seconds) || 0);
+    });
+  });
+  events.filter(event => event.type === 'save').forEach(event => {
+    const row = ensure(event.reviewerName);
+    if (!row.lastActiveAt || Date.parse(event.occurredAt || '') > Date.parse(row.lastActiveAt || '')) {
+      row.lastActiveAt = event.occurredAt || '';
+    }
+  });
+  const rows = Array.from(reviewers.values()).sort((a, b) => b.activeSeconds - a.activeSeconds);
+  return {
+    rows,
+    totalActiveSeconds: rows.reduce((sum, row) => sum + row.activeSeconds, 0),
+    totalSaves: events.filter(event => event.type === 'save').length,
+    lastActiveAt: rows.map(row => row.lastActiveAt).filter(Boolean).sort().pop() || '',
+    recentEvents: events
+      .sort((a, b) => Date.parse(b.occurredAt || '') - Date.parse(a.occurredAt || ''))
+      .slice(0, 12)
+  };
+}
+
+function summarizeFieldUsage(metrics = {}) {
+  const sessions = Object.values(metrics?.sessions || {}).filter(session => session && typeof session === 'object');
+  const events = Object.values(metrics?.events || {}).filter(event => event && typeof event === 'object');
+  const inspectors = new Map();
+  const ensure = name => {
+    const inspector = String(name || 'Field App User').trim() || 'Field App User';
+    if (!inspectors.has(inspector)) {
+      inspectors.set(inspector, {
+        inspector,
+        activeSeconds: 0,
+        sessions: 0,
+        saves: 0,
+        photos: 0,
+        fieldChanges: 0,
+        uniqueFields: 0,
+        blockers: 0,
+        syncAttempts: 0,
+        syncSuccesses: 0,
+        syncFailures: 0,
+        finalSubmitAttempts: 0,
+        finalSubmitSuccesses: 0,
+        finalSubmitFailures: 0,
+        lastActiveAt: '',
+        steps: {},
+        fields: {}
+      });
+    }
+    return inspectors.get(inspector);
+  };
+
+  sessions.forEach(session => {
+    const row = ensure(session.actorName);
+    row.activeSeconds += Number(session.activeSeconds) || 0;
+    row.sessions += 1;
+    row.saves += Number(session.saveCount) || 0;
+    row.photos += Number(session.photoAddedCount) || 0;
+    row.fieldChanges += Number(session.fieldChangeCount) || 0;
+    row.blockers += Number(session.blockerCount) || 0;
+    row.syncAttempts += Number(session.syncAttemptCount) || 0;
+    row.syncSuccesses += Number(session.syncSuccessCount) || 0;
+    row.syncFailures += Number(session.syncFailureCount) || 0;
+    row.finalSubmitAttempts += Number(session.finalSubmitAttempts) || 0;
+    row.finalSubmitSuccesses += Number(session.finalSubmitSuccesses) || 0;
+    row.finalSubmitFailures += Number(session.finalSubmitFailureCount || session.finalSubmitFailures) || 0;
+    if (!row.lastActiveAt || Date.parse(session.lastActiveAt || '') > Date.parse(row.lastActiveAt || '')) {
+      row.lastActiveAt = session.lastActiveAt || '';
+    }
+    Object.entries(session.steps || {}).forEach(([step, seconds]) => {
+      row.steps[step] = (row.steps[step] || 0) + (Number(seconds) || 0);
+    });
+    Object.entries(session.fields || {}).forEach(([field, count]) => {
+      row.fields[field] = (row.fields[field] || 0) + (Number(count) || 0);
+    });
+  });
+
+  const rows = Array.from(inspectors.values()).map(row => ({
+    ...row,
+    uniqueFields: Object.keys(row.fields || {}).length
+  })).sort((a, b) => b.activeSeconds - a.activeSeconds);
+
+  return {
+    rows,
+    totalActiveSeconds: rows.reduce((sum, row) => sum + row.activeSeconds, 0),
+    totalSaves: rows.reduce((sum, row) => sum + row.saves, 0),
+    totalPhotos: rows.reduce((sum, row) => sum + row.photos, 0),
+    totalBlockers: rows.reduce((sum, row) => sum + row.blockers, 0),
+    lastActiveAt: rows.map(row => row.lastActiveAt).filter(Boolean).sort().pop() || '',
+    recentEvents: events
+      .sort((a, b) => Date.parse(b.occurredAt || '') - Date.parse(a.occurredAt || ''))
+      .slice(0, 16)
+  };
+}
+
+function fieldUsageEventLabel(event = {}) {
+  const target = event.stepName || event.stepId || event.screen || 'the app';
+  const field = event.fieldKey ? ` / ${event.fieldKey}` : '';
+  const count = event.count ? ` (${event.count})` : '';
+  const labels = {
+    field_change: `Edited ${target}${field}`,
+    step_completed: `Completed ${target}`,
+    step_warning: `Warning in ${target}${count}`,
+    blocker_seen: `Blocked in ${target}${count}`,
+    photo_added: `Added photo in ${target}`,
+    checkpoint_attempt: `Cloud checkpoint started`,
+    checkpoint_success: `Cloud checkpoint saved`,
+    checkpoint_failed: `Cloud checkpoint failed`,
+    sync_attempt: `Final sync started`,
+    sync_success: `Final sync saved`,
+    sync_failed: `Final sync failed`,
+    final_submit_attempt: `Submit clicked`,
+    final_submit_success: `Submit completed`,
+    final_submit_failed: `Submit failed`,
+    network_offline: `App went offline`,
+    network_online: `App came online`,
+    screen_view: `Opened ${target}`,
+    session_start: `Started field app session`
+  };
+  return labels[event.type] || `${event.type || 'Activity'} in ${target}`;
 }
 
 function slugifyRoomPart(value) {
@@ -319,18 +753,48 @@ function getURLParams() {
 function getDriveIdFromPhoto(photo) {
   if (!photo) return '';
   if (photo.driveId) return String(photo.driveId);
-  const url = String(photo.driveUrl || photo.url || photo.imageUrl || '');
+  const url = String(
+    photo.driveUrl ||
+    photo.webViewLink ||
+    photo.webContentLink ||
+    photo.highResUrl ||
+    photo.thumbnailUrl ||
+    photo.url ||
+    photo.imageUrl ||
+    ''
+  );
   const match = url.match(/[?&]id=([^&]+)/) || url.match(/\/d\/([^/]+)/);
   return match ? decodeURIComponent(match[1]) : '';
+}
+
+function getPhotoStoragePath(photo) {
+  return String(photo?.storagePath || photo?.storage_path || photo?.storageObject || '').trim();
+}
+
+function photoWorkerUrlFromStoragePath(photo) {
+  const storagePath = getPhotoStoragePath(photo);
+  if (!storagePath) return '';
+  try {
+    const url = new URL(PHOTO_WORKER_URL + '/photo');
+    url.searchParams.set('path', storagePath);
+    const token = String(photo?.token || photo?.inspectionId || _inspection?.inspectionId || '').trim().toLowerCase();
+    if (token) url.searchParams.set('token', token);
+    return url.toString();
+  } catch (err) {
+    return '';
+  }
 }
 
 function normalizePhotoUrl(photo) {
   // Prefer the authenticated Worker image endpoint when present. Google Drive
   // /view links are HTML pages and cannot be used directly as <img> sources.
   if (photo.url && /inhaus-photo-worker\.inhauslab\.workers\.dev\/photo/.test(photo.url)) return photo.url;
+  if (photo.highResUrl && /inhaus-photo-worker\.inhauslab\.workers\.dev\/photo/.test(photo.highResUrl)) return photo.highResUrl;
+  const workerStorageUrl = photoWorkerUrlFromStoragePath(photo);
+  if (workerStorageUrl) return workerStorageUrl;
   const driveId = getDriveIdFromPhoto(photo);
   if (driveId) return `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w1600`;
-  return photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl || '';
+  return photo.highResUrl || photo.thumbnailUrl || photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl || '';
 }
 
 function photoKey(photo) {
@@ -344,10 +808,26 @@ function photoKey(photo) {
   if (photo.photoId) return `id:${photo.photoId}`;
   const driveId = getDriveIdFromPhoto(photo);
   if (driveId) return `drive:${driveId}`;
-  if (photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl) {
-    return `url:${photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl}`;
+  if (photo.storagePath || photo.storage_path) return `storage:${photo.storagePath || photo.storage_path}`;
+  if (photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl || photo.highResUrl || photo.thumbnailUrl) {
+    return `url:${photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl || photo.highResUrl || photo.thumbnailUrl}`;
   }
   return `meta:${roomName}|${stepName}|${caption}|${timestamp}`;
+}
+
+function isPhotoLikeObject(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return !!(
+    value.photoId ||
+    value.driveUrl ||
+    value.driveId ||
+    value.storagePath ||
+    value.storage_path ||
+    value.highResUrl ||
+    value.thumbnailUrl ||
+    value.url ||
+    value.imageUrl
+  );
 }
 
 function assignPhotoId(photo, index, usedIds) {
@@ -373,6 +853,8 @@ function flattenInspectionPhotos(insp) {
     delete normalized.imageData;
     const driveUrl = normalizePhotoUrl(normalized);
     if (driveUrl) normalized.driveUrl = driveUrl;
+    normalized.storagePath = normalized.storagePath || normalized.storage_path || '';
+    normalized.inspectionId = normalized.inspectionId || context.inspectionId || insp?.inspectionId || '';
     normalized.roomName = normalized.roomName || context.roomName || '';
     normalized.stepName = normalized.stepName || context.stepName || '';
     normalized.caption = normalized.caption || '';
@@ -381,6 +863,7 @@ function flattenInspectionPhotos(insp) {
 
     const hasUsefulData =
       normalized.driveUrl || normalized.localUrl || normalized.url || normalized.imageUrl ||
+      normalized.highResUrl || normalized.thumbnailUrl || normalized.storagePath ||
       normalized.caption || normalized.timestamp || normalized.roomName || normalized.stepName;
     if (!hasUsefulData) return;
 
@@ -408,13 +891,16 @@ function flattenInspectionPhotos(insp) {
 
     const nextContext = {
       roomName: value.roomName || value.name || context.roomName || '',
-      stepName: value.stepName || value.stepId || value.type || context.stepName || ''
+      stepName: value.stepName || value.stepId || value.type || context.stepName || '',
+      inspectionId: value.inspectionId || context.inspectionId || insp?.inspectionId || ''
     };
 
     for (const [key, child] of Object.entries(value)) {
       if (key === 'photos' && Array.isArray(child)) {
         const isTopLevelPhotos = pathParts.length === 0;
         if (!isTopLevelPhotos) child.forEach(photo => addPhoto(photo, nextContext));
+      } else if (isPhotoLikeObject(child)) {
+        addPhoto(child, nextContext);
       } else if (child && typeof child === 'object') {
         walk(child, nextContext, pathParts.concat(key));
       }
@@ -435,13 +921,23 @@ function flattenInspectionPhotos(insp) {
     .filter(photo => !deletedPhotoIds.has(photo.photoId));
 }
 
+const REVIEW_SUMMARY_FIELD_KEYS = [
+  'clientName', 'propertyAddress', 'inspectionDate', 'reportBuilderNotes',
+  'residenceType', 'yearBuilt', 'squareFootage', 'numberOfBedrooms',
+  'numberOfBathrooms', 'numberOfLevels', 'basement', 'waterSource',
+  'waterFiltration', 'waterSoftener', 'carpetedRooms', 'windowsOpen',
+  'heating', 'ac', 'ventilation', 'ventilationReadable', 'weatherConditions',
+  'particulateMatter', 'occupancyDuringInspection', 'clientConcerns',
+  'knownProblemAreas'
+];
+
 function applyReviewedData(insp) {
   const reviewed = insp.reviewedData || {};
   const summary = reviewed.summary || {};
   const bulkIncludedPhotoIds = new Set(Array.isArray(reviewed.bulkIncludedPhotoIds)
     ? reviewed.bulkIncludedPhotoIds
     : []);
-  ['clientName', 'propertyAddress', 'inspectionDate', 'reportBuilderNotes'].forEach(key => {
+  REVIEW_SUMMARY_FIELD_KEYS.forEach(key => {
     if (summary[key] !== undefined) insp[key] = summary[key];
     else if (reviewed[key] !== undefined) insp[key] = reviewed[key];
   });
@@ -598,6 +1094,27 @@ function normalizeInspectionForReview(insp) {
   return insp;
 }
 
+function countInspectionArray(value) {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function createReviewDataHealthSnapshot(insp = {}) {
+  return {
+    baseStatus: String(insp.status || ''),
+    baseSubmittedAt: String(insp.submittedToTannerAt || insp.submittedAt || ''),
+    basePhotoCount: Number(insp.photoCount) || 0,
+    baseRooms: countInspectionArray(insp.rooms),
+    baseFindings: countInspectionArray(insp.findings),
+    basePhotos: countInspectionArray(insp.photos),
+    recoveryApplied: false,
+    recoveryRooms: 0,
+    recoveryFindings: 0,
+    workerPhotos: 0,
+    workerPhotoError: '',
+    finalPhotos: 0
+  };
+}
+
 async function loadWorkerPhotos(inspectionId) {
   if (!inspectionId) return [];
   const url = new URL(PHOTO_WORKER_URL + '/inspection-photos');
@@ -691,11 +1208,36 @@ async function apiFetch(params, method = 'GET', body = null) {
     opts.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
     opts.body = JSON.stringify(payload);
   }
-  const res = await fetch(url.toString(), opts);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), API_FETCH_TIMEOUT_MS);
+  opts.signal = controller.signal;
+  let res;
+  try {
+    res = await fetch(url.toString(), opts);
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      throw new Error('API request timed out');
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeout);
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = await res.json();
   if (json && json.status === 'error') throw new Error(json.message || 'API error');
   return json;
+}
+
+async function visionProxyFetch(payload, options = {}) {
+  return fetch(VISION_PROXY_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      ...(payload || {}),
+      _syncSecret: SYNC_SECRET
+    }),
+    ...(options.signal ? { signal: options.signal } : {})
+  });
 }
 
 async function loadCloudReview(inspectionId) {
@@ -791,6 +1333,27 @@ async function saveReviewSubmissionReceipt(inspectionId, receipt, reportBuilderN
   return verifiedSubmission;
 }
 
+async function verifyTannerToolPackage(inspectionId) {
+  const verified = await loadCloudReview(inspectionId);
+  const verifiedSubmission = getServerSubmittedReviewState({
+    status: 'Submitted to Tanner',
+    reviewedData: verified.fieldData || {}
+  });
+  if (!verifiedSubmission.submitted) {
+    throw new Error('Submission was not confirmed by review storage. Please retry.');
+  }
+
+  let photoCount = 0;
+  try {
+    photoCount = (await loadWorkerPhotos(inspectionId)).length;
+  } catch (err) {
+    const expectedPhotos = Number(_inspection?.photoCount || (_inspection?.photos || []).length || 0);
+    if (expectedPhotos > 0) throw new Error('Tanner photo package was not confirmed. Please retry.');
+  }
+
+  return { ...verifiedSubmission, photoCount };
+}
+
 function mergeCheckpointValue(base, incoming) {
   if (incoming === undefined || incoming === null || incoming === '') return base;
 
@@ -860,7 +1423,7 @@ async function loadInspectionList() {
   const countLabel = qs('#inspection-count');
   if (!tableBody) return;
 
-  tableBody.innerHTML = `<tr><td colspan="9" class="loading-state">
+  tableBody.innerHTML = `<tr><td colspan="10" class="loading-state">
     <div><div class="loading-spinner"></div><br>Loading inspections…</div>
   </td></tr>`;
 
@@ -880,7 +1443,7 @@ async function loadInspectionList() {
         data = await staticResp.json();
       }
     } catch (err) {
-      tableBody.innerHTML = `<tr><td colspan="9" class="empty-state">
+      tableBody.innerHTML = `<tr><td colspan="10" class="empty-state">
         Failed to load inspections: ${err.message}
       </td></tr>`;
       showToast('Failed to load inspections', 'error');
@@ -889,13 +1452,14 @@ async function loadInspectionList() {
   }
 
   renderInspectionList(data.inspections, tableBody, countLabel);
+  if (!IS_DEMO) enrichInspectionListPhotoCounts(data.inspections, tableBody);
 }
 
 function renderInspectionList(inspections, tableBody, countLabel) {
   if (countLabel) countLabel.textContent = `${inspections.length} inspection${inspections.length !== 1 ? 's' : ''}`;
 
   if (!inspections.length) {
-    tableBody.innerHTML = `<tr><td colspan="9" class="empty-state">No inspections found.</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="10" class="empty-state">No inspections found.</td></tr>`;
     return;
   }
 
@@ -905,17 +1469,24 @@ function renderInspectionList(inspections, tableBody, countLabel) {
     // not return a per-inspection reviewToken. Reuse the portal token so Open
     // Review never generates token=undefined.
     const reviewToken = insp.reviewToken || ACCESS_TOKEN;
+    const id = insp.id || insp.inspectionId || '';
+    const sourcePhotoCount = Number(insp.photoCount) || 0;
+    const score = insp.completionScore ?? insp.reviewScore ?? insp.score ?? '';
     const row = document.createElement('tr');
+    row.dataset.inspectionId = id;
     row.innerHTML = `
       <td>
         <div class="td-address">${escapeHTML(insp.propertyAddress)}</div>
-        <div class="td-id">${escapeHTML(insp.id || insp.inspectionId)}</div>
+        <div class="td-id">${escapeHTML(id)}</div>
       </td>
       <td>${escapeHTML(insp.clientName)}</td>
       <td>${formatDate(insp.inspectionDate)}</td>
       <td>${escapeHTML(insp.inspectorName)}</td>
       <td>${statusBadgeHTML(insp.status)}</td>
-      <td>${insp.photoCount ?? '—'}</td>
+      <td>${score === '' ? '—' : escapeHTML(score)}</td>
+      <td data-photo-count-cell="${escapeHTML(id)}">
+        ${photoCountListHTML(sourcePhotoCount, 'checking')}
+      </td>
       <td>
         ${insp.missingCount > 0
           ? `<span class="missing-badge has-missing">${insp.missingCount}</span>`
@@ -923,12 +1494,95 @@ function renderInspectionList(inspections, tableBody, countLabel) {
       </td>
       <td class="text-muted">${formatDateTime(insp.lastUpdated)}</td>
       <td>
-        <a href="review.html?id=${encodeURIComponent(insp.id || insp.inspectionId)}&token=${encodeURIComponent(reviewToken)}"
+        <a href="review.html?id=${encodeURIComponent(id)}&token=${encodeURIComponent(reviewToken)}"
            class="btn btn-open btn-sm">Open Review →</a>
       </td>
     `;
     tableBody.appendChild(row);
   }
+}
+
+function photoCountListHTML(sourceCount, state = 'source', workerCount = null) {
+  const source = Number(sourceCount) || 0;
+  const worker = workerCount == null ? null : Number(workerCount) || 0;
+  if (state === 'checking') {
+    return `<div class="list-photo-count checking">
+      <strong>${source}</strong>
+      <span>Checking photo service…</span>
+    </div>`;
+  }
+  if (state === 'recovered') {
+    return `<div class="list-photo-count recovered" title="App list says ${source}; photo service has ${worker}">
+      <strong>${worker}</strong>
+      <span>Photo service recovered · app list ${source}</span>
+    </div>`;
+  }
+  if (state === 'matched') {
+    return `<div class="list-photo-count matched">
+      <strong>${worker}</strong>
+      <span>Photo service verified</span>
+    </div>`;
+  }
+  if (state === 'service-empty') {
+    return `<div class="list-photo-count warn" title="App list has photos but the photo service did not return them">
+      <strong>${source}</strong>
+      <span>App list only · service 0</span>
+    </div>`;
+  }
+  if (state === 'failed') {
+    return `<div class="list-photo-count warn">
+      <strong>${source || '—'}</strong>
+      <span>Photo service unavailable</span>
+    </div>`;
+  }
+  return `<div class="list-photo-count">
+    <strong>${source || '—'}</strong>
+    <span>App list</span>
+  </div>`;
+}
+
+async function loadWorkerPhotoCount(inspectionId) {
+  const photos = await loadWorkerPhotos(inspectionId);
+  return photos.length;
+}
+
+async function enrichInspectionListPhotoCounts(inspections, tableBody) {
+  const queue = (inspections || [])
+    .map(insp => ({
+      id: insp.id || insp.inspectionId || '',
+      sourcePhotoCount: Number(insp.photoCount) || 0
+    }))
+    .filter(item => item.id);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < queue.length) {
+      const item = queue[cursor++];
+      const cell = tableBody.querySelector(`[data-photo-count-cell="${window.CSS?.escape ? CSS.escape(item.id) : item.id.replace(/["\\]/g, '\\$&')}"]`);
+      const row = cell?.closest('tr');
+      if (!cell) continue;
+      try {
+        const workerCount = await loadWorkerPhotoCount(item.id);
+        if (workerCount > item.sourcePhotoCount) {
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'recovered', workerCount);
+          row?.classList.add('list-row-photo-recovered');
+        } else if (workerCount === item.sourcePhotoCount && workerCount > 0) {
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'matched', workerCount);
+          row?.classList.remove('list-row-photo-recovered');
+        } else if (item.sourcePhotoCount > 0 && workerCount === 0) {
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'service-empty', workerCount);
+          row?.classList.add('list-row-photo-warning');
+        } else {
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'source', workerCount);
+          row?.classList.remove('list-row-photo-recovered', 'list-row-photo-warning');
+        }
+      } catch (err) {
+        cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'failed');
+        row?.classList.add('list-row-photo-warning');
+      }
+    }
+  };
+  const workers = Array.from({ length: Math.min(4, queue.length) }, worker);
+  await Promise.allSettled(workers);
 }
 
 /* ============================================================
@@ -970,6 +1624,7 @@ async function loadInspection() {
   // every checkpoint instead of selecting one partial layer, so a later phone
   // recovery save cannot hide previously completed steps from the portal.
   insp = mergeInspectionCheckpoints(insp);
+  _reviewDataHealth = createReviewDataHealthSnapshot(insp);
 
   // Reviewer edits are persisted independently of Apps Script so they survive
   // device changes even when Google's web-app POST redirect drops the body.
@@ -982,12 +1637,17 @@ async function loadInspection() {
         if (inspectionRecovery && typeof inspectionRecovery === 'object') {
           // Keep the preserved full checkpoint underneath the current live
           // summary. Live values win, while missing steps/findings are restored.
+          if (_reviewDataHealth) {
+            _reviewDataHealth.recoveryApplied = true;
+            _reviewDataHealth.recoveryRooms = countInspectionArray(inspectionRecovery.rooms);
+            _reviewDataHealth.recoveryFindings = countInspectionArray(inspectionRecovery.findings);
+          }
           insp = mergeCheckpointValue(inspectionRecovery, insp);
         }
 
         // The recovery payload is inspection source data, not a reviewer field.
         // Do not copy it into reviewedData or render it as editable report data.
-        const reviewFields = { ...cloudFields };
+        const reviewFields = extractReviewActivityData({ ...cloudFields });
         if (reviewFields.system && typeof reviewFields.system === 'object' && !Array.isArray(reviewFields.system)) {
           const systemFields = { ...reviewFields.system };
           delete systemFields.inspectionRecovery;
@@ -1018,8 +1678,10 @@ async function loadInspection() {
   if (!IS_DEMO && id) {
     try {
       const workerPhotos = await loadWorkerPhotos(id);
+      if (_reviewDataHealth) _reviewDataHealth.workerPhotos = workerPhotos.length;
       if (workerPhotos.length) insp.photos = (Array.isArray(insp.photos) ? insp.photos : []).concat(workerPhotos);
     } catch (photoErr) {
+      if (_reviewDataHealth) _reviewDataHealth.workerPhotoError = photoErr?.message || 'Photo recovery unavailable';
       console.warn('Direct photo recovery unavailable:', photoErr);
     }
   }
@@ -1036,13 +1698,15 @@ async function loadInspection() {
         }
       });
       if (Object.keys(saved).length > 0) {
-        insp.reviewedData = mergeReviewData(insp.reviewedData || {}, saved);
+        insp.reviewedData = mergeReviewData(insp.reviewedData || {}, sanitizeReviewActivityFieldData(saved));
       }
     } catch(e) {}
   }
 
   _inspection = normalizeInspectionForReview(insp);
+  if (_reviewDataHealth) _reviewDataHealth.finalPhotos = countInspectionArray(_inspection.photos);
   renderReviewPage(insp);
+  startReviewActivityTracking(_inspection);
 }
 
 /* ============================================================
@@ -1429,7 +2093,12 @@ function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) 
         if (photo.caption) {
           thumb.appendChild(el('div', { class: 'picker-thumb-caption', style: `max-width:${sz}` }, photo.caption));
         }
-        const rm = el('button', { class: 'picker-rm', title: 'Remove', type: 'button' }, '\u2715');
+        const rm = el('button', {
+          class: 'picker-rm',
+          title: 'Remove from this section',
+          'aria-label': 'Remove photo from this section only',
+          type: 'button'
+        }, '\u2715');
         rm.addEventListener('click', () => {
           const ids = assignedIds.filter(id => id !== pid);
           const jsonValue = JSON.stringify(ids);
@@ -1749,6 +2418,10 @@ function photoIdentityCandidates(photo, index) {
     photo?.driveId,
     getDriveIdFromPhoto(photo),
     photo?.driveUrl,
+    photo?.storagePath,
+    photo?.storage_path,
+    photo?.highResUrl,
+    photo?.thumbnailUrl,
     normalizePhotoUrl(photo || {}),
     photo?.url,
     photo?.imageUrl,
@@ -2503,7 +3176,7 @@ function completeDataRows(value, prefix = '', rows = [], seen = new Set()) {
   const ignored = new Set([
     'dataUrl', 'imageData', 'thumbnailDataUrl', 'photos', 'sparePhotos',
     'findings', 'commentLibrary', 'auditTrail', 'photoTombstones', 'resumeData',
-    'collaboration', 'roomRelationships', 'reviewedData'
+    'collaboration', 'roomRelationships', 'reviewedData', 'fieldUsageMetrics'
   ]);
   Object.entries(value).forEach(([key, child]) => {
     if (key.startsWith('_') || ignored.has(key) || completeDataIsEmpty(child)) return;
@@ -2578,7 +3251,7 @@ function renderCompleteInspectionData(insp) {
     'exteriorAssessment', 'radonSetup', 'utilityRoom', 'wrapUp', 'customerDebrief',
     'postAssessment', 'photos', 'sparePhotos', 'photoTombstones', 'auditTrail',
     'commentLibrary', 'collaboration', 'reviewedData', 'resumeData', 'x-sync-secret',
-    'sharedDriveFolderId'
+    'sharedDriveFolderId', 'fieldUsageMetrics'
   ]);
   const supplemental = Object.fromEntries(Object.entries(insp).filter(([key, value]) =>
     !key.startsWith('_') && !reservedTopLevel.has(key) && !completeDataIsEmpty(value)
@@ -2662,38 +3335,76 @@ function renderIntakeSummary(insp) {
       .map(([key]) => ventilationLabels[key] || key)
       .join(', ');
 
+  const locked = getServerSubmittedReviewState(insp).submitted || getServerSubmittedReviewState(insp).statusSubmitted;
   const items = [
-    { label: 'Property', value: insp.propertyAddress, wide: true },
-    { label: 'Client', value: insp.clientName },
-    { label: 'Inspector', value: insp.inspectorName },
-    { label: 'Date', value: formatDate(insp.inspectionDate) },
-    { label: 'Type', value: insp.residenceType },
-    { label: 'Year Built', value: insp.yearBuilt },
-    { label: 'Sq Ft', value: insp.squareFootage },
-    { label: 'Bedrooms', value: insp.numberOfBedrooms },
-    { label: 'Bathrooms', value: insp.numberOfBathrooms },
-    { label: 'Levels', value: insp.numberOfLevels },
-    { label: 'Basement', value: insp.basement },
-    { label: 'Water Source', value: insp.waterSource },
-    { label: 'Filtration', value: insp.waterFiltration },
-    { label: 'Softener', value: insp.waterSoftener },
-    { label: 'Carpeted Rooms', value: insp.carpetedRooms },
-    { label: 'Windows Open', value: insp.windowsOpen },
-    { label: 'Heating', value: utility.heatingType || insp.heating },
-    { label: 'AC', value: utility.acType || insp.ac },
-    { label: 'Ventilation', value: ventilationValue },
-    { label: 'Weather', value: insp.weatherConditions },
-    { label: 'Particulate Matter', value: getParticulateMatter(insp), wide: true },
-    { label: 'Occupancy', value: insp.occupancyDuringInspection },
-    { label: 'Client Concerns', value: insp.clientConcerns, wide: true },
-    { label: 'Known Problem Areas', value: insp.knownProblemAreas, wide: true }
+    { label: 'Property', key: 'propertyAddress', value: insp.propertyAddress, wide: true },
+    { label: 'Client', key: 'clientName', value: insp.clientName },
+    { label: 'Inspector', key: 'inspectorName', value: insp.inspectorName, readonly: true },
+    { label: 'Date', key: 'inspectionDate', value: insp.inspectionDate, type: 'date' },
+    { label: 'Type', key: 'residenceType', value: insp.residenceType },
+    { label: 'Year Built', key: 'yearBuilt', value: insp.yearBuilt },
+    { label: 'Sq Ft', key: 'squareFootage', value: insp.squareFootage },
+    { label: 'Bedrooms', key: 'numberOfBedrooms', value: insp.numberOfBedrooms },
+    { label: 'Bathrooms', key: 'numberOfBathrooms', value: insp.numberOfBathrooms },
+    { label: 'Levels', key: 'numberOfLevels', value: insp.numberOfLevels },
+    { label: 'Basement', key: 'basement', value: insp.basement },
+    { label: 'Water Source', key: 'waterSource', value: insp.waterSource },
+    { label: 'Filtration', key: 'waterFiltration', value: insp.waterFiltration },
+    { label: 'Softener', key: 'waterSoftener', value: insp.waterSoftener },
+    { label: 'Carpeted Rooms', key: 'carpetedRooms', value: insp.carpetedRooms },
+    { label: 'Windows Open', key: 'windowsOpen', value: insp.windowsOpen },
+    { label: 'Heating', key: 'heating', value: utility.heatingType || insp.heating },
+    { label: 'AC', key: 'ac', value: utility.acType || insp.ac },
+    { label: 'Ventilation', key: 'ventilationReadable', value: ventilationValue },
+    { label: 'Weather', key: 'weatherConditions', value: insp.weatherConditions },
+    { label: 'Particulate Matter', key: 'particulateMatter', value: getParticulateMatter(insp), wide: true },
+    { label: 'Occupancy', key: 'occupancyDuringInspection', value: insp.occupancyDuringInspection },
+    { label: 'Client Concerns', key: 'clientConcerns', value: insp.clientConcerns, wide: true, multiline: true },
+    { label: 'Known Problem Areas', key: 'knownProblemAreas', value: insp.knownProblemAreas, wide: true, multiline: true }
   ];
 
   items.forEach(item => {
-    const node = el('div', { class: `intake-summary-item${item.wide ? ' wide' : ''}` },
-      el('div', { class: 'intake-summary-label' }, item.label),
-      el('div', { class: 'intake-summary-value' }, displayValue(item.value))
-    );
+    const fieldLocked = locked || item.readonly;
+    const node = el('div', { class: `intake-summary-item editable${item.wide ? ' wide' : ''}` });
+    node.appendChild(el('label', { class: 'intake-summary-label', for: `summary-${item.key}` }, item.label));
+    const value = item.type === 'date'
+      ? dateInputValue(item.value)
+      : sourceDisplayValue(item.value);
+    const input = item.multiline
+      ? el('textarea', {
+          id: `summary-${item.key}`,
+          class: 'intake-summary-input',
+          rows: '2',
+          'data-step': 'summary',
+          'data-field': item.key,
+          ...(fieldLocked ? { readonly: '' } : {})
+        })
+      : el('input', {
+          id: `summary-${item.key}`,
+          class: 'intake-summary-input',
+          type: item.type || 'text',
+          'data-step': 'summary',
+          'data-field': item.key,
+          ...(fieldLocked ? { readonly: '' } : {})
+        });
+    input.value = value === 'Not recorded' ? '' : value;
+    node.appendChild(input);
+    node.appendChild(el('div', { class: 'field-original' }));
+    if (!fieldLocked) {
+      input.addEventListener('input', () => {
+        if (!_inspection) return;
+        _inspection[item.key] = input.value;
+        if (item.key === 'propertyAddress') {
+          const stickyAddress = qs('#sticky-address');
+          if (stickyAddress) stickyAddress.textContent = input.value || '—';
+        }
+        if (item.key === 'inspectionDate') {
+          const stickyDate = qs('#sticky-date');
+          if (stickyDate) stickyDate.textContent = formatDate(input.value);
+        }
+      });
+      attachFieldSave(input, 'summary', item.key);
+    }
     body.appendChild(node);
   });
 }
@@ -2726,6 +3437,7 @@ function renderReviewPage(insp) {
     }
   }
 
+  renderReviewDataHealthBanner(insp);
   renderSummarySection(insp, isSubmitted);
   renderRoomsSection(insp, isSubmitted);
   renderWaterFindingsSection(insp, isSubmitted);
@@ -2742,12 +3454,278 @@ function renderReviewPage(insp) {
   checkGate();
 }
 
+function renderReviewDataHealthBanner(insp) {
+  const banner = qs('#data-health-banner');
+  if (!banner) return;
+  const health = _reviewDataHealth || {};
+  const notes = [];
+  const baseLookedThin = (health.baseRooms || 0) === 0 ||
+    ((health.basePhotos || 0) === 0 && (health.workerPhotos || 0) > 0);
+  if (health.recoveryApplied && baseLookedThin) {
+    notes.push(`Review cloud restored ${health.recoveryRooms || countInspectionArray(insp.rooms)} rooms and ${health.recoveryFindings || countInspectionArray(insp.findings)} findings.`);
+  }
+  if ((health.workerPhotos || 0) > (health.basePhotos || 0)) {
+    notes.push(`Photo service loaded ${health.workerPhotos} photos; base row listed ${health.basePhotos || 0}.`);
+  }
+  if (health.workerPhotoError) {
+    notes.push(`Photo service check unavailable: ${health.workerPhotoError}.`);
+  }
+  const sourceCount = Math.max(Number(health.basePhotoCount) || 0, Number(health.basePhotos) || 0);
+  const workerCount = Number(health.workerPhotos) || 0;
+  const finalCount = Number(health.finalPhotos) || countInspectionArray(insp.photos);
+  if (sourceCount && workerCount && sourceCount !== workerCount) {
+    notes.push(`Photo count mismatch: source record says ${sourceCount}, photo service has ${workerCount}, portal is showing ${finalCount}.`);
+  }
+  const submittedState = getServerSubmittedReviewState(insp);
+  const baseLooksSubmitted = /submitted to tanner|report complete/i.test(health.baseStatus || '') ||
+    Boolean(health.baseSubmittedAt);
+  if (baseLooksSubmitted && !submittedState.submitted) {
+    notes.push('Submission state mismatch: source record looks submitted, but review storage does not have a confirmed submission receipt.');
+  }
+  if (submittedState.submitted && !baseLooksSubmitted) {
+    notes.push('Submission receipt recovered from review storage; source list status may not have caught up yet.');
+  }
+  if (!notes.length) {
+    banner.classList.add('hidden');
+    banner.replaceChildren();
+    return;
+  }
+  banner.classList.remove('hidden');
+  const hasMismatch = notes.some(note => /mismatch|unavailable|not have a confirmed/i.test(note));
+  banner.classList.toggle('warning', hasMismatch);
+  banner.replaceChildren(
+    el('div', { class: 'data-health-icon' }, hasMismatch ? '!' : 'i'),
+    el('div', { class: 'data-health-copy' },
+      el('strong', {}, hasMismatch ? 'Handoff Consistency Check' : 'Data Source Check'),
+      el('span', {}, notes.join(' '))
+    )
+  );
+}
+
+function firstNonEmptyValue(...values) {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    if (String(value).trim() !== '') return value;
+  }
+  return '';
+}
+
+function driveFolderUrlFromId(id) {
+  const clean = String(id || '').trim();
+  return clean ? `https://drive.google.com/drive/folders/${encodeURIComponent(clean)}` : '';
+}
+
+function spreadsheetUrlFromId(id) {
+  const clean = String(id || '').trim();
+  return clean ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(clean)}/edit` : '';
+}
+
+function findFirstStringMatching(value, matcher, depth = 0, seen = new Set()) {
+  if (depth > 5 || value === undefined || value === null) return '';
+  if (typeof value === 'string') return matcher(value) ? value : '';
+  if (typeof value !== 'object') return '';
+  if (seen.has(value)) return '';
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 40)) {
+      const found = findFirstStringMatching(item, matcher, depth + 1, seen);
+      if (found) return found;
+    }
+    return '';
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (/dataUrl|imageData|thumbnailDataUrl/i.test(key)) continue;
+    const found = findFirstStringMatching(child, matcher, depth + 1, seen);
+    if (found) return found;
+  }
+  return '';
+}
+
+function buildTannerPackageState(insp = {}) {
+  const reviewed = insp.reviewedData || {};
+  const submission = getServerSubmittedReviewState(insp).submission || {};
+  const system = reviewed.system || insp.system || {};
+  const handoff = firstNonEmptyValue(
+    submission.reviewPortalData,
+    reviewed.reviewPortalData,
+    insp.reviewPortalData,
+    system.reviewPortalData,
+    system.tannerHandoff
+  );
+  const handoffObj = handoff && typeof handoff === 'object' ? handoff : {};
+
+  const folderId = firstNonEmptyValue(
+    insp.folderId,
+    insp.assessmentFolderId,
+    reviewed.folderId,
+    reviewed.assessmentFolderId,
+    handoffObj.folderId,
+    handoffObj.assessmentFolderId
+  );
+  let folderUrl = firstNonEmptyValue(
+    insp.folderUrl,
+    insp.assessmentFolderUrl,
+    reviewed.folderUrl,
+    reviewed.assessmentFolderUrl,
+    handoffObj.folderUrl,
+    handoffObj.assessmentFolderUrl,
+    folderId ? driveFolderUrlFromId(folderId) : ''
+  );
+  if (!folderUrl) {
+    folderUrl = findFirstStringMatching(insp, value => /drive\.google\.com\/drive\/folders\//i.test(value));
+  }
+
+  const spreadsheetId = firstNonEmptyValue(
+    insp.spreadsheetId,
+    insp.reviewPortalDataSpreadsheetId,
+    reviewed.spreadsheetId,
+    reviewed.reviewPortalDataSpreadsheetId,
+    handoffObj.spreadsheetId,
+    handoffObj.reviewPortalDataSpreadsheetId
+  );
+  let spreadsheetUrl = firstNonEmptyValue(
+    insp.spreadsheetUrl,
+    insp.reviewPortalDataUrl,
+    insp.reviewPortalDataSpreadsheetUrl,
+    reviewed.spreadsheetUrl,
+    reviewed.reviewPortalDataUrl,
+    reviewed.reviewPortalDataSpreadsheetUrl,
+    handoffObj.spreadsheetUrl,
+    handoffObj.reviewPortalDataUrl,
+    handoffObj.reviewPortalDataSpreadsheetUrl,
+    spreadsheetId ? spreadsheetUrlFromId(spreadsheetId) : ''
+  );
+  if (!spreadsheetUrl) {
+    spreadsheetUrl = findFirstStringMatching(insp, value => /docs\.google\.com\/spreadsheets\//i.test(value));
+  }
+
+  const rawBackupUrl = firstNonEmptyValue(
+    insp.rawReviewDataUrl,
+    reviewed.rawReviewDataUrl,
+    reviewed.rawReviewDataJsonUrl,
+    handoffObj.rawReviewDataUrl,
+    handoffObj.rawReviewDataJsonUrl,
+    handoffObj.rawJsonUrl
+  );
+  const trackerValue = firstNonEmptyValue(
+    insp.trackerUrl,
+    insp.trackerRowUrl,
+    insp.trackerRow,
+    reviewed.trackerUrl,
+    reviewed.trackerRowUrl,
+    reviewed.trackerRow,
+    handoffObj.trackerUrl,
+    handoffObj.trackerRowUrl,
+    handoffObj.trackerRow
+  );
+
+  const photoCount = countInspectionArray(insp.photos);
+  const roomCount = buildReviewRoomRecords(insp).length;
+  const reportNotes = firstNonEmptyValue(
+    insp.reportBuilderNotes,
+    reviewed.reportBuilderNotes,
+    reviewed.summary?.reportBuilderNotes
+  );
+  const sampleRecords = collectTestSampleRecords(insp);
+  const activeSamples = sampleRecords.filter(record => !/not conducted|not requested|not recorded/i.test(record.status || ''));
+
+  return {
+    readyCount: 0,
+    items: [
+      {
+        label: 'Assessment folder',
+        ok: Boolean(folderUrl || folderId),
+        detail: folderUrl || folderId ? 'Drive folder linked' : 'Needs Drive folder link',
+        href: folderUrl
+      },
+      {
+        label: 'Review portal data sheet',
+        ok: Boolean(spreadsheetUrl || spreadsheetId),
+        detail: spreadsheetUrl || spreadsheetId ? 'Spreadsheet linked' : 'Needs spreadsheet link',
+        href: spreadsheetUrl
+      },
+      {
+        label: 'Technician photos',
+        ok: photoCount > 0,
+        detail: `${photoCount} photo${photoCount === 1 ? '' : 's'} loaded`,
+        href: folderUrl
+      },
+      {
+        label: 'Room data',
+        ok: roomCount > 0,
+        detail: `${roomCount} room${roomCount === 1 ? '' : 's'} loaded`
+      },
+      {
+        label: 'Tests and sample IDs',
+        ok: activeSamples.length > 0,
+        detail: activeSamples.length
+          ? `${activeSamples.length} active test/sample record${activeSamples.length === 1 ? '' : 's'}`
+          : 'No active test/sample records found'
+      },
+      {
+        label: 'Report builder notes',
+        ok: Boolean(String(reportNotes || '').trim()),
+        detail: reportNotes ? 'Notes entered for Tanner' : 'Needs Tanner-facing notes'
+      },
+      {
+        label: 'Raw review backup',
+        ok: Boolean(rawBackupUrl),
+        detail: rawBackupUrl ? 'Raw data backup linked' : 'Not linked in this portal record',
+        href: rawBackupUrl
+      },
+      {
+        label: 'Tracker reference',
+        ok: Boolean(trackerValue),
+        detail: trackerValue ? String(trackerValue) : 'No tracker row/link in this portal record'
+      }
+    ]
+  };
+}
+
+function renderTannerPackageCheck(insp) {
+  const mount = qs('#tanner-package-check');
+  if (!mount) return;
+  mount.innerHTML = '';
+
+  const state = buildTannerPackageState(insp);
+  const readyCount = state.items.filter(item => item.ok).length;
+  const ready = readyCount === state.items.length;
+  mount.className = `tanner-package-check mt-16 ${ready ? 'ready' : 'needs-work'}`;
+
+  mount.appendChild(el('div', { class: 'tanner-package-header' },
+    el('div', {},
+      el('div', { class: 'tanner-package-title' }, 'Tanner Package Check'),
+      el('div', { class: 'tanner-package-subtitle' }, 'Confirms the handoff pieces Tanner needs before report scoring.')
+    ),
+    el('div', { class: 'tanner-package-score' }, `${readyCount}/${state.items.length}`)
+  ));
+
+  const grid = el('div', { class: 'tanner-package-grid' });
+  state.items.forEach(item => {
+    const attrs = {
+      class: `tanner-package-item ${item.ok ? 'ok' : 'missing'}`
+    };
+    if (item.href) {
+      attrs.href = item.href;
+      attrs.target = '_blank';
+      attrs.rel = 'noopener';
+    }
+    grid.appendChild(el(item.href ? 'a' : 'div', attrs,
+      el('span', { class: 'tanner-package-dot' }, item.ok ? 'Ready' : 'Missing'),
+      el('strong', {}, item.label),
+      el('small', {}, item.detail || '')
+    ));
+  });
+  mount.appendChild(grid);
+}
+
 /* ============================================================
    SECTION 1 — INSPECTION SUMMARY
    ============================================================ */
 
 function renderSummarySection(insp, locked) {
   renderIntakeSummary(insp);
+  renderTannerPackageCheck(insp);
   renderCompleteInspectionData(insp);
 
   const clientEl   = qs('#field-client-name');
@@ -2786,7 +3764,7 @@ function sourceFollowUpPlan(insp) {
   );
 }
 
-function followUpPlanPrompt(insp) {
+function followUpPlanPrompt(insp, inspectorDraft = '') {
   const records = buildReviewRoomRecords(insp);
   const reviewedItems = roomFollowUpItems(insp);
   const roomDetails = [];
@@ -2816,7 +3794,7 @@ function followUpPlanPrompt(insp) {
     ? roomDetails.map(detail => '- ' + detail).join('\n')
     : 'No specific room concerns or follow-up items were recorded.';
 
-  return 'You are a professional home health report reviewer writing a follow-up plan for a client. Write in plain, natural prose with no markdown, bullets, asterisks, or special formatting. Use only the inspection information below. Do not invent concerns, test results, or recommendations.\n\n'
+  return 'You are a professional home health report reviewer polishing a client follow-up plan that was written by the inspector. Rewrite only the inspector draft below so it reads clearly and professionally. Preserve the same meaning, priorities, and timeframes. Do not add new concerns, test results, recommendations, room names, or follow-up items. If the draft conflicts with the inspection context, keep the inspector draft meaning and make only wording-level improvements.\n\n'
     + 'Property: ' + (getReviewedField(insp, 'summary', 'propertyAddress', insp.propertyAddress) || 'Not recorded') + '\n'
     + 'Year Built: ' + (property.yearBuilt || 'Unknown') + '\n'
     + 'Water Source: ' + (insp.waterSource || property.waterSource || 'Unknown') + '\n'
@@ -2824,11 +3802,8 @@ function followUpPlanPrompt(insp) {
     + 'HVAC Filter Condition: ' + (utility.filterCondition || 'Not recorded') + '\n'
     + 'HVAC Filter Age: ' + (utility.filterEstimatedAge || 'Not recorded') + '\n\n'
     + 'Reviewed findings and explicit follow-ups:\n' + findingsText + '\n\n'
-    + 'Instructions:\n'
-    + 'Write short plain-text sections using only the timeframes supported by the findings: Immediate (within 30 days), 3 to 6 months, 12 months, and annually. '
-    + 'For each item, explain what to check, why it matters, and what action is needed. Preserve any explicit inspector timeframe. '
-    + 'Skip empty timeframes. End with one sentence summarizing the overall home health status. '
-    + 'Each timeframe must be a short label followed by a colon and sentence-form prose. Be direct and specific.';
+    + 'Inspector draft to polish:\n' + inspectorDraft.trim() + '\n\n'
+    + 'Return only the polished follow-up plan in plain text. No markdown, bullets, asterisks, or special formatting.';
 }
 
 function setFollowUpPlanStatus(message, state = '') {
@@ -2836,6 +3811,88 @@ function setFollowUpPlanStatus(message, state = '') {
   if (!status) return;
   status.textContent = message;
   status.className = `follow-up-plan-status${state ? ' is-' + state : ''}`;
+}
+
+function buildFollowUpPlanSuggestions(insp) {
+  const records = buildReviewRoomRecords(insp);
+  const reviewedItems = roomFollowUpItems(insp);
+  const suggestions = [];
+  const seen = new Set();
+  const add = (room, text, detail = '') => {
+    const cleanRoom = String(room || '').trim();
+    const cleanText = String(text || '').trim();
+    const cleanDetail = String(detail || '').trim();
+    if (!cleanText) return;
+    const key = `${slugifyRoomPart(cleanRoom)}|${cleanText.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    suggestions.push({ room: cleanRoom, text: cleanText, detail: cleanDetail });
+  };
+
+  records.forEach(record => {
+    const roomName = displayReviewRoomName(
+      record.room?.roomName || record.step?.roomName || record.stepId,
+      record.room?.type || record.step?.type || '',
+      record.room?.level || record.step?.level || '',
+      record.stepId
+    );
+    const followUp = findRoomFollowUpItem(reviewedItems, record, roomName) ||
+      sourceRoomFollowUpItem(record, roomName);
+    if (followUp && (followUp.recheckIn || followUp.watchFor)) {
+      add(
+        roomName,
+        [followUp.recheckIn ? `Recheck in ${followUp.recheckIn}` : '', followUp.watchFor || '']
+          .filter(Boolean)
+          .join(': '),
+        'From room follow-up fields'
+      );
+      return;
+    }
+    const notes = getRoomInspectorNotes(record, insp);
+    if (notes && !roomNoIssuesFound(record, insp)) {
+      add(roomName, notes.length > 180 ? notes.slice(0, 177).trim() + '...' : notes, 'From inspector room notes');
+    }
+  });
+
+  return suggestions.slice(0, 8);
+}
+
+function renderFollowUpSuggestions(insp, textarea, locked) {
+  const wrap = qs('#follow-up-suggestions');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const suggestions = buildFollowUpPlanSuggestions(insp);
+  if (!suggestions.length) {
+    wrap.appendChild(el('div', { class: 'follow-up-suggestions-empty' }, 'No follow-up suggestions found from room findings yet.'));
+    return;
+  }
+  wrap.appendChild(el('div', { class: 'follow-up-suggestions-title' }, 'Suggestions from findings'));
+  const list = el('div', { class: 'follow-up-suggestion-list' });
+  suggestions.forEach(item => {
+    const button = el('button', {
+      type: 'button',
+      class: 'follow-up-suggestion-item',
+      ...(locked ? { disabled: '' } : {})
+    },
+      el('span', { class: 'follow-up-suggestion-room' }, item.room || 'Inspection'),
+      el('span', { class: 'follow-up-suggestion-text' }, item.text),
+      item.detail ? el('span', { class: 'follow-up-suggestion-detail' }, item.detail) : null
+    );
+    if (!locked) {
+      button.addEventListener('click', () => {
+        const line = `${item.room ? item.room + ': ' : ''}${item.text}`;
+        textarea.value = [textarea.value.trim(), line].filter(Boolean).join('\n');
+        setReviewedField('summary', 'aiFollowUpPlan', textarea.value);
+        saveField('summary', 'aiFollowUpPlan', textarea.value);
+        const generate = qs('#follow-up-plan-generate');
+        if (generate) generate.disabled = false;
+        setFollowUpPlanStatus('Suggestion inserted. Edit the plan in your own words before using AI polish.', 'saved');
+        textarea.focus();
+      });
+    }
+    list.appendChild(button);
+  });
+  wrap.appendChild(list);
 }
 
 function renderFollowUpPlanSection(insp, locked) {
@@ -2846,35 +3903,52 @@ function renderFollowUpPlanSection(insp, locked) {
   const existing = String(sourceFollowUpPlan(insp) || '');
   textarea.value = existing;
   textarea.readOnly = locked;
-  generate.disabled = locked;
-  generate.textContent = existing ? 'Regenerate Follow-Up Plan' : 'Generate Follow-Up Plan';
+  generate.disabled = locked || !existing.trim();
+  generate.textContent = 'Polish with AI';
   setFollowUpPlanStatus(
-    locked ? 'This submitted review is locked.' : 'Edits save automatically to the review record.',
+    locked ? 'This submitted review is locked.' : (existing.trim()
+      ? 'Edits save automatically. AI will only polish the inspector-written plan.'
+      : 'Write the follow-up plan first; the AI polish button unlocks after there is a draft.'),
     locked ? '' : 'saved'
   );
+  renderFollowUpSuggestions(insp, textarea, locked);
 
   if (!locked && textarea.dataset.saveReady !== 'true') {
     textarea.dataset.saveReady = 'true';
     attachReviewedFieldSave(textarea, 'summary', 'aiFollowUpPlan');
+    textarea.addEventListener('input', () => {
+      const hasDraft = textarea.value.trim().length > 0;
+      generate.disabled = !hasDraft;
+      setFollowUpPlanStatus(
+        hasDraft
+          ? 'Edits save automatically. AI will only polish the inspector-written plan.'
+          : 'Write the follow-up plan first; the AI polish button unlocks after there is a draft.',
+        hasDraft ? 'saved' : ''
+      );
+    });
   }
 
   if (generate.dataset.ready === 'true') return;
   generate.dataset.ready = 'true';
   generate.addEventListener('click', async () => {
     if (!_inspection || generate.disabled) return;
+    const inspectorDraft = textarea.value.trim();
+    if (!inspectorDraft) {
+      generate.disabled = true;
+      setFollowUpPlanStatus('Write the follow-up plan first; AI only polishes inspector-written text.', 'error');
+      return;
+    }
     generate.disabled = true;
-    generate.textContent = 'Generating…';
-    setFollowUpPlanStatus('Building a draft from the reviewed inspection data…', 'saving');
+    generate.textContent = 'Polishing…';
+    setFollowUpPlanStatus('Polishing the inspector-written follow-up plan…', 'saving');
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60000);
     try {
-      const response = await fetch(VISION_PROXY_URL, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt: followUpPlanPrompt(_inspection) }),
-        signal: controller.signal
-      });
+      const response = await visionProxyFetch(
+        { prompt: followUpPlanPrompt(_inspection, inspectorDraft) },
+        { signal: controller.signal }
+      );
       if (!response.ok) throw new Error('AI request failed (' + response.status + ')');
       const result = await response.json();
       const plan = String(result.content?.[0]?.text || '').trim();
@@ -2888,19 +3962,19 @@ function renderFollowUpPlanSection(insp, locked) {
       const timestampSaved = await saveField('summary', 'aiFollowUpPlanGeneratedAt', generatedAt);
       if (!planSaved || !timestampSaved) throw new Error('The draft could not be cloud-saved.');
 
-      generate.textContent = 'Regenerate Follow-Up Plan';
-      setFollowUpPlanStatus('Plan generated and cloud-saved. Review and edit it before client handoff.', 'saved');
+      generate.textContent = 'Polish with AI';
+      setFollowUpPlanStatus('Plan polished and cloud-saved. Review it before client handoff.', 'saved');
     } catch (error) {
-      generate.textContent = textarea.value.trim() ? 'Regenerate Follow-Up Plan' : 'Generate Follow-Up Plan';
+      generate.textContent = 'Polish with AI';
       setFollowUpPlanStatus(
         error.name === 'AbortError'
-          ? 'Generation timed out. The existing plan and inspection data are unchanged.'
-          : 'Could not generate the plan. The existing plan and inspection data are unchanged.',
+          ? 'Polish timed out. The existing plan and inspection data are unchanged.'
+          : 'Could not polish the plan. The existing plan and inspection data are unchanged.',
         'error'
       );
     } finally {
       clearTimeout(timeout);
-      generate.disabled = false;
+      generate.disabled = !textarea.value.trim();
     }
   });
 }
@@ -3009,6 +4083,7 @@ async function saveField(stepId, fieldKey, value) {
     }));
     _saveChain = remoteSave.catch(() => {});
     await remoteSave;
+    recordReviewFieldSaveActivity(stepId, fieldKey, value);
   } catch (err) {
     showToast('Cloud save failed — local recovery copy kept', 'error');
     setSaveIndicator('error');
@@ -3044,6 +4119,114 @@ function buildStatusPill(label, value, warn = false) {
     el('span', { class: 'room-status-label' }, label),
     el('span', { class: 'room-status-value' }, valueText)
   );
+}
+
+function booleanish(value) {
+  if (value === true) return true;
+  if (value === false) return false;
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return false;
+  return ['yes', 'true', 'done', 'completed', 'recorded', '1'].includes(text);
+}
+
+function roomNoIssuesFound(record, insp) {
+  const value = getReviewedField(
+    insp || _inspection || {},
+    record?.stepId,
+    'noIssuesFound',
+    record?.step?.noIssuesFound ?? record?.room?.noIssuesFound ?? false
+  );
+  return booleanish(value);
+}
+
+function roomReviewStatus(record, insp) {
+  const hasNotes = roomHasReviewableNotes(record, insp);
+  const noIssues = roomNoIssuesFound(record, insp);
+  const voiceReviewed = getReviewedField(
+    insp || _inspection || {},
+    record?.stepId,
+    'voiceReviewed',
+    record?.step?.voiceReviewed === true
+  ) === true;
+  return {
+    hasNotes,
+    noIssues,
+    voiceReviewed,
+    complete: noIssues || (hasNotes && voiceReviewed),
+    className: noIssues ? 'no-issues' : (hasNotes && voiceReviewed ? 'reviewed' : 'unreviewed'),
+    text: noIssues ? 'No Issues Found' : (hasNotes && voiceReviewed ? 'Notes Reviewed' : 'Needs Review')
+  };
+}
+
+function updateRoomReviewChip(chip, state) {
+  if (!chip) return;
+  chip.className = `voice-chip ${state.className}`;
+  chip.textContent = state.text;
+}
+
+function checklistStatus(value, options = {}) {
+  const text = statusDisplay(value);
+  const normalized = text.toLowerCase();
+  if (options.warn && isAffirmative(value)) return { text, className: 'warn' };
+  if (isAffirmative(value)) return { text: 'Yes', className: 'yes' };
+  if (['no', 'false', 'none'].includes(normalized)) return { text: 'No', className: 'no' };
+  if (options.count !== undefined) {
+    return options.count > 0
+      ? { text: `${options.count} photo${options.count === 1 ? '' : 's'}`, className: 'yes' }
+      : { text: 'No photos', className: 'missing' };
+  }
+  return { text, className: text === 'Not recorded' ? 'missing' : '' };
+}
+
+function buildRoomChecklistGrid(record, roomPhotos) {
+  const step = record.step || {};
+  const room = record.room || {};
+  const qtrakValue = step.qtrakDone ?? step.qtrakCaptured ?? (step.qtrakLocation ? 'Yes' : '');
+  const builderBillValue = step.builderBillDone ?? step.builderBill ?? step.builderBillCaptured;
+  const rows = [
+    ['FLIR', room.flirDone || step.flirDone || ''],
+    ['FLIR concerns', room.flirConcerns || step.flirConcerns || '', { warn: true }],
+    ['Breeze', room.breezeDone || step.breezeDone || ''],
+    ['Q-Trak', qtrakValue],
+    ['Photos', '', { count: roomPhotos.length }]
+  ];
+  if (builderBillValue !== undefined && builderBillValue !== '') rows.push(['Builder Bill', builderBillValue]);
+
+  const grid = el('div', { class: 'room-checklist-grid' });
+  rows.forEach(([label, value, options]) => {
+    const status = checklistStatus(value, options || {});
+    grid.appendChild(el('div', { class: 'room-checklist-item' },
+      el('span', { class: 'room-checklist-label' }, label),
+      el('span', { class: `room-checklist-value ${status.className}` }, status.text)
+    ));
+  });
+  return grid;
+}
+
+function buildRoomTestLocationsBlock(record, locked) {
+  const step = record.step || {};
+  const qtrakLocation = getReviewedField(_inspection || {}, record.stepId, 'qtrakLocation', step.qtrakLocation || '');
+  const breezeLocation = getReviewedField(_inspection || {}, record.stepId, 'breezeLocation', step.breezeLocation || '');
+  const qtrakRequired = isConductedValue(step.qtrakDone ?? step.qtrakCaptured) || String(qtrakLocation || '').trim() !== '';
+  const breezeRequired = isConductedValue(step.breezeDone) || String(breezeLocation || '').trim() !== '';
+  if (!qtrakRequired && !breezeRequired) return null;
+
+  const buildLocationField = (fieldKey, label, value, required) => {
+    const field = buildFieldEl(record.stepId, fieldKey, label, value, false, locked);
+    if (required && !String(value || '').trim()) {
+      field.classList.add('missing-test-location');
+      field.appendChild(el('div', { class: 'test-location-missing' }, 'Location missing'));
+    }
+    return field;
+  };
+
+  const wrap = el('div', { class: 'room-test-locations' });
+  wrap.appendChild(el('div', { class: 'room-test-locations-title' }, 'Test Locations'));
+  const fields = el('div', { class: 'field-group two-col' });
+  if (qtrakRequired) fields.appendChild(buildLocationField('qtrakLocation', 'Q-Trak Location', qtrakLocation, true));
+  if (breezeRequired) fields.appendChild(buildLocationField('breezeLocation', 'Breeze Location', breezeLocation, true));
+  wrap.appendChild(fields);
+  return wrap;
 }
 
 function getRoomSourceInspectorNotes(record) {
@@ -3126,14 +4309,42 @@ function buildEditableRoomTextBlock({
 }
 
 function photoRoomNames(photo) {
-  return [
+  const names = [
     photo?.roomName,
     photo?.reviewRoomName,
     photo?.assignedRoomName,
     photo?.assignedRoom,
     photo?.room,
-    photo?.roomLabel
+    photo?.roomLabel,
+    photo?.location,
+    photo?.testLocation,
+    photo?.sampleLocation,
+    photo?.atpLocation,
+    photo?.taskRoomName
   ].filter(Boolean);
+  const stepText = String(photo?.stepName || photo?.sectionName || photo?.caption || '');
+  const roomHint = stepText.match(/\b(?:room|location)\s*[:\-]\s*([^|—\n]+)/i);
+  if (roomHint) names.push(roomHint[1].trim());
+  const combined = [
+    photo?.roomName,
+    photo?.stepName,
+    photo?.sectionName,
+    photo?.caption
+  ].filter(Boolean).join(' ');
+  if (/kitchen inspection|dishwasher|under refrigerator|under sink|stove vent|appliance inspection/i.test(combined)) {
+    names.push('Kitchen');
+  }
+  return names;
+}
+
+function displayReviewRoomName(roomName, type = '', level = '', stepId = '') {
+  const raw = String(roomName || '').trim();
+  const text = [raw, type, level, stepId].join(' ').toLowerCase();
+  if (/^lowest level$/i.test(raw)) return 'Radon';
+  if (/lowest level/i.test(raw)) return raw.replace(/lowest level/ig, 'Radon').replace(/[—–]/g, '-');
+  if (!raw && /lowest level/i.test(text) && /radon|monitor|test/.test(text)) return 'Radon';
+  if (/^kitchen inspection$/i.test(raw)) return 'Kitchen';
+  return raw || stepId || 'Room';
 }
 
 function buildRoomAliasIndex(roomRecords, insp) {
@@ -3157,6 +4368,7 @@ function buildRoomAliasIndex(roomRecords, insp) {
   roomRecords.forEach(record => {
     const roomName = record.room?.roomName || record.step?.roomName || record.stepId;
     addCandidate(record, roomName, 100);
+    addCandidate(record, displayReviewRoomName(roomName, record.room?.type || record.step?.type || '', record.room?.level || record.step?.level || '', record.stepId), 96);
     addCandidate(record, record.step?.roomName, 95);
     addCandidate(record, record.stepId, 40);
     [
@@ -3329,7 +4541,7 @@ function buildEditableAISummaryBlock(summary, originalSummary, roomPhotos, stepI
     block.appendChild(warning);
   };
   const block = buildEditableRoomTextBlock({
-    label: 'AI Summary',
+    label: 'Polished Inspector Notes',
     value: summary,
     originalValue: originalSummary,
     emptyText: 'Add or edit the room summary used for report building...',
@@ -3454,14 +4666,16 @@ function buildCapturedRoomData(record) {
   const alreadyRendered = new Set([
     'roomName', 'name', 'level', 'type',
     'notes', 'inspectorNotes', 'aiSummary', 'aiSummaryGeneratedAt',
-    'flirDone', 'flirConcerns', 'breezeDone',
-    'qtrakLocation', 'breezeLocation',
+    'flirDone', 'flirConcerns', 'breezeDone', 'qtrakDone', 'qtrakCaptured',
+    'qtrakLocation', 'breezeLocation', 'builderBillDone', 'builderBill', 'builderBillCaptured',
     'followUpNeeded', 'followUpTimeframe', 'followUpNote',
-    'voiceReviewed'
+    'voiceReviewed', 'noIssuesFound'
   ]);
   const roomData = {};
   Object.entries(source).forEach(([key, value]) => {
     if (key.startsWith('_') || alreadyRendered.has(key) || /photo/i.test(key)) return;
+    if (/guidance|instruction|prompt|helper|placeholder|scan|question|section|schema|screen|workflow/i.test(key)) return;
+    if (/^(flir|breeze|qtrak)/i.test(key)) return;
     if (completeDataIsEmpty(value)) return;
     roomData[key] = value;
   });
@@ -3578,29 +4792,19 @@ function renderRoomsSection(insp, locked) {
 
 function buildRoomCard(record, insp, locked, aliasIndex) {
   const { stepId, step = {}, room = {} } = record;
-  const hasNotes   = roomHasReviewableNotes(record, insp);
-  const voiceReviewedValue = getReviewedField(insp, stepId, 'voiceReviewed', step.voiceReviewed === true);
-  const reviewed   = hasNotes && voiceReviewedValue === true;
-  const roomName   = room.roomName || step.roomName || stepId;
+  const roomNameSource = room.roomName || step.roomName || stepId;
   const level      = room.level || step.level || '';
   const type       = room.type || step.type || '';
-  const flirDone   = room.flirDone || step.flirDone || '';
-  const flirConcerns = room.flirConcerns || step.flirConcerns || '';
-  const breezeDone = room.breezeDone || step.breezeDone || '';
-  const qtrak      = step.qtrakLocation || '';
-  const breeze     = step.breezeLocation || '';
+  const roomName   = displayReviewRoomName(roomNameSource, type, level, stepId);
   const originalNotes = getRoomSourceInspectorNotes(record);
   const notes      = getRoomInspectorNotes(record, insp);
   const originalAISummary = getRoomSourceAISummary(record);
   const aiSummary  = getRoomAISummary(record, insp);
-  const hasConcern = isAffirmative(flirConcerns);
+  const hasConcern = isAffirmative(room.flirConcerns || step.flirConcerns || '');
   const roomPhotos = photosForRoomRecord(insp.photos || [], record, aliasIndex);
-  const tannerNotesKey = `room_${stepId}_tannerNotes`;
-  const tannerNotes = getReviewedField(insp, 'roomData', tannerNotesKey, '');
+  let reviewState = roomReviewStatus(record, insp);
 
-  const reviewStatusClass = !hasNotes ? 'no-notes' : reviewed ? 'reviewed' : 'unreviewed';
-  const reviewStatusText = !hasNotes ? 'No Notes' : reviewed ? '✓ Notes Reviewed' : '⚠ Review Notes';
-  const reviewedChip = el('span', { class: `voice-chip ${reviewStatusClass}` }, reviewStatusText);
+  const reviewedChip = el('span', { class: `voice-chip ${reviewState.className}` }, reviewState.text);
 
   const collapseIcon = el('svg', {
     class: 'collapse-icon', viewBox: '0 0 20 20', fill: 'none',
@@ -3622,47 +4826,75 @@ function buildRoomCard(record, insp, locked, aliasIndex) {
     collapseIcon
   );
 
-  // Voice review checkbox
+  // Room review controls
   const voiceCheck = el('input', {
     type: 'checkbox',
     id: `vr-${stepId}`,
-    ...(reviewed ? { checked: '' } : {}),
+    ...(reviewState.voiceReviewed ? { checked: '' } : {}),
     ...(locked ? { disabled: '' } : {})
   });
 
   const voiceLabel = el('label', { for: `vr-${stepId}` },
     voiceCheck,
-    ' I\'ve reviewed the inspector notes for this room'
+    ' Inspector notes reviewed'
   );
 
-  voiceCheck.checked = reviewed;
+  const noIssuesCheck = el('input', {
+    type: 'checkbox',
+    id: `nif-${stepId}`,
+    ...(reviewState.noIssues ? { checked: '' } : {}),
+    ...(locked ? { disabled: '' } : {})
+  });
+  const noIssuesLabel = el('label', { for: `nif-${stepId}`, class: 'room-no-issues-label' },
+    noIssuesCheck,
+    ' No issues found - intentionally left blank'
+  );
+
+  const syncRoomReviewState = (hasNotesOverride = null) => {
+    const hasNotesNow = hasNotesOverride == null ? roomHasReviewableNotes(record, _inspection || insp) : hasNotesOverride;
+    reviewState = {
+      hasNotes: hasNotesNow,
+      noIssues: noIssuesCheck.checked,
+      voiceReviewed: voiceCheck.checked,
+      complete: noIssuesCheck.checked || (hasNotesNow && voiceCheck.checked),
+      className: noIssuesCheck.checked ? 'no-issues' : (hasNotesNow && voiceCheck.checked ? 'reviewed' : 'unreviewed'),
+      text: noIssuesCheck.checked ? 'No Issues Found' : (hasNotesNow && voiceCheck.checked ? 'Notes Reviewed' : 'Needs Review')
+    };
+    updateRoomReviewChip(header.querySelector('.voice-chip'), reviewState);
+    voiceLabel.classList.toggle('hidden', !hasNotesNow || noIssuesCheck.checked);
+  };
+
+  voiceCheck.checked = reviewState.voiceReviewed;
+  noIssuesCheck.checked = reviewState.noIssues;
   if (!locked) {
     voiceCheck.addEventListener('change', () => {
-      const chip = header.querySelector('.voice-chip');
-      if (chip) {
-        chip.className = `voice-chip ${voiceCheck.checked ? 'reviewed' : 'unreviewed'}`;
-        chip.textContent = voiceCheck.checked ? '✓ Notes Reviewed' : '⚠ Review Notes';
-      }
+      syncRoomReviewState();
       saveField(stepId, 'voiceReviewed', voiceCheck.checked);
       if (_inspection?.stepData?.[stepId]) {
         _inspection.stepData[stepId].voiceReviewed = voiceCheck.checked;
       }
       checkGate();
     });
+    noIssuesCheck.addEventListener('change', () => {
+      setReviewedField(stepId, 'noIssuesFound', noIssuesCheck.checked);
+      if (_inspection?.stepData?.[stepId]) {
+        _inspection.stepData[stepId].noIssuesFound = noIssuesCheck.checked;
+      }
+      syncRoomReviewState();
+      saveField(stepId, 'noIssuesFound', noIssuesCheck.checked);
+      checkGate();
+      updatePhotoSummary(insp.photos || []);
+    });
   }
 
   const body = el('div', { class: 'room-body' });
-  const voiceReviewRow = el('div', {
-    class: `voice-review-row${hasNotes ? '' : ' hidden'}`
-  }, voiceLabel);
+  const voiceReviewRow = el('div', { class: 'voice-review-row room-review-actions' }, voiceLabel, noIssuesLabel);
+  syncRoomReviewState(reviewState.hasNotes);
   body.appendChild(voiceReviewRow);
 
-  const statusRow = el('div', { class: 'room-status-row' },
-    buildStatusPill('FLIR done', flirDone),
-    buildStatusPill('FLIR concerns', flirConcerns, true),
-    buildStatusPill('Breeze done', breezeDone)
-  );
-  body.appendChild(statusRow);
+  body.appendChild(buildRoomChecklistGrid(record, roomPhotos));
+  const testLocations = buildRoomTestLocationsBlock(record, locked);
+  if (testLocations) body.appendChild(testLocations);
   const capturedRoomData = buildCapturedRoomData(record);
   if (capturedRoomData) body.appendChild(capturedRoomData);
 
@@ -3678,42 +4910,20 @@ function buildRoomCard(record, insp, locked, aliasIndex) {
     isGated: true,
     onInput: value => {
       const nowHasNotes = String(value || '').trim() !== '';
-      voiceReviewRow.classList.toggle('hidden', !nowHasNotes);
-      const chip = header.querySelector('.voice-chip');
-      if (chip) {
-        chip.className = `voice-chip ${!nowHasNotes ? 'no-notes' : voiceCheck.checked ? 'reviewed' : 'unreviewed'}`;
-        chip.textContent = !nowHasNotes ? 'No Notes' : voiceCheck.checked ? '✓ Notes Reviewed' : '⚠ Review Notes';
+      if (nowHasNotes && noIssuesCheck.checked && !locked) {
+        noIssuesCheck.checked = false;
+        setReviewedField(stepId, 'noIssuesFound', false);
+        if (_inspection?.stepData?.[stepId]) _inspection.stepData[stepId].noIssuesFound = false;
+        saveField(stepId, 'noIssuesFound', false);
       }
+      syncRoomReviewState(nowHasNotes);
+      checkGate();
       updatePhotoSummary(insp.photos || []);
     }
   }));
   body.appendChild(buildEditableAISummaryBlock(aiSummary, originalAISummary, roomPhotos, stepId, locked));
   body.appendChild(buildRoomFollowUpEditor(record, insp, locked));
   body.appendChild(buildRoomPhotoStrip(roomPhotos));
-
-  const tannerWrap = el('div', { class: 'room-tanner-notes' });
-  tannerWrap.appendChild(el('label', { class: 'field-label', for: `tanner-${stepId}` }, 'Tanner Notes'));
-  const tannerTA = el('textarea', {
-    id: `tanner-${stepId}`,
-    class: 'field-textarea',
-    rows: '3',
-    placeholder: 'Add Tanner-facing notes for this room...',
-    ...(locked ? { readonly: '' } : {})
-  });
-  tannerTA.value = tannerNotes;
-  tannerWrap.appendChild(tannerTA);
-  body.appendChild(tannerWrap);
-  if (!locked) {
-    attachReviewedFieldSave(tannerTA, 'roomData', tannerNotesKey);
-  }
-
-  // Location fields for applicable rooms
-  if ('qtrakLocation' in step || 'breezeLocation' in step) {
-    const locGroup = el('div', { class: 'field-group two-col', style: 'margin-top:12px' });
-    locGroup.appendChild(buildFieldEl(stepId, 'qtrakLocation', 'QTrak Location', qtrak, false, locked));
-    locGroup.appendChild(buildFieldEl(stepId, 'breezeLocation', 'Breeze ET Location', breeze, false, locked));
-    body.appendChild(locGroup);
-  }
 
   const card = el('div', {
     class: `room-section${hasConcern ? ' has-concern' : ''}`,
@@ -3868,12 +5078,12 @@ function renderWaterFindingsSection(insp, locked) {
   }
 
   const notesWrap = el('div', { class: 'water-notes-wrap' });
-  notesWrap.appendChild(el('label', { class: 'field-label', for: 'field-water-tanner-notes' }, 'Tanner Notes'));
+  notesWrap.appendChild(el('label', { class: 'field-label', for: 'field-water-tanner-notes' }, 'Water Review Notes'));
   const notes = el('textarea', {
     id: 'field-water-tanner-notes',
     class: 'field-textarea',
     rows: '3',
-    placeholder: 'Add Tanner-facing notes about water findings...',
+    placeholder: 'Add review notes about water findings...',
     ...(locked ? { readonly: '' } : {})
   });
   notes.value = getReviewedField(insp, 'roomData', 'waterFindingsNotes', '');
@@ -4852,6 +6062,166 @@ function setupPhotoPlacementToolbar(insp, locked) {
   updatePhotoSelectionToolbar();
 }
 
+function photoAuditText(photo = {}) {
+  return [
+    photo.roomName,
+    photo.stepName,
+    photo.originalRoomName,
+    photo.originalStepName,
+    photo.caption,
+    photo.photoId
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function classifyPhotoEvidenceRoles(photo) {
+  const text = photoAuditText(photo);
+  const roles = [];
+  if (/\batp\b|adenosine|rlu|pre[-\s]?test|post[-\s]?test/.test(text)) roles.push('ATP');
+  if (/\bbefore\b|pre[-\s]?clean|pre[-\s]?test|pretest/.test(text)) roles.push('Before');
+  if (/\bafter\b|post[-\s]?clean|post[-\s]?test|posttest/.test(text)) roles.push('After');
+  if (/flir|thermal|infrared/.test(text)) roles.push('FLIR');
+  if (/q[-\s]?trak|qtrak|co2|particulate|humidity|temperature/.test(text)) roles.push('Q-Trak');
+  if (/breeze/.test(text)) roles.push('Breeze');
+  if (/pfas/.test(text)) roles.push('PFAS');
+  if (/water|sample|microplastic|boulder blue|radon|swab|coc|chain of custody|kit/.test(text)) roles.push('Sample');
+  return Array.from(new Set(roles));
+}
+
+function genericPhotoDestinationName(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return true;
+  return /^(photos?|photo log|before|after|before after|before and after|field tests?|test photos?|sample photos?|water samples?|kitchen inspection|post assessment|final checks|arrival setup|device setup|exterior assessment)$/.test(text);
+}
+
+function suggestedPhotoRoom(photo) {
+  const text = photoAuditText(photo);
+  if (/kitchen|dishwasher|refrigerator|fridge|stove|sink|range|oven|atp/.test(text)) return 'Kitchen';
+  if (/utility|hvac|furnace|filter|air handler|mechanical|water treatment|softener|filtration|uv system/.test(text)) return 'Utility Room';
+  if (/basement/.test(text)) return 'Basement';
+  if (/bathroom|toilet|shower|tub|vanity/.test(text)) return 'Bathroom';
+  if (/bedroom|primary|guest|upper|lower/.test(text)) return 'Bedroom';
+  const sourceRoom = String(photo.originalRoomName || '').trim();
+  if (sourceRoom && !genericPhotoDestinationName(sourceRoom)) return sourceRoom;
+  return '';
+}
+
+function buildPhotoPlacementAudit(insp, photos) {
+  const destinations = buildPhotoPlacementDestinations(insp);
+  const roomNames = new Set(destinations.rooms.map(destination => placementNameKey(destination.roomName)));
+  const needsRealRoomRoles = new Set(['ATP', 'Before', 'After', 'FLIR', 'Q-Trak', 'Breeze']);
+  const evidence = [];
+
+  (photos || [])
+    .filter(photo => photo.included !== false)
+    .forEach(photo => {
+      const roles = classifyPhotoEvidenceRoles(photo);
+      if (!roles.length) return;
+      const roomName = String(photo.roomName || '').trim();
+      const stepName = String(photo.stepName || '').trim();
+      const hasDestination = Boolean(roomName || stepName);
+      const requiresRealRoom = roles.some(role => needsRealRoomRoles.has(role));
+      const hasRealRoom = roomNames.has(placementNameKey(roomName));
+      const genericRoom = genericPhotoDestinationName(roomName);
+      const needsAttention =
+        !hasDestination ||
+        (requiresRealRoom && (!hasRealRoom || genericRoom));
+
+      evidence.push({
+        photo,
+        roles,
+        needsAttention,
+        destination: [roomName, stepName].filter(Boolean).join(' / ') || 'Not assigned',
+        suggested: suggestedPhotoRoom(photo)
+      });
+    });
+
+  return {
+    evidence,
+    needsAttention: evidence.filter(item => item.needsAttention),
+    placedCount: evidence.filter(item => !item.needsAttention).length
+  };
+}
+
+function focusPhotoForPlacement(photoId) {
+  if (!photoId || !_inspection) return;
+  _activeFilter = 'all';
+  _activeRoomFilter = 'all';
+  const roomFilter = qs('#room-filter');
+  if (roomFilter) roomFilter.value = 'all';
+  qsa('.filter-btn').forEach(button => {
+    button.classList.toggle('active', button.dataset.filter === 'all');
+  });
+  const submittedState = getServerSubmittedReviewState(_inspection);
+  renderPhotoGrid(_inspection.photos || [], submittedState.submitted || submittedState.statusSubmitted);
+  window.requestAnimationFrame(() => {
+    const escaped = window.CSS?.escape ? window.CSS.escape(photoId) : String(photoId).replace(/["\\]/g, '\\$&');
+    const card = qs(`.photo-card[data-photo-id="${escaped}"]`);
+    if (card) highlightFinishTarget(card);
+  });
+}
+
+function renderPhotoPlacementAudit(insp, photos) {
+  const mount = qs('#photo-placement-audit');
+  if (!mount) return;
+  mount.innerHTML = '';
+
+  const audit = buildPhotoPlacementAudit(insp, photos);
+  const ready = audit.needsAttention.length === 0;
+  mount.className = `photo-placement-audit ${ready ? 'ready' : 'needs-work'}`;
+
+  mount.appendChild(el('div', { class: 'photo-placement-audit-header' },
+    el('div', {},
+      el('div', { class: 'photo-placement-audit-title' }, 'Photo Placement Audit'),
+      el('div', { class: 'photo-placement-audit-subtitle' }, 'Checks important evidence photos before Tanner gets the package.')
+    ),
+    el('div', { class: 'photo-placement-audit-score' },
+      `${audit.placedCount}/${audit.evidence.length || 0} placed`
+    )
+  ));
+
+  if (!audit.evidence.length) {
+    mount.appendChild(el('div', { class: 'photo-placement-audit-empty' },
+      'No key evidence photos were detected in the current photo set.'
+    ));
+    return;
+  }
+
+  if (!audit.needsAttention.length) {
+    mount.appendChild(el('div', { class: 'photo-placement-audit-empty' },
+      'All detected key evidence photos have a usable destination.'
+    ));
+    return;
+  }
+
+  const list = el('div', { class: 'photo-placement-audit-list' });
+  audit.needsAttention.slice(0, 12).forEach(item => {
+    const button = el('button', {
+      class: 'photo-placement-audit-row',
+      type: 'button',
+      'data-photo-id': item.photo.photoId
+    },
+      el('span', { class: 'photo-placement-audit-role' }, item.roles.join(', ')),
+      el('span', { class: 'photo-placement-audit-main' },
+        item.photo.caption || item.photo.stepName || item.photo.photoId || 'Photo needs placement'
+      ),
+      el('span', { class: 'photo-placement-audit-destination' },
+        item.suggested
+          ? `${item.destination} - suggested: ${item.suggested}`
+          : item.destination
+      )
+    );
+    button.addEventListener('click', () => focusPhotoForPlacement(item.photo.photoId));
+    list.appendChild(button);
+  });
+  mount.appendChild(list);
+
+  if (audit.needsAttention.length > 12) {
+    mount.appendChild(el('div', { class: 'photo-placement-audit-overflow' },
+      `${audit.needsAttention.length - 12} more photo${audit.needsAttention.length - 12 === 1 ? '' : 's'} need placement attention.`
+    ));
+  }
+}
+
 function renderPhotosSection(insp, locked) {
   const container = qs('#photo-grid');
   if (!container) return;
@@ -4868,6 +6238,7 @@ function renderPhotosSection(insp, locked) {
   }
   setupPhotoPlacementToolbar(insp, locked);
   setupBulkPhotoReview(insp, locked);
+  renderPhotoPlacementAudit(insp, photos);
 
   // Build room filter options
   const roomSelect = qs('#room-filter');
@@ -5053,6 +6424,21 @@ function buildPhotoCard(photo, locked) {
   info.appendChild(el('div', { class: 'photo-room' }, photo.roomName || ''));
   info.appendChild(el('div', { class: 'photo-step' }, photo.stepName || ''));
 
+  const evidenceRoles = classifyPhotoEvidenceRoles(photo);
+  if (evidenceRoles.length) {
+    const singleAudit = buildPhotoPlacementAudit(_inspection || {}, [photo]);
+    const needsPlacement = singleAudit.needsAttention.length > 0;
+    const destination = [photo.roomName, photo.stepName].filter(Boolean).join(' / ') || 'Not assigned';
+    info.appendChild(el('div', {
+      class: `photo-evidence-status ${needsPlacement ? 'needs-work' : 'ready'}`
+    },
+      el('span', { class: 'photo-evidence-role' }, evidenceRoles.join(', ')),
+      el('span', { class: 'photo-evidence-copy' },
+        needsPlacement ? `Needs placement - ${destination}` : `Placed - ${destination}`
+      )
+    ));
+  }
+
   if (!locked) {
     const placementWrap = el('label', { class: 'photo-placement-wrap' });
     placementWrap.appendChild(el('span', { class: 'photo-placement-label' }, 'Place in room/task'));
@@ -5121,11 +6507,7 @@ function buildPhotoCard(photo, locked) {
           ' Plain sentence only — no bullet points, no markdown, no preamble.';
 
         // Worker fetches the image server-side — just send the URL
-        const resp = await fetch(VISION_PROXY_URL, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ imageUrl: photo.driveUrl, prompt })
-        });
+        const resp = await visionProxyFetch({ imageUrl: photo.driveUrl, prompt });
         if (!resp.ok) throw new Error('API error ' + resp.status);
         const result = await resp.json();
         const text = result.content && result.content[0] && result.content[0].text;
@@ -5310,11 +6692,8 @@ function updatePhotoSummary(photos) {
 
   if (elRev) {
     const roomRecords = _inspection ? buildReviewRoomRecords(_inspection) : [];
-    const roomsWithNotes = roomRecords.filter(record => roomHasReviewableNotes(record, _inspection));
-    const rooms = roomsWithNotes.length;
-    const reviewedRooms = roomsWithNotes.filter(record =>
-      getReviewedField(_inspection, record.stepId, 'voiceReviewed', record.step?.voiceReviewed === true) === true
-    ).length;
+    const rooms = roomRecords.length;
+    const reviewedRooms = roomRecords.filter(record => roomReviewStatus(record, _inspection).complete).length;
     elRev.textContent = reviewedRooms;
     if (elRooms) elRooms.textContent = rooms;
   }
@@ -5731,7 +7110,7 @@ function openPhotoModal(url, caption, photoId = '') {
   inner.appendChild(toolbar);
 
   const captionEditor = el('div', { class: 'photo-modal-caption-editor' });
-  const captionLabel = el('label', { class: 'photo-modal-caption-label' }, 'Review caption — edits update everywhere and save on close');
+  const captionLabel = el('label', { class: 'photo-modal-caption-label' }, 'Review caption - edits update everywhere and save on close');
   const captionInput = el('textarea', {
     class: 'photo-modal-caption-input',
     rows: '2',
@@ -5740,7 +7119,7 @@ function openPhotoModal(url, caption, photoId = '') {
   });
   captionInput.value = caption || '';
   const captionSave = el('button', { class: 'photo-modal-caption-save', type: 'button' }, 'Save now');
-  const photoDelete = el('button', { class: 'photo-modal-delete', type: 'button' }, 'Delete Photo');
+  const photoDelete = el('button', { class: 'photo-modal-delete', type: 'button' }, 'Delete everywhere');
   const captionStatus = el('span', { class: 'photo-modal-caption-status' }, '');
   captionSave.addEventListener('click', async () => {
     captionSave.disabled = true;
@@ -5756,14 +7135,14 @@ function openPhotoModal(url, caption, photoId = '') {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') captionSave.click();
   });
   photoDelete.addEventListener('click', async () => {
-    if (!photoId || !confirm('Delete this photo from the review and cloud storage?\n\nThis cannot be undone.')) return;
+    if (!photoId || !confirm('Delete this photo everywhere in this review, including cloud storage?\n\nUse the small X on a report slot if you only want to remove it from one section. This cannot be undone.')) return;
     photoDelete.disabled = true;
     photoDelete.textContent = 'Deleting…';
     try {
       await deleteReviewedPhoto(photoId);
     } catch (err) {
       photoDelete.disabled = false;
-      photoDelete.textContent = 'Delete Photo';
+      photoDelete.textContent = 'Delete everywhere';
       captionStatus.textContent = err.message || 'Delete failed';
       captionStatus.className = 'photo-modal-caption-status failed';
       showToast('Photo was not deleted — no review data changed', 'error');
@@ -5891,17 +7270,14 @@ function evaluateGate(insp) {
   const tests   = insp.testsConfirmed || {};
   const reviewed = insp.reviewedData || {};
   const roomRecords = buildReviewRoomRecords(insp);
+  const placementAudit = buildPhotoPlacementAudit(insp, photos);
 
-  // 1. Only rooms that actually contain inspector notes require review.
-  // Rooms without notes are neutral and must not block submission.
-  const roomsWithNotes = roomRecords.filter(record => roomHasReviewableNotes(record, insp));
-  const reviewedRooms = roomsWithNotes.filter(record =>
-    getReviewedField(insp, record.stepId, 'voiceReviewed', record.step?.voiceReviewed === true) === true
-  );
-  const notesReviewed = reviewedRooms.length === roomsWithNotes.length;
-  const firstUnreviewedRoom = roomsWithNotes.find(record =>
-    getReviewedField(insp, record.stepId, 'voiceReviewed', record.step?.voiceReviewed === true) !== true
-  );
+  // 1. Every room needs an explicit review outcome:
+  // either the inspector notes were reviewed or "No issues found" was checked.
+  const completedRooms = roomRecords.filter(record => roomReviewStatus(record, insp).complete);
+  const notesReviewed = completedRooms.length === roomRecords.length;
+  const firstUnreviewedRoom = roomRecords.find(record => !roomReviewStatus(record, insp).complete);
+  const firstUnreviewedRoomState = firstUnreviewedRoom ? roomReviewStatus(firstUnreviewedRoom, insp) : null;
 
   // 2. Require locations only for tests actually conducted in that room.
   // A saved "Breeze: No" must not manufacture a missing Breeze location.
@@ -5935,6 +7311,7 @@ function evaluateGate(insp) {
   // 4. All photos marked Include or Exclude (none in unreviewed state)
   const reviewedPhotoCount = photos.filter(photo => photo.included !== null).length;
   const allPhotosReviewed = reviewedPhotoCount === photos.length;
+  const keyEvidencePlaced = placementAudit.needsAttention.length === 0;
 
   // 5. Report Builder Notes filled in
   const reportNotesEl = qs('#field-report-notes');
@@ -5952,10 +7329,12 @@ function evaluateGate(insp) {
   return [
     {
       key: 'notes',
-      label: `All room notes reviewed (${reviewedRooms.length}/${roomsWithNotes.length})`,
+      label: `Room review complete (${completedRooms.length}/${roomRecords.length})`,
       pass: notesReviewed,
       selector: firstUnreviewedRoom ? `.room-section[data-room-step-id="${firstUnreviewedRoom.stepId}"]` : '#rooms-container',
-      focusSelector: firstUnreviewedRoom ? `#vr-${firstUnreviewedRoom.stepId}` : ''
+      focusSelector: firstUnreviewedRoom
+        ? (firstUnreviewedRoomState?.hasNotes ? `#vr-${firstUnreviewedRoom.stepId}` : `#nif-${firstUnreviewedRoom.stepId}`)
+        : ''
     },
     {
       key: 'locs',
@@ -5977,6 +7356,13 @@ function evaluateGate(insp) {
       pass: allPhotosReviewed,
       selector: '#photos-card',
       action: 'unreviewedPhotos'
+    },
+    {
+      key: 'photoPlacement',
+      label: `Key evidence photos placed (${placementAudit.placedCount}/${placementAudit.evidence.length})`,
+      pass: keyEvidencePlaced,
+      selector: '#photos-card',
+      action: 'reportPhotos'
     },
     {
       key: 'rbnotes',
@@ -6125,7 +7511,7 @@ function renderFinishTracker(results) {
   const tracker = el('aside', {
     id: 'finish-tracker',
     class: `finish-tracker${_finishTrackerOpen ? ' open' : ''}`,
-    'aria-label': 'Finish Tracker'
+    'aria-label': 'Finish Review'
   });
 
   const toggle = el('button', {
@@ -6136,7 +7522,7 @@ function renderFinishTracker(results) {
     'aria-controls': 'finish-tracker-panel'
   },
     el('span', { class: 'finish-tracker-toggle-icon' }, ready ? '✓' : '☰'),
-    el('span', {}, ready ? 'Ready to submit' : `Finish Tracker · ${failures.length} remaining`)
+    el('span', {}, ready ? 'Ready to submit' : `Finish Review · ${failures.length} remaining`)
   );
   toggle.addEventListener('click', () => setFinishTrackerOpen(!_finishTrackerOpen));
   tracker.appendChild(toggle);
@@ -6144,13 +7530,13 @@ function renderFinishTracker(results) {
   const panel = el('div', { id: 'finish-tracker-panel', class: 'finish-tracker-panel' });
   const header = el('div', { class: 'finish-tracker-header' },
     el('div', {},
-      el('div', { class: 'finish-tracker-title' }, 'Finish Tracker'),
-      el('div', { class: 'finish-tracker-safe' }, 'Your inspection data is safe.')
+      el('div', { class: 'finish-tracker-title' }, 'Finish Review'),
+      el('div', { class: 'finish-tracker-safe' }, 'Click any item to jump to it.')
     ),
     el('button', {
       class: 'finish-tracker-close',
       type: 'button',
-      'aria-label': 'Close Finish Tracker',
+      'aria-label': 'Close Finish Review',
       onclick: () => setFinishTrackerOpen(false)
     }, '×')
   );
@@ -6186,11 +7572,11 @@ function renderFinishTracker(results) {
 
   const optional = el('details', { class: 'finish-tracker-optional' });
   optional.appendChild(el('summary', {},
-    el('span', {}, `Improve draft review · ${score.total} out of 100`),
+    el('span', {}, `Optional review quality · ${score.total} out of 100`),
     el('span', { class: 'finish-tracker-optional-count' }, `${incompleteScoreItems.length} categories`)
   ));
   const optionalBody = el('div', { class: 'finish-tracker-optional-body' },
-    el('p', {}, 'These improve the review package that will be scored when submitted. They do not add new submission blockers.')
+    el('p', {}, 'These are suggestions only. The required blockers above control whether the report can be submitted.')
   );
   if (!incompleteScoreItems.length) {
     optionalBody.appendChild(el('div', { class: 'finish-tracker-ready-message' }, 'All score categories are complete.'));
@@ -6333,20 +7719,9 @@ function renderSubmitSection(insp, locked) {
   const scoreWrap = qs('#submit-score-wrap');
   if (scoreWrap) {
     scoreWrap.innerHTML = '';
-    const s = calculateCompletionScore(insp);
-
-    // Score row
-    const scoreRow = el('div', { class: 'submit-score-row' });
-    scoreRow.innerHTML = `
-      <span class="submit-score-num ${s.gradeClass}">${s.total}</span>
-      <span class="submit-score-grade ${s.gradeClass}">${s.grade}</span>
-      <span class="submit-score-label">Review score to be submitted: ${s.total} out of 100 — open Finish Tracker for next steps</span>`;
-    scoreWrap.appendChild(scoreRow);
-
-    // Bonus clock
-    const clockWrap = el('div', { id: 'bonus-clock-wrap' });
-    scoreWrap.appendChild(clockWrap);
-    if (!locked) renderBonusClock(clockWrap, insp, s);
+    scoreWrap.appendChild(el('div', { class: 'submit-finish-note' },
+      'Use Finish Review for the remaining items. When it says Ready to submit, this button unlocks.'
+    ));
   }
 
   const notesPreview = qs('#notes-preview');
@@ -6421,14 +7796,7 @@ async function submitToTanner() {
       console.warn('Tanner notification submit failed after receipt save:', notifyErr);
     }
 
-    const verified = await loadCloudReview(id);
-    const verifiedSubmission = getServerSubmittedReviewState({
-      status: 'Submitted to Tanner',
-      reviewedData: verified.fieldData || {}
-    });
-    if (!verifiedSubmission.submitted) {
-      throw new Error('Submission was not confirmed by review storage. Please retry.');
-    }
+    await verifyTannerToolPackage(id);
   } catch (err) {
     showToast(`Submission failed: ${err.message}`, 'error');
     submitButtons.forEach(btn => {
@@ -6687,7 +8055,7 @@ function feedbackContext() {
       ? 'Review Portal - Inspection Review'
       : 'Review Portal - Inspection List',
     stepIndex: '',
-    appVersion: 'REVIEW-PORTAL-V29',
+    appVersion: 'REVIEW-PORTAL-' + REVIEW_PORTAL_VERSION,
     pageUrl: location.href,
     userAgent: navigator.userAgent,
     online: navigator.onLine
@@ -6751,6 +8119,301 @@ function closePortalFeedback() {
   document.getElementById('portal-feedback-overlay')?.remove();
   _feedbackScreenshotDataUrl = '';
   _feedbackScreenshotName = '';
+}
+
+function closeReviewActivityPanel() {
+  document.getElementById('review-activity-overlay')?.remove();
+}
+
+function buildReviewActivityMetric(label, value) {
+  return el('div', { class: 'review-activity-metric' },
+    el('strong', {}, value),
+    el('span', {}, label)
+  );
+}
+
+function topActivitySections(sections = {}) {
+  return Object.entries(sections)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .slice(0, 3)
+    .map(([section, seconds]) => `${section} (${formatDuration(seconds)})`)
+    .join(', ') || '—';
+}
+
+function buildReviewCoachingSignals(insp = {}, fieldSummary = {}) {
+  const signals = [];
+  const gateBlockers = evaluateGate(insp).filter(item => !item.pass);
+  if (gateBlockers.length) {
+    signals.push({
+      level: 'needs-work',
+      title: `${gateBlockers.length} review blocker${gateBlockers.length === 1 ? '' : 's'} still active`,
+      detail: gateBlockers.slice(0, 4).map(item => item.label).join(' · ')
+    });
+  }
+
+  const photoAudit = buildPhotoPlacementAudit(insp, insp.photos || []);
+  if (photoAudit.needsAttention.length) {
+    signals.push({
+      level: 'needs-work',
+      title: `${photoAudit.needsAttention.length} key evidence photo${photoAudit.needsAttention.length === 1 ? '' : 's'} need placement`,
+      detail: 'Before/after, ATP, sample, HVAC, or spare evidence needs a clear room/task destination.'
+    });
+  }
+
+  (fieldSummary.rows || []).forEach(row => {
+    if (row.finalSubmitFailures) {
+      signals.push({
+        level: 'warning',
+        title: `${row.inspector} had ${row.finalSubmitFailures} final submit failure${row.finalSubmitFailures === 1 ? '' : 's'}`,
+        detail: `${row.finalSubmitSuccesses}/${row.finalSubmitAttempts} submit attempts succeeded. Check recent field app events for the failure reason.`
+      });
+    }
+    if (row.syncFailures) {
+      signals.push({
+        level: 'warning',
+        title: `${row.inspector} had ${row.syncFailures} cloud sync failure${row.syncFailures === 1 ? '' : 's'}`,
+        detail: `${row.syncSuccesses}/${row.syncAttempts} syncs succeeded. This can explain missing portal data or delayed handoff.`
+      });
+    }
+    if (row.blockers) {
+      signals.push({
+        level: 'info',
+        title: `${row.inspector} hit ${row.blockers} app blocker${row.blockers === 1 ? '' : 's'}`,
+        detail: `Most time: ${topActivitySections(row.steps)}.`
+      });
+    }
+  });
+
+  const health = _reviewDataHealth || {};
+  const sourceCount = Math.max(Number(health.basePhotoCount) || 0, Number(health.basePhotos) || 0);
+  const workerCount = Number(health.workerPhotos) || 0;
+  if (sourceCount && workerCount && sourceCount !== workerCount) {
+    signals.push({
+      level: 'warning',
+      title: 'Photo count mismatch detected',
+      detail: `Source says ${sourceCount}; photo service says ${workerCount}; portal shows ${health.finalPhotos || countInspectionArray(insp.photos)}.`
+    });
+  }
+
+  if (!signals.length) {
+    signals.push({
+      level: 'ready',
+      title: 'No coaching alerts from current data',
+      detail: 'No submit failures, sync failures, active blockers, or key photo placement issues are visible in this record.'
+    });
+  }
+
+  return signals.slice(0, 8);
+}
+
+async function refreshReviewActivityCloudData() {
+  if (!_inspection?.inspectionId || IS_DEMO) return;
+  try {
+    const cloud = await loadCloudReview(_inspection.inspectionId);
+    const fieldData = cloud.fieldData || {};
+    _reviewActivity.cloudSessions = fieldData._reviewActivitySessions || {};
+    _reviewActivity.cloudEvents = fieldData._reviewActivityEvents || {};
+  } catch (err) {
+    _reviewActivity.loadWarning = err?.message || 'Activity refresh failed';
+  }
+}
+
+async function openReviewActivityPanel() {
+  if (!_inspection?.inspectionId) return;
+  flushReviewActivitySession('activity-view', true);
+  await _reviewActivitySaveChain.catch(() => {});
+  await refreshReviewActivityCloudData();
+
+  const sessions = {
+    ..._reviewActivity.cloudSessions,
+    [_reviewActivity.sessionId]: currentReviewActivitySessionPayload('activity-view')
+  };
+  const summary = summarizeReviewActivity(sessions, _reviewActivity.cloudEvents);
+  const fieldSummary = summarizeFieldUsage(_inspection.fieldUsageMetrics);
+  const lastOverallActivity = [summary.lastActiveAt, fieldSummary.lastActiveAt]
+    .filter(Boolean)
+    .sort()
+    .pop() || '';
+
+  const overlay = el('div', {
+    id: 'review-activity-overlay',
+    class: 'review-activity-overlay',
+    role: 'dialog',
+    'aria-modal': 'true',
+    'aria-labelledby': 'review-activity-title'
+  });
+  const panel = el('div', { class: 'review-activity-panel' });
+  const heading = el('div', { class: 'review-activity-heading' });
+  heading.append(
+    el('div', {},
+      el('h2', { id: 'review-activity-title' }, 'Review Activity'),
+      el('p', {}, 'Field app usage and portal review activity for this inspection.')
+    ),
+    el('button', {
+      type: 'button',
+      class: 'portal-feedback-close',
+      'aria-label': 'Close review activity'
+    }, '×')
+  );
+  heading.querySelector('button')?.addEventListener('click', closeReviewActivityPanel);
+
+  const metrics = el('div', { class: 'review-activity-metrics' },
+    buildReviewActivityMetric('Field app time', formatDuration(fieldSummary.totalActiveSeconds)),
+    buildReviewActivityMetric('Review portal time', formatDuration(summary.totalActiveSeconds)),
+    buildReviewActivityMetric('Portal saves', String(summary.totalSaves)),
+    buildReviewActivityMetric('Last activity', activityDateLabel(lastOverallActivity))
+  );
+
+  const coachingSection = el('div', { class: 'review-activity-section review-coaching-signals' });
+  coachingSection.appendChild(el('h3', {}, 'Coaching Signals'));
+  const coachingList = el('div', { class: 'review-coaching-list' });
+  buildReviewCoachingSignals(_inspection, fieldSummary).forEach(signal => {
+    coachingList.appendChild(el('div', { class: `review-coaching-signal ${signal.level}` },
+      el('strong', {}, signal.title),
+      el('span', {}, signal.detail)
+    ));
+  });
+  coachingSection.appendChild(coachingList);
+
+  const fieldSection = el('div', { class: 'review-activity-section' });
+  fieldSection.appendChild(el('h3', {}, 'Field App Usage'));
+  const fieldTable = el('table', { class: 'review-activity-table' });
+  fieldTable.appendChild(el('thead', {},
+    el('tr', {},
+      el('th', {}, 'Inspector'),
+      el('th', {}, 'Active Time'),
+      el('th', {}, 'Fields'),
+      el('th', {}, 'Photos'),
+      el('th', {}, 'Saves'),
+      el('th', {}, 'Syncs'),
+      el('th', {}, 'Submit'),
+      el('th', {}, 'Blockers'),
+      el('th', {}, 'Main Steps')
+    )
+  ));
+  const fieldTbody = el('tbody');
+  if (!fieldSummary.rows.length) {
+    fieldTbody.appendChild(el('tr', {}, el('td', { colspan: '9' }, 'No field app activity has been recorded for this inspection yet.')));
+  } else {
+    fieldSummary.rows.forEach(row => {
+      fieldTbody.appendChild(el('tr', {},
+        el('td', {}, row.inspector),
+        el('td', {}, formatDuration(row.activeSeconds)),
+        el('td', {}, `${row.fieldChanges} touch${row.fieldChanges === 1 ? '' : 'es'} / ${row.uniqueFields} field${row.uniqueFields === 1 ? '' : 's'}`),
+        el('td', {}, String(row.photos)),
+        el('td', {}, String(row.saves)),
+        el('td', {}, `${row.syncSuccesses}/${row.syncAttempts} ok${row.syncFailures ? ' · ' + row.syncFailures + ' failed' : ''}`),
+        el('td', {}, `${row.finalSubmitSuccesses}/${row.finalSubmitAttempts} ok${row.finalSubmitFailures ? ' · ' + row.finalSubmitFailures + ' failed' : ''}`),
+        el('td', {}, String(row.blockers)),
+        el('td', {}, topActivitySections(row.steps))
+      ));
+    });
+  }
+  fieldTable.appendChild(fieldTbody);
+  fieldSection.appendChild(fieldTable);
+
+  const portalSection = el('div', { class: 'review-activity-section' });
+  portalSection.appendChild(el('h3', {}, 'Review Portal Usage'));
+  const table = el('table', { class: 'review-activity-table' });
+  table.appendChild(el('thead', {},
+    el('tr', {},
+      el('th', {}, 'Reviewer'),
+      el('th', {}, 'Active Time'),
+      el('th', {}, 'Saves'),
+      el('th', {}, 'Sessions'),
+      el('th', {}, 'Last Active'),
+      el('th', {}, 'Main Sections')
+    )
+  ));
+  const tbody = el('tbody');
+  if (!summary.rows.length) {
+    tbody.appendChild(el('tr', {}, el('td', { colspan: '6' }, 'No activity has been recorded yet.')));
+  } else {
+    summary.rows.forEach(row => {
+      tbody.appendChild(el('tr', {},
+        el('td', {}, row.reviewer),
+        el('td', {}, formatDuration(row.activeSeconds)),
+        el('td', {}, String(row.saves)),
+        el('td', {}, String(row.sessions)),
+        el('td', {}, activityDateLabel(row.lastActiveAt)),
+        el('td', {}, topActivitySections(row.sections))
+      ));
+    });
+  }
+  table.appendChild(tbody);
+  portalSection.appendChild(table);
+
+  const eventsList = el('div', { class: 'review-activity-events' });
+  eventsList.appendChild(el('h3', {}, 'Recent Field App Events'));
+  const visibleFieldEvents = fieldSummary.recentEvents
+    .filter(event => event.type !== 'session_start')
+    .slice(0, 8);
+  if (!visibleFieldEvents.length) {
+    eventsList.appendChild(el('p', { class: 'text-muted' }, 'No field app events recorded yet.'));
+  } else {
+    visibleFieldEvents.forEach(event => {
+      eventsList.appendChild(el('div', { class: 'review-activity-event' },
+        el('strong', {}, `${event.actorName || 'Field App User'}: ${fieldUsageEventLabel(event)}`),
+        el('span', {}, `${activityDateLabel(event.occurredAt)} · ${event.type || 'activity'}`)
+      ));
+    });
+  }
+  eventsList.appendChild(el('h3', {}, 'Recent Saves'));
+  if (!summary.recentEvents.filter(event => event.type === 'save').length) {
+    eventsList.appendChild(el('p', { class: 'text-muted' }, 'No save events recorded yet.'));
+  } else {
+    summary.recentEvents.filter(event => event.type === 'save').slice(0, 8).forEach(event => {
+      eventsList.appendChild(el('div', { class: 'review-activity-event' },
+        el('strong', {}, `${event.reviewerName || 'Review Portal User'} saved ${event.section || event.stepId || 'review data'}`),
+        el('span', {}, `${activityDateLabel(event.occurredAt)} · ${event.stepId || ''}${event.fieldKey ? ' / ' + event.fieldKey : ''}`)
+      ));
+    });
+  }
+
+  const privacy = el('p', { class: 'review-activity-privacy' },
+    'Activity records metadata only: user name, active time, section or step, field ID, save counts, blocker counts, photo counts, and sync status. Typed notes and captions are not copied into this log.'
+  );
+
+  if (_reviewActivity.loadWarning) {
+    panel.appendChild(el('div', { class: 'review-activity-warning' }, _reviewActivity.loadWarning));
+  }
+  panel.append(heading, metrics, coachingSection, fieldSection, portalSection, eventsList, privacy);
+  overlay.appendChild(panel);
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) closeReviewActivityPanel();
+  });
+  document.body.appendChild(overlay);
+}
+
+function mountReviewActorButton() {
+  if (document.getElementById('review-actor-button')) return;
+  const navMeta = document.querySelector('.nav-meta');
+  if (!navMeta) return;
+  const button = el('button', {
+    id: 'review-actor-button',
+    class: 'review-actor-button',
+    type: 'button',
+    title: 'Set reviewer name for save history'
+  }, `Reviewer: ${ensureReviewActivityReviewer(false)}`);
+  button.addEventListener('click', () => {
+    const nextName = window.prompt('Reviewer name for save history:', _reviewActivity.reviewerName || '');
+    if (nextName !== null) setReviewActivityReviewer(nextName);
+  });
+  navMeta.appendChild(button);
+}
+
+function mountReviewActivityButton() {
+  if (document.getElementById('review-activity-button')) return;
+  const navMeta = document.querySelector('.nav-meta');
+  if (!navMeta) return;
+  const button = el('button', {
+    id: 'review-activity-button',
+    class: 'review-activity-button',
+    type: 'button',
+    title: 'Review activity and active time'
+  }, 'Activity');
+  button.addEventListener('click', openReviewActivityPanel);
+  navMeta.appendChild(button);
 }
 
 function openPortalFeedback() {
@@ -6967,6 +8630,10 @@ window.portalInit = function(page) {
   initCollapsibles();
   initReportSearch();
   mountPortalVersionBadge();
+  if (page === 'review') {
+    mountReviewActorButton();
+    mountReviewActivityButton();
+  }
   mountPortalFeedbackButton();
 };
 

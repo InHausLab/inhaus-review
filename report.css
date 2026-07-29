@@ -562,6 +562,28 @@ body {
   padding: 4px 8px;
 }
 
+.room-photo-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.room-photo-card {
+  margin: 0;
+}
+
+.room-photo-card img,
+.room-photo-card .photo-placeholder {
+  aspect-ratio: 4 / 3;
+}
+
+.room-photo-card figcaption {
+  min-height: 44px;
+  font-size: .7rem;
+  padding: 7px 8px;
+}
+
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
