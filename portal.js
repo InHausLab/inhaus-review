@@ -9,7 +9,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V33';
+const REVIEW_PORTAL_VERSION = 'V34';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
@@ -761,6 +761,34 @@ async function saveCloudReviewField(inspectionId, field) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `Review save failed: ${response.status}`);
   return data;
+}
+
+async function saveReviewSubmissionReceipt(inspectionId, receipt, reportBuilderNotes) {
+  const fields = [
+    { stepId: 'summary', key: 'submission', value: receipt },
+    { stepId: 'summary', key: 'status', value: receipt.status },
+    { stepId: 'summary', key: 'submittedAt', value: receipt.submittedAt },
+    { stepId: 'summary', key: 'submittedToTannerAt', value: receipt.submittedAt },
+    { stepId: 'summary', key: 'completionScore', value: receipt.completionScore },
+    { stepId: 'summary', key: 'completionGrade', value: receipt.completionGrade },
+    { stepId: 'summary', key: 'sameDayBonus', value: receipt.sameDayBonus },
+    { stepId: 'summary', key: 'sameDayBonusAmt', value: receipt.sameDayBonusAmt },
+    { stepId: 'summary', key: 'reportBuilderNotes', value: reportBuilderNotes || '' }
+  ];
+
+  for (const field of fields) {
+    await saveCloudReviewField(inspectionId, field);
+  }
+
+  const verified = await loadCloudReview(inspectionId);
+  const verifiedSubmission = getServerSubmittedReviewState({
+    status: receipt.status,
+    reviewedData: verified.fieldData || {}
+  });
+  if (!verifiedSubmission.submitted) {
+    throw new Error('Submission receipt was not confirmed by review storage.');
+  }
+  return verifiedSubmission;
 }
 
 function mergeCheckpointValue(base, incoming) {
@@ -6354,30 +6382,52 @@ async function submitToTanner() {
   const bonusTier    = getBonusTier(endedAt);
   const bonusEarned  = finalScore && finalScore.total >= 85 && bonusTier && bonusTier.amount > 0;
   const notesEl      = qs('#field-report-notes');
+  const reportBuilderNotes = notesEl ? notesEl.value : (_inspection?.reportBuilderNotes || '');
+  const submissionReceipt = {
+    status: 'Submitted to Tanner',
+    submittedAt,
+    completionScore: finalScore ? finalScore.total : null,
+    completionGrade: finalScore ? finalScore.grade : null,
+    sameDayBonus: bonusEarned || false,
+    sameDayBonusAmt: bonusEarned ? bonusTier.amount : 0
+  };
 
-  if (_inspection && notesEl) {
-    _inspection.reportBuilderNotes = notesEl.value;
+  if (_inspection) {
+    _inspection.reportBuilderNotes = reportBuilderNotes;
     if (!_inspection.reviewedData) _inspection.reviewedData = {};
+    _inspection.reviewedData.reportBuilderNotes = reportBuilderNotes;
+    _inspection.reviewedData.submission = submissionReceipt;
     if (!_inspection.reviewedData.summary) _inspection.reviewedData.summary = {};
-    _inspection.reviewedData.summary.reportBuilderNotes = notesEl.value;
+    _inspection.reviewedData.summary.reportBuilderNotes = reportBuilderNotes;
   }
 
+  let notificationWarning = '';
   try {
-    await apiFetch({}, 'POST', { action: 'submit', id, token,
-      completionScore:  finalScore ? finalScore.total : null,
-      completionGrade:  finalScore ? finalScore.grade : null,
-      submittedAt,
-      sameDayBonus:     bonusEarned || false,
-      sameDayBonusAmt:  bonusEarned ? bonusTier.amount : 0,
-      reviewedData:     _inspection?.reviewedData || {},
-      reportBuilderNotes: _inspection?.reportBuilderNotes || '',
-      photos:           _inspection?.photos || []
+    await saveReviewSubmissionReceipt(id, submissionReceipt, reportBuilderNotes);
+
+    try {
+      await apiFetch({}, 'POST', { action: 'submit', id, token,
+        completionScore:  finalScore ? finalScore.total : null,
+        completionGrade:  finalScore ? finalScore.grade : null,
+        submittedAt,
+        sameDayBonus:     bonusEarned || false,
+        sameDayBonusAmt:  bonusEarned ? bonusTier.amount : 0,
+        reviewedData:     _inspection?.reviewedData || {},
+        reportBuilderNotes,
+        photos:           _inspection?.photos || []
+      });
+    } catch (notifyErr) {
+      notificationWarning = notifyErr?.message || 'Tanner notification was not confirmed.';
+      console.warn('Tanner notification submit failed after receipt save:', notifyErr);
+    }
+
+    const verified = await loadCloudReview(id);
+    const verifiedSubmission = getServerSubmittedReviewState({
+      status: 'Submitted to Tanner',
+      reviewedData: verified.fieldData || {}
     });
-    const verified = await apiFetch({ action: 'get', id, token });
-    const verifiedInspection = verified.inspection || verified;
-    const verifiedSubmission = getServerSubmittedReviewState(verifiedInspection);
     if (!verifiedSubmission.submitted) {
-      throw new Error('Submission was not confirmed by the server. Please retry.');
+      throw new Error('Submission was not confirmed by review storage. Please retry.');
     }
   } catch (err) {
     showToast(`Submission failed: ${err.message}`, 'error');
@@ -6388,10 +6438,16 @@ async function submitToTanner() {
     return;
   }
 
-  showToast('Submitted. Tanner has been notified.', 'success', 6000);
+  if (notificationWarning) {
+    showToast(`Submitted and saved. Tanner notification needs manual backup: ${notificationWarning}`, 'info', 9000);
+  } else {
+    showToast('Submitted. Tanner has been notified.', 'success', 6000);
+  }
   if (_inspection) {
     _inspection.status = 'Submitted to Tanner';
     _inspection.submittedToTannerAt = submittedAt;
+    _inspection.reviewedData = _inspection.reviewedData || {};
+    _inspection.reviewedData.submission = submissionReceipt;
   }
 
   // Show submitted banner + lock page
