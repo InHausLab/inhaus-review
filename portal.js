@@ -1512,9 +1512,9 @@ function photoCountListHTML(sourceCount, state = 'source', workerCount = null) {
     </div>`;
   }
   if (state === 'recovered') {
-    return `<div class="list-photo-count recovered" title="App list says ${source}; photo service has ${worker}">
+    return `<div class="list-photo-count recovered" title="App list says ${source}; recovered count is ${worker}">
       <strong>${worker}</strong>
-      <span>Photo service recovered · app list ${source}</span>
+      <span>Recovered photos · app list ${source}</span>
     </div>`;
   }
   if (state === 'matched') {
@@ -1546,6 +1546,14 @@ async function loadWorkerPhotoCount(inspectionId) {
   return photos.length;
 }
 
+async function loadStaticPhotoCount(inspectionId) {
+  const response = await fetch(`./api/inspections/${encodeURIComponent(inspectionId)}.json?t=` + Date.now());
+  if (!response.ok) return 0;
+  const data = await response.json();
+  const inspection = data.inspection || data;
+  return Array.isArray(inspection.photos) ? inspection.photos.length : 0;
+}
+
 async function enrichInspectionListPhotoCounts(inspections, tableBody) {
   const queue = (inspections || [])
     .map(insp => ({
@@ -1561,18 +1569,24 @@ async function enrichInspectionListPhotoCounts(inspections, tableBody) {
       const row = cell?.closest('tr');
       if (!cell) continue;
       try {
-        const workerCount = await loadWorkerPhotoCount(item.id);
-        if (workerCount > item.sourcePhotoCount) {
-          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'recovered', workerCount);
+        const [workerResult, staticResult] = await Promise.allSettled([
+          loadWorkerPhotoCount(item.id),
+          loadStaticPhotoCount(item.id)
+        ]);
+        const workerCount = workerResult.status === 'fulfilled' ? workerResult.value : 0;
+        const staticCount = staticResult.status === 'fulfilled' ? staticResult.value : 0;
+        const bestCount = Math.max(workerCount, staticCount);
+        if (bestCount > item.sourcePhotoCount) {
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'recovered', bestCount);
           row?.classList.add('list-row-photo-recovered');
-        } else if (workerCount === item.sourcePhotoCount && workerCount > 0) {
-          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'matched', workerCount);
+        } else if (bestCount === item.sourcePhotoCount && bestCount > 0) {
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'matched', bestCount);
           row?.classList.remove('list-row-photo-recovered');
-        } else if (item.sourcePhotoCount > 0 && workerCount === 0) {
-          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'service-empty', workerCount);
+        } else if (item.sourcePhotoCount > 0 && bestCount === 0) {
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'service-empty', bestCount);
           row?.classList.add('list-row-photo-warning');
         } else {
-          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'source', workerCount);
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'source', bestCount);
           row?.classList.remove('list-row-photo-recovered', 'list-row-photo-warning');
         }
       } catch (err) {
