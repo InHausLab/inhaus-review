@@ -371,7 +371,7 @@ function describeReviewActivityValue(value) {
 }
 
 function queueReviewActivityField(stepId, key, value) {
-  if (IS_DEMO || !_inspection?.inspectionId) return;
+  if (IS_DEMO || IS_LOCAL_PREVIEW || !_inspection?.inspectionId) return;
   _reviewActivitySaveChain = _reviewActivitySaveChain
     .then(() => saveCloudReviewField(_inspection.inspectionId, { stepId, key, value }))
     .catch(err => {
@@ -381,7 +381,7 @@ function queueReviewActivityField(stepId, key, value) {
 }
 
 function sendReviewActivityEventToWorker(event) {
-  if (IS_DEMO || !event?.inspectionId) return;
+  if (IS_DEMO || IS_LOCAL_PREVIEW || !event?.inspectionId) return;
   fetch(PHOTO_WORKER_URL + '/review-activity-events', {
     method: 'POST',
     headers: workerAuthHeaders({ 'Content-Type': 'application/json' }),
