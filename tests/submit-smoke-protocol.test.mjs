@@ -25,6 +25,17 @@ test('backend has a fast active-only cloud pickup list', () => {
   assert.doesNotMatch(activeListFunction, /normalizeInspectionForReviewApi/);
 });
 
+test('test training start shell creates pickup artifacts without a tracker row', () => {
+  const start = appsScript.indexOf('function startInspectionShell(data)');
+  const end = appsScript.indexOf('// ── REVIEW PORTAL DATA HANDOFF', start);
+  const startShell = appsScript.slice(start, end);
+  assert.match(startShell, /source\.isTestTraining = isTestTrainingInspection\(source\)/);
+  assert.match(startShell, /getOrCreateReviewHandoffFolder\(source\)/);
+  assert.match(startShell, /source\.isTestTraining[\s\S]*skipped_test_training[\s\S]*upsertReportTrackerHandoffRow/);
+  assert.match(appsScript, /source_system: shellResult\.isTestTraining === true \? 'apps_script_start_shell_test_training'/);
+  assert.doesNotMatch(startShell, /return skipped/);
+});
+
 test('real Apps Script POSTs carry the shared sync key', () => {
   assert.match(portal, /'x-sync-secret': body\['x-sync-secret'\] \|\| SYNC_SECRET/);
   assert.match(smokeScript, /action: 'submitSmoke'/);

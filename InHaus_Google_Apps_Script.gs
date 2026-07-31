@@ -141,18 +141,6 @@ function normalizeAssessmentStatusForSupabase(status) {
 function syncToSupabase(data, driveResult) {
   if (!SUPABASE_ENABLED) return;
   try {
-    if (isTestTrainingInspection(data || {})) {
-      logSyncRun(
-        data.inspectionId,
-        'test_training_skipped_ihl',
-        null,
-        (data.photos || []).length,
-        driveResult ? driveResult.photosUploaded : 0,
-        data.appVersion
-      );
-      return;
-    }
-
     // 1. Upsert assessment record
     var assessment = {
       inspection_id: data.inspectionId,
@@ -181,7 +169,7 @@ function syncToSupabase(data, driveResult) {
       same_day_bonus: false,
       payload_version: data.payloadVersion || null,
       raw_jsonb: data,
-      source_system: 'apps_script',
+      source_system: isTestTrainingInspection(data || {}) ? 'apps_script_test_training' : 'apps_script',
       source_id: data.inspectionId
     };
     postToSupabase('ihl_assessments', assessment);
@@ -1299,13 +1287,13 @@ function saveStartInspectionShellState(id, result) {
 
 function writeStartInspectionAssessmentRecord(source, shellResult) {
   requireAppsScriptDriveTrackerWriter('writeStartInspectionAssessmentRecord');
-  if (!source || !source.inspectionId || !shellResult || shellResult.isTestTraining === true) return;
+  if (!source || !source.inspectionId || !shellResult) return;
   postToSupabase('ihl_assessments', {
     inspection_id: source.inspectionId,
     report_id: null,
     inspector_name: source.inspectorName || null,
     inspection_date: source.inspectionDate || null,
-    status: 'In Progress',
+    status: source.status || 'In Progress',
     drive_folder_id: shellResult.folderId || null,
     assessment_folder_url: shellResult.folderUrl || null,
     water_source: source.waterSource || null,
@@ -1327,7 +1315,7 @@ function writeStartInspectionAssessmentRecord(source, shellResult) {
     same_day_bonus: false,
     payload_version: source.payloadVersion || null,
     raw_jsonb: source,
-    source_system: 'apps_script_start_shell',
+    source_system: shellResult.isTestTraining === true ? 'apps_script_start_shell_test_training' : 'apps_script_start_shell',
     source_id: source.inspectionId
   });
 }
@@ -1337,19 +1325,6 @@ function startInspectionShell(data) {
   var id = data.inspectionId || data.id;
   if (!id) throw new Error('Missing inspection id for startInspectionShell');
 
-  if (isTestTrainingInspection(data || {})) {
-    var skipped = {
-      status: 'skipped_test_training',
-      isTestTraining: true,
-      inspectionId: id,
-      trackerStatus: 'skipped_test_training',
-      updatedAt: new Date().toISOString(),
-      error: ''
-    };
-    saveStartInspectionShellState(id, skipped);
-    return skipped;
-  }
-
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -1357,11 +1332,14 @@ function startInspectionShell(data) {
     source.inspectionId = id;
     source.id = source.id || id;
     source.status = 'In Progress';
+    source.isTestTraining = isTestTrainingInspection(source);
     source.startedAt = source.startedAt || new Date().toISOString();
 
     var folderContext = getOrCreateReviewHandoffFolder(source);
     var folder = folderContext.folder;
     source.assessmentNumber = source.assessmentNumber || folderContext.assessmentNumber || '';
+    source.isTestTraining = folderContext.isTestTraining === true || source.isTestTraining === true;
+    if (source.isTestTraining) source.assessmentNumber = '';
     source.folderId = folder.getId();
     source.driveFolderId = folder.getId();
     source.folderUrl = folder.getUrl();
@@ -1370,12 +1348,14 @@ function startInspectionShell(data) {
     var photosFolder = getOrCreateAssessmentPhotosFolder(folder, source);
     var cocsFolder = getOrCreateAssessmentCocsFolder(folder, source);
     var backupFolder = getOrCreateAssessmentBackupFolder(folder, source);
-    var trackerResult = upsertReportTrackerHandoffRow(source, { folder: folder });
+    var trackerResult = source.isTestTraining
+      ? { row: '', url: '', status: 'skipped_test_training' }
+      : upsertReportTrackerHandoffRow(source, { folder: folder });
 
     var result = {
       status: 'ready',
       shellStatus: 'ready',
-      isTestTraining: false,
+      isTestTraining: source.isTestTraining === true,
       inspectionId: id,
       assessmentNumber: source.assessmentNumber || '',
       folderId: folder.getId(),
@@ -1391,7 +1371,7 @@ function startInspectionShell(data) {
       backupFolderUrl: backupFolder.getUrl(),
       trackerRow: trackerResult.row,
       trackerUrl: trackerResult.url,
-      trackerStatus: trackerResult.status || 'In Progress',
+      trackerStatus: trackerResult.status || (source.isTestTraining ? 'skipped_test_training' : 'In Progress'),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       error: ''
