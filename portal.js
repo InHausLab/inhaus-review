@@ -1770,6 +1770,8 @@ function getMissingHandoffReceiptFields(handoff = {}, context = {}) {
   if (!(handoff.photosFolderUrl || handoff.photosFolderId || handoff.technicianPhotosFolderUrl || handoff.technicianPhotosFolderId)) {
     missing.push('photos folder');
   }
+  if (!(handoff.cocsFolderUrl || handoff.cocsFolderId)) missing.push('COCs folder');
+  if (!(handoff.backupFolderUrl || handoff.backupFolderId)) missing.push('backup folder');
   const failedPhotoCopies = Number(handoff.photoFolderFailedCount || handoff.technicianPhotoFailedCount || handoff.counts?.photoFolderFailedCount || 0);
   const pendingPhotoCopies = Number(handoff.photoFolderPendingCount || handoff.counts?.photoFolderPendingCount || 0);
   if (failedPhotoCopies > 0) {
@@ -4307,6 +4309,46 @@ function buildTannerPackageState(insp = {}) {
       'tannerHandoff.photosFolderUrl'
     ])
   );
+  const cocsFolderId = firstNonEmptyValue(
+    insp.cocsFolderId,
+    reviewed.cocsFolderId,
+    handoffObj.cocsFolderId,
+    firstObjectPathValue(workerStatus, [
+      'cocsFolderId',
+      'handoff.cocsFolderId',
+      'tannerHandoff.cocsFolderId'
+    ])
+  );
+  const cocsFolderUrl = firstNonEmptyValue(
+    insp.cocsFolderUrl,
+    reviewed.cocsFolderUrl,
+    handoffObj.cocsFolderUrl,
+    firstObjectPathValue(workerStatus, [
+      'cocsFolderUrl',
+      'handoff.cocsFolderUrl',
+      'tannerHandoff.cocsFolderUrl'
+    ])
+  );
+  const backupFolderId = firstNonEmptyValue(
+    insp.backupFolderId,
+    reviewed.backupFolderId,
+    handoffObj.backupFolderId,
+    firstObjectPathValue(workerStatus, [
+      'backupFolderId',
+      'handoff.backupFolderId',
+      'tannerHandoff.backupFolderId'
+    ])
+  );
+  const backupFolderUrl = firstNonEmptyValue(
+    insp.backupFolderUrl,
+    reviewed.backupFolderUrl,
+    handoffObj.backupFolderUrl,
+    firstObjectPathValue(workerStatus, [
+      'backupFolderUrl',
+      'handoff.backupFolderUrl',
+      'tannerHandoff.backupFolderUrl'
+    ])
+  );
   const trackerValue = firstNonEmptyValue(
     insp.trackerUrl,
     insp.trackerRowUrl,
@@ -4490,6 +4532,18 @@ function buildTannerPackageState(insp = {}) {
           ? 'Photos folder linked'
           : `${photoCount} photo${photoCount === 1 ? '' : 's'} loaded`,
         href: photosFolderUrl || folderUrl
+      },
+      {
+        label: 'COCs folder',
+        ok: Boolean(cocsFolderUrl || cocsFolderId),
+        detail: cocsFolderUrl || cocsFolderId ? 'COCs folder linked' : 'Needs COCs folder link',
+        href: cocsFolderUrl || folderUrl
+      },
+      {
+        label: 'Backup folder',
+        ok: Boolean(backupFolderUrl || backupFolderId),
+        detail: backupFolderUrl || backupFolderId ? 'Backup folder linked' : 'Needs Backup folder link',
+        href: backupFolderUrl || folderUrl
       },
       {
         label: 'Room data',
