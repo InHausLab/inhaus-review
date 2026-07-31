@@ -41,6 +41,7 @@ function loadPortalContext() {
     navigator: { userAgent: 'node-test' },
     localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
     Image: class {},
+    location: { hostname: 'localhost', search: '' },
     document: {
       createElement: fakeElement,
       createTextNode: value => value,
@@ -57,14 +58,14 @@ function loadPortalContext() {
   vm.createContext(context);
   vm.runInContext(`${portal}
 globalThis.__normalizeInspectionForReview = normalizeInspectionForReview;
-globalThis.__calculateCompletionScore = calculateCompletionScore;`, context);
+globalThis.__buildPhotoPlacementAudit = buildPhotoPlacementAudit;`, context);
   return context;
 }
 
-test('source app room labels do not count toward review portal photo score', () => {
+test('real source room labels count as valid photo destinations', () => {
   const context = loadPortalContext();
   const inspection = context.__normalizeInspectionForReview({
-    inspectionId: 'INH-SCORE-ROOM-PHOTOS',
+    inspectionId: 'INH-PHOTO-REAL-ROOM',
     rooms: [
       { roomName: 'Bedroom 7', type: 'bedroom', stepId: 'bedroom-7', observations: 'Inspector notes present.' }
     ],
@@ -79,17 +80,17 @@ test('source app room labels do not count toward review portal photo score', () 
     testsConfirmed: {}
   });
 
-  const score = context.__calculateCompletionScore(inspection);
-  const photoCategory = score.categories.find(category => category.key === 'score-photos');
+  const audit = context.__buildPhotoPlacementAudit(inspection, inspection.photos);
 
-  assert.equal(photoCategory.score, 0);
-  assert.equal(photoCategory.detail, '0 of 2 portal placed');
+  assert.equal(audit.needsAttention.length, 0);
+  assert.equal(audit.evidence.length, 1);
+  assert.equal(audit.placedCount, 1);
 });
 
-test('portal-saved placement and report-section slots count toward photo score', () => {
+test('portal-saved placement counts as a valid photo destination', () => {
   const context = loadPortalContext();
   const inspection = context.__normalizeInspectionForReview({
-    inspectionId: 'INH-SCORE-PORTAL-PHOTOS',
+    inspectionId: 'INH-PHOTO-PORTAL-PLACEMENT',
     rooms: [
       { roomName: 'Bedroom 7', type: 'bedroom', stepId: 'bedroom-7', observations: 'Inspector notes present.' }
     ],
@@ -109,28 +110,27 @@ test('portal-saved placement and report-section slots count toward photo score',
     testsConfirmed: {}
   });
 
-  const score = context.__calculateCompletionScore(inspection);
-  const photoCategory = score.categories.find(category => category.key === 'score-photos');
+  const audit = context.__buildPhotoPlacementAudit(inspection, inspection.photos);
 
-  assert.equal(photoCategory.score, 30);
-  assert.equal(photoCategory.detail, '2 of 2 portal placed');
+  assert.equal(audit.needsAttention.length, 0);
+  assert.equal(audit.evidence.length, 1);
+  assert.equal(audit.placedCount, 1);
 });
 
 test('generic photo buckets without a room are not treated as placed', () => {
   const context = loadPortalContext();
   const inspection = context.__normalizeInspectionForReview({
-    inspectionId: 'INH-SCORE-GENERIC-PHOTOS',
+    inspectionId: 'INH-PHOTO-GENERIC-BUCKET',
     photos: [
-      { stepName: 'Photos', driveUrl: 'https://drive.google.com/file/d/genericPhotoOne/view' },
-      { stepName: 'Photos', driveUrl: 'https://drive.google.com/file/d/genericPhotoTwo/view' }
+      { roomName: 'Photos', stepName: 'Before', driveUrl: 'https://drive.google.com/file/d/genericPhotoOne/view' },
+      { roomName: 'Before and After', stepName: 'ATP Before', driveUrl: 'https://drive.google.com/file/d/genericPhotoTwo/view' }
     ],
     reviewedData: {},
     testsConfirmed: {}
   });
 
-  const score = context.__calculateCompletionScore(inspection);
-  const photoCategory = score.categories.find(category => category.key === 'score-photos');
+  const audit = context.__buildPhotoPlacementAudit(inspection, inspection.photos);
 
-  assert.equal(photoCategory.score, 0);
-  assert.equal(photoCategory.detail, '0 of 2 portal placed');
+  assert.equal(audit.needsAttention.length, 2);
+  assert.equal(audit.placedCount, 0);
 });

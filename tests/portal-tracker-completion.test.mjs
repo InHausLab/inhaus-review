@@ -6,19 +6,19 @@ const portal = readFileSync(new URL('../portal.js', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V33'/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V65'/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
 });
 
-test('submitted state must come from server-confirmed review package', () => {
+test('submitted state must come from review-storage-confirmed package', () => {
   assert.match(portal, /function stripLocalOnlySubmissionState\(/);
   assert.match(portal, /delete data\.submission/);
   assert.match(portal, /delete data\.submittedToTannerAt/);
   assert.match(portal, /function getServerSubmittedReviewState\(/);
   assert.match(portal, /hasSubmittedPackage/);
-  assert.match(portal, /Submission was not confirmed by the server/);
+  assert.match(portal, /Submission was not confirmed by review storage/);
 });
 
 test('finish tracker uses the live submission gate and supports exact navigation', () => {
@@ -27,15 +27,16 @@ test('finish tracker uses the live submission gate and supports exact navigation
   assert.match(portal, /renderFinishTracker\(results\);/);
   assert.match(portal, /action: 'unreviewedPhotos'/);
   assert.match(portal, /focusSelector: firstMissingLocation/);
-  assert.match(portal, /Your inspection data is safe\./);
+  assert.match(portal, /Use Finish Review for the remaining items/);
 });
 
-test('inspection score is explained out of 100 and links incomplete categories', () => {
-  assert.match(portal, /No submitted review score yet/);
-  assert.match(portal, /Submitted Review Score/);
-  assert.match(portal, /becomes the review score only after Submit to Tanner succeeds/);
-  assert.match(portal, /score-bar-link/);
-  assert.match(portal, /Review score to be submitted/);
+test('review readiness is consolidated into one persistent finish tool', () => {
+  assert.match(portal, /function renderFinishTracker\(results\)/);
+  assert.match(portal, /aria-label': 'Finish Review'/);
+  assert.match(portal, /Ready to submit/);
+  assert.match(portal, /Finish Review · \$\{failures\.length\} remaining/);
+  assert.match(review, /id="submit-guidance-wrap"/);
+  assert.doesNotMatch(review, /id="submit-score-wrap"/);
 });
 
 test('Attic and Crawl Space are standard room choices across photo selectors', () => {

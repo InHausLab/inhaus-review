@@ -426,6 +426,8 @@ function doPost(e) {
     var result;
     if (data.action === 'saveReview') {
       result = saveReviewData(data);
+    } else if (data.action === 'submitSmoke') {
+      result = submitReviewSmokeCheck(data);
     } else if (data.action === 'submit') {
       result = submitReviewToTanner(data);
     } else if (data.action === 'startInspectionShell') {
@@ -1119,6 +1121,22 @@ function submitReviewToTanner(data) {
     tannerNotification: notificationResult,
     notificationWarning: notificationResult && notificationResult.error ? notificationResult.error : '',
     handoffWarning: ''
+  };
+}
+
+function submitReviewSmokeCheck(data) {
+  var id = data.id || data.inspectionId;
+  if (!id) throw new Error('Missing inspection id');
+  if (!data.token) throw new Error('Missing review token');
+  var result = getInspectionForReview(id, data.token);
+  return {
+    smoke: true,
+    authorized: true,
+    id: id,
+    inspectionFound: !!(result && result.inspection),
+    statusChanged: false,
+    emailSent: false,
+    checkedAt: new Date().toISOString()
   };
 }
 

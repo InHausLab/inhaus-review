@@ -10,7 +10,7 @@ const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 test('backend has a non-mutating submit smoke action', () => {
   assert.match(appsScript, /data\.action === 'submitSmoke'/);
   assert.match(appsScript, /function submitReviewSmokeCheck\(data\)/);
-  assert.match(appsScript, /requireReviewTokenForInspectionId\(id, data\.token\)/);
+  assert.match(appsScript, /getInspectionForReview\(id, data\.token\)/);
   assert.match(appsScript, /statusChanged: false/);
   assert.match(appsScript, /emailSent: false/);
 });
