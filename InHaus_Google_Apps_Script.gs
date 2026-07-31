@@ -456,6 +456,18 @@ function doPost(e) {
 
 function doGet(e) {
   var params = e ? e.parameter : {};
+  if (params.action === 'listActive') {
+    try {
+      var activeResult = listActiveCloudInspections(params.token);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ok', ...activeResult }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
   if (params.action === 'list') {
     try {
       var listResult = listReviewInspections(params.token);
@@ -853,6 +865,74 @@ function listReviewInspections(token) {
   });
   return {
     generatedAt: new Date().toISOString(),
+    count: inspections.length,
+    inspections: inspections
+  };
+}
+
+function activeCloudStatus(data, rowStatus) {
+  var raw = String(
+    (data && (data.reviewStatus || data.status)) ||
+    rowStatus ||
+    ''
+  ).trim();
+  if (/prepared/i.test(raw)) return 'prepared';
+  if (/field active|in[-\s]?progress/i.test(raw)) return 'Field Active';
+  return '';
+}
+
+function hasUsableResumeData(data) {
+  return !!(
+    data &&
+    data.resumeData &&
+    typeof data.resumeData === 'object' &&
+    (data.resumeData.inspectionId || data.resumeData.id) &&
+    data.resumeData.stepData &&
+    typeof data.resumeData.stepData === 'object'
+  );
+}
+
+function activeCloudListEntry(row) {
+  var data = parseRawJsonb(row.raw_jsonb);
+  data.inspectionId = data.inspectionId || row.inspection_id;
+  data.id = data.id || data.inspectionId;
+  var status = activeCloudStatus(data, row.status);
+  if (!status || !hasUsableResumeData(data)) return null;
+  var resume = data.resumeData || {};
+  return {
+    inspectionId: data.inspectionId || resume.inspectionId || row.inspection_id,
+    id: data.id || data.inspectionId || resume.inspectionId || row.inspection_id,
+    clientName: data.clientName || resume.clientName || '',
+    propertyAddress: data.propertyAddress || resume.propertyAddress || '',
+    inspectionDate: data.inspectionDate || resume.inspectionDate || '',
+    inspectorName: data.inspectorName || resume.inspectorName || '',
+    status: status,
+    hasResumeData: true,
+    photoCount: data.photoCount || (data.photoManifest || []).length || 0,
+    folderId: data.folderId || data.driveFolderId || row.drive_folder_id || '',
+    folderUrl: data.folderUrl || data.driveFolderUrl || row.assessment_folder_url || '',
+    preparedAt: resume.preparedAt || data.preparedAt || '',
+    startedAt: resume.startedAt || data.startedAt || '',
+    updatedAt: resume.updatedAt || data.updatedAt || '',
+    lastUpdated: resume.updatedAt || data.updatedAt || data.completedAt || data.endedAt || data.syncedAt || '',
+    reviewToken: String(data.inspectionId || row.inspection_id || '').toLowerCase()
+  };
+}
+
+function listActiveCloudInspections(token) {
+  requirePortalAccess(token);
+  var rows = getFromSupabase(
+    'ihl_assessments',
+    'select=inspection_id,status,drive_folder_id,assessment_folder_url,raw_jsonb&order=inspection_id.desc&limit=75'
+  );
+  var inspections = [];
+  rows.forEach(function(row) {
+    var entry = activeCloudListEntry(row);
+    if (entry) inspections.push(entry);
+  });
+  return {
+    generatedAt: new Date().toISOString(),
+    mode: 'active',
     count: inspections.length,
     inspections: inspections
   };

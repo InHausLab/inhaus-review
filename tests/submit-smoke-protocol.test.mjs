@@ -15,6 +15,16 @@ test('backend has a non-mutating submit smoke action', () => {
   assert.match(appsScript, /emailSent: false/);
 });
 
+test('backend has a fast active-only cloud pickup list', () => {
+  const start = appsScript.indexOf('function listActiveCloudInspections(token)');
+  const end = appsScript.indexOf('function getInspectionForReview', start);
+  const activeListFunction = appsScript.slice(start, end);
+  assert.match(appsScript, /params\.action === 'listActive'/);
+  assert.match(appsScript, /function listActiveCloudInspections\(token\)/);
+  assert.match(appsScript, /function hasUsableResumeData\(data\)/);
+  assert.doesNotMatch(activeListFunction, /normalizeInspectionForReviewApi/);
+});
+
 test('real Apps Script POSTs carry the shared sync key', () => {
   assert.match(portal, /'x-sync-secret': body\['x-sync-secret'\] \|\| SYNC_SECRET/);
   assert.match(smokeScript, /action: 'submitSmoke'/);
