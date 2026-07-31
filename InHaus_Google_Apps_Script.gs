@@ -18,11 +18,15 @@
  * WHAT IT DOES:
  * When the inspector taps "Submit Inspection" in the app,
  * this script receives the JSON data and:
- * - Creates a Google Drive folder named "ClientName — Address"
- * - Creates a Google Sheet inside that folder with all inspection data
- * - Uploads all photos from the inspection into the same folder
- * - Creates a Photo Log tab in the sheet linking to each photo
- * - Returns a link to the folder and sheet
+ * - Creates/reuses the start-inspection shell for real jobs
+ * - Reserves the assessment number, Drive folder, and tracker row at inspection start
+ * - Creates or repairs the Tanner assessment folder in the Shared Drive
+ * - Uses the folder name format "### – YYYY-MM-DD – LastName – Street Address"
+ * - Routes test/training packages to _Test Assessments without tracker rows
+ * - Creates the Review Portal Data spreadsheet with formatted and raw tabs
+ * - Copies Drive-backed photos into the Photos subfolder when available
+ * - Creates a Photo Log tab linking each photo back to its source
+ * - Returns a receipt with folder, spreadsheet, tracker, raw backup, and photo counts
  */
 
 // ── CONFIG ────────────────────────────────────────────────
@@ -31,6 +35,16 @@
 const DRIVE_FOLDER_ID = '11A2EXgQSFo4BAh3aYlJpHxqZKsfwe06l'; // Assessments/ — Products & Services Shared Drive
 const DRIVE_FOLDER_ID_OLD = '11K48iY7zAB6IbXHOmLi9XVEAXih_3qeA'; // OLD: InHaus Lab — Inspection Data (personal Drive)
 const USE_SHARED_DRIVE = true; // Phase 2: writing to Shared Drive
+const TEST_ASSESSMENTS_FOLDER_NAME = '_Test Assessments';
+// Temporary bridge writer switch.
+// Keep true only while Apps Script is the approved manual fallback. Set false
+// before enabling Worker W7 final handoff so Drive/tracker has one writer.
+const ENABLE_APPS_SCRIPT_DRIVE_TRACKER_WRITER = true;
+
+function requireAppsScriptDriveTrackerWriter(actionName) {
+  if (ENABLE_APPS_SCRIPT_DRIVE_TRACKER_WRITER === true) return;
+  throw new Error('Apps Script Drive/tracker writer is disabled for ' + actionName + '. Use Worker W7 handoff.');
+}
 
 // Set this to an existing spreadsheet ID to append all inspections as rows
 // Leave empty to create a new spreadsheet per inspection
@@ -114,16 +128,38 @@ function logSyncRun(inspectionId, status, errorMessage, photoCount, photosUpload
   });
 }
 
+function normalizeAssessmentStatusForSupabase(status) {
+  var raw = String(status || '').trim();
+  if (!raw) return 'synced';
+  if (/in[-\s]?progress/i.test(raw)) return 'In Progress';
+  if (/submitted to tanner/i.test(raw)) return 'Submitted to Tanner';
+  if (/needs review/i.test(raw)) return 'Needs Review';
+  if (/completed|complete/i.test(raw)) return 'Needs Review';
+  return raw;
+}
+
 function syncToSupabase(data, driveResult) {
   if (!SUPABASE_ENABLED) return;
   try {
+    if (isTestTrainingInspection(data || {})) {
+      logSyncRun(
+        data.inspectionId,
+        'test_training_skipped_ihl',
+        null,
+        (data.photos || []).length,
+        driveResult ? driveResult.photosUploaded : 0,
+        data.appVersion
+      );
+      return;
+    }
+
     // 1. Upsert assessment record
     var assessment = {
       inspection_id: data.inspectionId,
       report_id: null,
       inspector_name: data.inspectorName || null,
       inspection_date: data.inspectionDate || null,
-      status: data.status || 'synced',
+      status: normalizeAssessmentStatusForSupabase(data.status || 'synced'),
       drive_folder_id: driveResult ? driveResult.folderId : null,
       assessment_folder_url: driveResult ? driveResult.folderUrl : null,
       water_source: data.waterSource || null,
@@ -140,9 +176,9 @@ function syncToSupabase(data, driveResult) {
       ended_at: data.endedAt || null,
       completed_at: data.completedAt || null,
       app_version: data.appVersion || null,
-      completion_score: data.completionScore || null,
-      completion_grade: data.completionGrade || null,
-      same_day_bonus: data.sameDayBonus || false,
+      completion_score: null,
+      completion_grade: null,
+      same_day_bonus: false,
       payload_version: data.payloadVersion || null,
       raw_jsonb: data,
       source_system: 'apps_script',
@@ -223,12 +259,17 @@ function sendErrorAlert(context, err, payload) {
 // DriveApp.getFolderById() works on Shared Drive folders directly.
 // No Drive Advanced Service needed.
 
-function getOrCreateInspectionFolderInSharedDrive(parentFolderId, folderName, inspId) {
+function getOrCreateInspectionFolderInSharedDrive(parentFolderId, folderName, inspId, source) {
   var parentFolder = DriveApp.getFolderById(parentFolderId);
   var targetName = String(folderName || '').trim();
   var targetKey = targetName.replace(/[–—]/g, '-').replace(/\s+/g, ' ').toLowerCase();
   var idNeedle = String(inspId || '').trim();
+  var clientLastName = getClientLastName((source && source.clientName) || '').toLowerCase();
+  var fullAddress = String((source && (source.propertyAddress || source.address)) || '').trim();
+  var streetAddress = fullAddress.indexOf(',') > -1 ? fullAddress.substring(0, fullAddress.indexOf(',')).trim() : fullAddress;
+  var streetKey = streetAddress.replace(/[–—]/g, '-').replace(/\s+/g, ' ').toLowerCase();
   var legacyIdMatch = null;
+  var clientAddressMatch = null;
 
   function tagFolder(folder) {
     if (!folder || !idNeedle) return folder;
@@ -258,9 +299,117 @@ function getOrCreateInspectionFolderInSharedDrive(parentFolderId, folderName, in
       if (description.indexOf(idNeedle) > -1) return f;
       if (!legacyIdMatch && existingName.indexOf(idNeedle) > -1) legacyIdMatch = f;
     }
+    if (!clientAddressMatch && clientLastName && streetKey &&
+        existingKey.indexOf(clientLastName) > -1 && existingKey.indexOf(streetKey) > -1) {
+      clientAddressMatch = f;
+    }
   }
   if (legacyIdMatch) return tagFolder(legacyIdMatch);
+  if (clientAddressMatch) return tagFolder(clientAddressMatch);
   return tagFolder(parentFolder.createFolder(folderName));
+}
+
+function getOrCreateNamedChildFolder(parentFolder, folderName) {
+  var targetName = String(folderName || '').trim();
+  var folders = parentFolder.getFolders();
+  while (folders.hasNext()) {
+    var folder = folders.next();
+    if ((folder.getName() || '') === targetName) return folder;
+  }
+  return parentFolder.createFolder(targetName);
+}
+
+function getStreetAddressForFolder(source) {
+  var fullAddress = String((source && (source.propertyAddress || source.address)) || '').trim();
+  return fullAddress.indexOf(',') > -1 ? fullAddress.substring(0, fullAddress.indexOf(',')).trim() : fullAddress;
+}
+
+function explicitAssessmentType(source) {
+  return String((source && (
+    source.inspectionType ||
+    source.assessmentType ||
+    source.assessmentPurpose ||
+    source.inspectionMode ||
+    source.reportType
+  )) || '').trim();
+}
+
+function isTestTrainingInspection(source) {
+  if (source && (
+    source.is_test === true ||
+    source.isTest === true ||
+    source.testTraining === true ||
+    source.isTestTraining === true
+  )) return true;
+  var explicit = explicitAssessmentType(source);
+  if (explicit) return /test|training|practice|demo/i.test(explicit);
+  var inferred = [
+    source && source.inspectionId,
+    source && source.id,
+    source && source.clientName,
+    source && (source.propertyAddress || source.address)
+  ].filter(Boolean).join(' ');
+  return /(^|\b)(test|training|practice|demo)(\b|$)/i.test(inferred);
+}
+
+function getAssessmentParentFolder(source) {
+  var root = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  if (isTestTrainingInspection(source || {})) {
+    return getOrCreateNamedChildFolder(root, TEST_ASSESSMENTS_FOLDER_NAME);
+  }
+  return root;
+}
+
+function assessmentSubfolderName(prefix, source) {
+  var lastName = getClientLastName((source && source.clientName) || '');
+  var street = getStreetAddressForFolder(source || {});
+  return prefix + ' - ' + lastName + (prefix === 'Photos' && street ? ' (' + street + ')' : '');
+}
+
+function getOrCreateAssessmentPhotosFolder(parentFolder, source) {
+  var targetName = assessmentSubfolderName('Photos', source || {});
+  var folders = parentFolder.getFolders();
+  var legacyMatch = null;
+  while (folders.hasNext()) {
+    var folder = folders.next();
+    var name = folder.getName() || '';
+    if (name === targetName) return folder;
+    if (!legacyMatch && /^Technician Photos/i.test(name)) legacyMatch = folder;
+  }
+  return legacyMatch || parentFolder.createFolder(targetName);
+}
+
+function getOrCreateAssessmentCocsFolder(parentFolder, source) {
+  return getOrCreateNamedChildFolder(parentFolder, assessmentSubfolderName('COCs', source || {}));
+}
+
+function getOrCreateAssessmentBackupFolder(parentFolder, source) {
+  return getOrCreateNamedChildFolder(parentFolder, assessmentSubfolderName('Backup', source || {}));
+}
+
+function findInspectionFolderInsideParent(parentFolder, inspectionId) {
+  var folders = parentFolder.getFolders();
+  while (folders.hasNext()) {
+    var folder = folders.next();
+    var name = folder.getName() || '';
+    var description = '';
+    try { description = folder.getDescription() || ''; } catch(e) {}
+    if (name.indexOf(inspectionId) > -1 || description.indexOf(inspectionId) > -1) return folder;
+  }
+  return null;
+}
+
+function findInspectionFolderForPhotoUpload(data) {
+  var inspectionId = data.inspectionId || data.sourceInspectionId || '';
+  if (!inspectionId) return null;
+  var preferredParent = getAssessmentParentFolder(data || {});
+  var folder = findInspectionFolderInsideParent(preferredParent, inspectionId);
+  if (folder) return folder;
+  var root = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  folder = findInspectionFolderInsideParent(root, inspectionId);
+  if (folder) return folder;
+  var testParent = getOrCreateNamedChildFolder(root, TEST_ASSESSMENTS_FOLDER_NAME);
+  return findInspectionFolderInsideParent(testParent, inspectionId);
 }
 
 function moveFileToSharedDriveFolder(fileId, destFolderId) {
@@ -279,6 +428,10 @@ function doPost(e) {
       result = saveReviewData(data);
     } else if (data.action === 'submit') {
       result = submitReviewToTanner(data);
+    } else if (data.action === 'startInspectionShell') {
+      result = startInspectionShell(data);
+    } else if (data.action === 'repairHandoff') {
+      result = repairReviewHandoff(data);
     } else if (data.action === 'adminUnlock') {
       result = adminUnlockReview(data);
     } else if (data.photoUploadOnly) {
@@ -777,27 +930,74 @@ function reviewPortalHandoffReviewPatch(handoffResult) {
     reviewPortalDataUrl: handoffResult.spreadsheetUrl || '',
     rawReviewDataUrl: handoffResult.rawJsonUrl || '',
     rawReviewDataJsonUrl: handoffResult.rawJsonUrl || '',
+    technicianPhotosFolderId: handoffResult.technicianPhotosFolderId || '',
+    technicianPhotosFolderUrl: handoffResult.technicianPhotosFolderUrl || '',
+    photosFolderId: handoffResult.photosFolderId || handoffResult.technicianPhotosFolderId || '',
+    photosFolderUrl: handoffResult.photosFolderUrl || handoffResult.technicianPhotosFolderUrl || '',
+    cocsFolderId: handoffResult.cocsFolderId || '',
+    cocsFolderUrl: handoffResult.cocsFolderUrl || '',
+    backupFolderId: handoffResult.backupFolderId || '',
+    backupFolderUrl: handoffResult.backupFolderUrl || '',
+    trackerRow: handoffResult.trackerRow || '',
+    trackerUrl: handoffResult.trackerUrl || '',
+    trackerRowUrl: handoffResult.trackerUrl || '',
+    trackerStatus: handoffResult.trackerStatus || '',
+    isTestTraining: handoffResult.isTestTraining === true,
+    handoffStatus: handoffResult.status || '',
+    handoffUpdatedAt: handoffResult.updatedAt || '',
+    lastHandoffError: handoffResult.error || '',
     system: {
       tannerHandoff: handoffResult
     }
   };
 }
 
+function saveReviewHandoffState(id, state) {
+  if (!id || !state) return;
+  var cleanState = deepMergeReviewData({}, state || {});
+  cleanState.updatedAt = cleanState.updatedAt || new Date().toISOString();
+  cleanState.error = cleanState.error || '';
+  upsertReviewDataRecord(id, {
+    handoffStatus: cleanState.status || '',
+    handoffUpdatedAt: cleanState.updatedAt,
+    lastHandoffError: cleanState.error || '',
+    system: {
+      tannerHandoff: cleanState
+    }
+  });
+}
+
+function formatReviewReadiness_(readiness) {
+  if (!readiness || typeof readiness !== 'object') return '';
+  var status = readiness.status || (readiness.blockerCount ? 'blocked' : 'ready');
+  var passed = readiness.passed;
+  var total = readiness.total;
+  var blockers = readiness.blockerCount || 0;
+  var parts = [status];
+  if (passed !== undefined && total !== undefined) {
+    parts.push(String(passed) + '/' + String(total) + ' required complete');
+  }
+  if (blockers) parts.push(String(blockers) + ' blocker' + (blockers === 1 ? '' : 's'));
+  return parts.join(' - ');
+}
+
 function notifyTannerSubmission(data, reviewedData) {
   var id = data.id || data.inspectionId;
+  var inspectorName = data.inspectorName || data.inspector || data.inspector_name || 'Inspector';
   var subject = 'InHaus review submitted - ' + (data.propertyAddress || id);
   var reviewUrl = 'https://inhauslab.github.io/inhaus-review/review.html?id=' +
     encodeURIComponent(id) + '&token=' + encodeURIComponent(data.token || '');
+  var submission = reviewedData && reviewedData.submission ? reviewedData.submission : {};
+  var readiness = data.reviewReadiness || submission.reviewReadiness || {};
   var body = [
-    'David submitted an inspection review for report building.',
+    inspectorName + ' submitted an inspection review for report building.',
     '',
     'Inspection ID: ' + id,
     'Address: ' + (data.propertyAddress || ''),
     'Client: ' + (data.clientName || ''),
     'Submitted: ' + (data.submittedAt || ''),
-    'Score: ' + (data.completionScore || '') + (data.completionGrade ? ' (' + data.completionGrade + ')' : ''),
+    'Review readiness: ' + formatReviewReadiness_(readiness),
     'Photos: ' + ((data.photos || []).length),
-    'Same-day bonus: ' + (data.sameDayBonus ? ('$' + (data.sameDayBonusAmt || 0)) : 'No'),
     '',
     'Report Builder Notes:',
     data.reportBuilderNotes || (reviewedData && reviewedData.reportBuilderNotes) || '',
@@ -814,9 +1014,16 @@ function notifyTannerSubmission(data, reviewedData) {
     subject: subject,
     body: body
   });
+  return {
+    status: 'sent',
+    sentAt: new Date().toISOString(),
+    to: ALERT_CC || ALERT_EMAIL,
+    cc: ALERT_EMAIL
+  };
 }
 
 function submitReviewToTanner(data) {
+  requireAppsScriptDriveTrackerWriter('submitReviewToTanner');
   var id = data.id || data.inspectionId;
   if (!id) throw new Error('Missing inspection id');
   if (!data.token) throw new Error('Missing review token');
@@ -827,59 +1034,119 @@ function submitReviewToTanner(data) {
   patch.submission = {
     status: 'Submitted to Tanner',
     submittedAt: submittedAt,
-    completionScore: data.completionScore || null,
-    completionGrade: data.completionGrade || null,
-    sameDayBonus: data.sameDayBonus || false,
-    sameDayBonusAmt: data.sameDayBonusAmt || 0
+    reviewReadiness: data.reviewReadiness || null,
+    readinessStatus: data.readinessStatus || '',
+    readinessCompleted: data.readinessCompleted || 0,
+    readinessRequired: data.readinessRequired || 0,
+    blockerCount: data.blockerCount || 0
   };
-  var saved = upsertReviewDataRecord(id, patch);
+  var saved = { reviewedData: patch };
   data.id = id;
   data.inspectionId = id;
   data.submittedAt = submittedAt;
-  try {
-    postToSupabase('ihl_assessments', {
-      inspection_id: id,
-      status: 'Submitted to Tanner',
-      completion_score: data.completionScore || null,
-      completion_grade: data.completionGrade || null,
-      same_day_bonus: data.sameDayBonus || false
-    });
-  } catch(e) {
-    console.error('Submit Supabase status update failed:', e.message);
-  }
   var handoffResult = null;
-  var handoffWarning = '';
   try {
     handoffResult = ensureReviewPortalDataHandoff(id, data, saved.reviewedData);
     if (handoffResult) {
       var handoffPatch = reviewPortalHandoffReviewPatch(handoffResult);
-      saved = upsertReviewDataRecord(id, handoffPatch);
+      saved = upsertReviewDataRecord(id, deepMergeReviewData(patch, handoffPatch));
       data.reviewPortalData = handoffResult;
       data.reviewPortalDataUrl = handoffResult.spreadsheetUrl || '';
       data.folderId = handoffResult.folderId || data.folderId || '';
       data.folderUrl = handoffResult.folderUrl || data.folderUrl || '';
-      try {
-        postToSupabase('ihl_assessments', {
-          inspection_id: id,
-          drive_folder_id: handoffResult.folderId || null,
-          assessment_folder_url: handoffResult.folderUrl || null
-        });
-      } catch(updateErr) {
-        console.error('Submit Supabase handoff link update failed:', updateErr.message);
+      if (handoffResult.isTestTraining !== true) {
+        try {
+          postToSupabase('ihl_assessments', {
+            inspection_id: id,
+            drive_folder_id: handoffResult.folderId || null,
+            assessment_folder_url: handoffResult.folderUrl || null
+          });
+        } catch(updateErr) {
+          console.error('Submit Supabase handoff link update failed:', updateErr.message);
+        }
       }
     }
   } catch(e) {
-    handoffWarning = e.message || String(e);
-    console.error('Review Portal Data handoff failed:', handoffWarning);
+    var handoffError = e.message || String(e);
+    console.error('Review Portal Data handoff failed:', handoffError);
+    throw new Error('Review Portal Data handoff failed: ' + handoffError);
   }
-  notifyTannerSubmission(data, saved.reviewedData);
+  var trackerOk = handoffResult && (handoffResult.trackerUrl || handoffResult.isTestTraining === true);
+  if (!handoffResult || !handoffResult.folderUrl || !handoffResult.spreadsheetUrl || !trackerOk) {
+    throw new Error('Review Portal Data handoff did not return a complete folder/sheet/tracker receipt.');
+  }
+  if (handoffResult.isTestTraining !== true) {
+    try {
+      postToSupabase('ihl_assessments', {
+        inspection_id: id,
+        status: 'Submitted to Tanner',
+        completion_score: null,
+        completion_grade: null,
+        same_day_bonus: false
+      });
+    } catch(e) {
+      console.error('Submit Supabase status update failed:', e.message);
+    }
+  }
+  var notificationResult;
+  try {
+    notificationResult = notifyTannerSubmission(data, saved.reviewedData);
+  } catch(e) {
+    notificationResult = {
+      status: 'failed',
+      failedAt: new Date().toISOString(),
+      error: e && e.message ? e.message : String(e)
+    };
+    console.error('Tanner submission notification failed:', notificationResult.error);
+  }
+  try {
+    upsertReviewDataRecord(id, {
+      tannerNotificationStatus: notificationResult.status || '',
+      lastTannerNotificationError: notificationResult.error || '',
+      system: {
+        tannerNotification: notificationResult
+      }
+    });
+  } catch(e) {
+    console.error('Could not save Tanner notification receipt:', e.message);
+  }
   return {
     submitted: true,
     id: id,
     status: 'Submitted to Tanner',
     submittedAt: submittedAt,
     reviewPortalData: handoffResult,
-    handoffWarning: handoffWarning
+    tannerNotification: notificationResult,
+    notificationWarning: notificationResult && notificationResult.error ? notificationResult.error : '',
+    handoffWarning: ''
+  };
+}
+
+function repairReviewHandoff(data) {
+  requireAppsScriptDriveTrackerWriter('repairReviewHandoff');
+  var id = data.id || data.inspectionId;
+  if (!id) throw new Error('Missing inspection id');
+  requirePortalAccess(data.token);
+
+  var review = getReviewData(id, data.token);
+  var fieldData = review.reviewedData || {};
+  var recovery = fieldData.system && fieldData.system.inspectionRecovery
+    ? fieldData.system.inspectionRecovery
+    : {};
+  var source = deepMergeReviewData(deepMergeReviewData({}, recovery), data || {});
+  source.id = id;
+  source.inspectionId = id;
+  source.status = source.status || fieldData.status || 'Needs Review';
+  source.reviewReadiness = source.reviewReadiness || (fieldData.submission && fieldData.submission.reviewReadiness) || null;
+
+  var handoffResult = ensureReviewPortalDataHandoff(id, source, fieldData);
+  var handoffPatch = reviewPortalHandoffReviewPatch(handoffResult);
+  var saved = upsertReviewDataRecord(id, handoffPatch);
+  return {
+    repaired: true,
+    id: id,
+    reviewPortalData: handoffResult,
+    reviewedDataUpdatedAt: saved.lastUpdated
   };
 }
 
@@ -905,6 +1172,141 @@ function adminUnlockReview(data) {
   return { unlocked: true, id: id, status: 'Needs Review', unlockedAt: unlockedAt, lastUpdated: saved.lastUpdated };
 }
 
+// ── START-INSPECTION ASSESSMENT SHELL ─────────────────────
+
+function saveStartInspectionShellState(id, result) {
+  if (!id || !result) return;
+  var cleanState = deepMergeReviewData({}, result || {});
+  cleanState.updatedAt = cleanState.updatedAt || new Date().toISOString();
+  cleanState.error = cleanState.error || '';
+  upsertReviewDataRecord(id, {
+    assessmentNumber: cleanState.assessmentNumber || '',
+    folderId: cleanState.folderId || '',
+    folderUrl: cleanState.folderUrl || '',
+    driveFolderId: cleanState.folderId || '',
+    driveFolderUrl: cleanState.folderUrl || '',
+    trackerRow: cleanState.trackerRow || '',
+    trackerUrl: cleanState.trackerUrl || '',
+    trackerRowUrl: cleanState.trackerUrl || '',
+    trackerStatus: cleanState.trackerStatus || '',
+    startInspectionShellStatus: cleanState.status || '',
+    startInspectionShellUpdatedAt: cleanState.updatedAt,
+    lastStartInspectionShellError: cleanState.error || '',
+    isTestTraining: cleanState.isTestTraining === true,
+    system: {
+      startInspectionShell: cleanState
+    }
+  });
+}
+
+function writeStartInspectionAssessmentRecord(source, shellResult) {
+  requireAppsScriptDriveTrackerWriter('writeStartInspectionAssessmentRecord');
+  if (!source || !source.inspectionId || !shellResult || shellResult.isTestTraining === true) return;
+  postToSupabase('ihl_assessments', {
+    inspection_id: source.inspectionId,
+    report_id: null,
+    inspector_name: source.inspectorName || null,
+    inspection_date: source.inspectionDate || null,
+    status: 'In Progress',
+    drive_folder_id: shellResult.folderId || null,
+    assessment_folder_url: shellResult.folderUrl || null,
+    water_source: source.waterSource || null,
+    occupancy: source.occupancyDuringInspection || null,
+    weather_conditions: source.weatherConditions || null,
+    client_concerns: source.clientConcerns || null,
+    known_problem_areas: source.knownProblemAreas || null,
+    pets: source.pets || null,
+    smoking_vaping: source.smokingVaping || null,
+    stove_type: source.stoveType || null,
+    fireplace: source.fireplace || null,
+    carpeted_rooms: source.carpetedRooms || null,
+    started_at: source.startedAt || new Date().toISOString(),
+    ended_at: source.endedAt || null,
+    completed_at: source.completedAt || null,
+    app_version: source.appVersion || null,
+    completion_score: null,
+    completion_grade: null,
+    same_day_bonus: false,
+    payload_version: source.payloadVersion || null,
+    raw_jsonb: source,
+    source_system: 'apps_script_start_shell',
+    source_id: source.inspectionId
+  });
+}
+
+function startInspectionShell(data) {
+  requireAppsScriptDriveTrackerWriter('startInspectionShell');
+  var id = data.inspectionId || data.id;
+  if (!id) throw new Error('Missing inspection id for startInspectionShell');
+
+  if (isTestTrainingInspection(data || {})) {
+    var skipped = {
+      status: 'skipped_test_training',
+      isTestTraining: true,
+      inspectionId: id,
+      trackerStatus: 'skipped_test_training',
+      updatedAt: new Date().toISOString(),
+      error: ''
+    };
+    saveStartInspectionShellState(id, skipped);
+    return skipped;
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var source = deepMergeReviewData({}, data || {});
+    source.inspectionId = id;
+    source.id = source.id || id;
+    source.status = 'In Progress';
+    source.startedAt = source.startedAt || new Date().toISOString();
+
+    var folderContext = getOrCreateReviewHandoffFolder(source);
+    var folder = folderContext.folder;
+    source.assessmentNumber = source.assessmentNumber || folderContext.assessmentNumber || '';
+    source.folderId = folder.getId();
+    source.driveFolderId = folder.getId();
+    source.folderUrl = folder.getUrl();
+    source.driveFolderUrl = folder.getUrl();
+
+    var photosFolder = getOrCreateAssessmentPhotosFolder(folder, source);
+    var cocsFolder = getOrCreateAssessmentCocsFolder(folder, source);
+    var backupFolder = getOrCreateAssessmentBackupFolder(folder, source);
+    var trackerResult = upsertReportTrackerHandoffRow(source, { folder: folder });
+
+    var result = {
+      status: 'ready',
+      shellStatus: 'ready',
+      isTestTraining: false,
+      inspectionId: id,
+      assessmentNumber: source.assessmentNumber || '',
+      folderId: folder.getId(),
+      folderUrl: folder.getUrl(),
+      folderName: folder.getName(),
+      photosFolderId: photosFolder.getId(),
+      photosFolderUrl: photosFolder.getUrl(),
+      technicianPhotosFolderId: photosFolder.getId(),
+      technicianPhotosFolderUrl: photosFolder.getUrl(),
+      cocsFolderId: cocsFolder.getId(),
+      cocsFolderUrl: cocsFolder.getUrl(),
+      backupFolderId: backupFolder.getId(),
+      backupFolderUrl: backupFolder.getUrl(),
+      trackerRow: trackerResult.row,
+      trackerUrl: trackerResult.url,
+      trackerStatus: trackerResult.status || 'In Progress',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      error: ''
+    };
+    source.startInspectionShell = result;
+    writeStartInspectionAssessmentRecord(source, result);
+    saveStartInspectionShellState(id, result);
+    return result;
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
 // ── REVIEW PORTAL DATA HANDOFF ───────────────────────────
 
 const RAW_REVIEW_DATA_TAB_NAME = 'Raw Review Data';
@@ -912,23 +1314,97 @@ const REVIEW_PORTAL_DATA_TAB_NAME = 'Review Portal Data';
 const SHEETS_SAFE_CELL_CHAR_LIMIT = 45000;
 
 function ensureReviewPortalDataHandoff(id, submitData, reviewedData) {
+  requireAppsScriptDriveTrackerWriter('ensureReviewPortalDataHandoff');
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    return ensureReviewPortalDataHandoffLocked(id, submitData, reviewedData);
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function ensureReviewPortalDataHandoffLocked(id, submitData, reviewedData) {
   var fieldData = reviewedData || {};
-  var source = buildReviewHandoffSource(id, submitData || {}, fieldData);
-  var folder = getOrCreateReviewHandoffFolder(source);
-  var ss = getOrCreateReviewPortalDataSpreadsheet(folder, source);
-  var rawJsonUrl = createRawReviewDataJsonBackup(folder, id, fieldData);
+  var runId = 'handoff-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss');
+  saveReviewHandoffState(id, {
+    status: 'running',
+    runId: runId,
+    startedAt: new Date().toISOString(),
+    inspectionId: id
+  });
 
-  writeReviewPortalDataSpreadsheet(ss, source, fieldData, rawJsonUrl);
+  try {
+    var source = buildReviewHandoffSource(id, submitData || {}, fieldData);
+    var folderContext = getOrCreateReviewHandoffFolder(source);
+    var folder = folderContext.folder;
+    source.assessmentNumber = source.assessmentNumber || folderContext.assessmentNumber || '';
+    source.isTestTraining = folderContext.isTestTraining === true || isTestTrainingInspection(source);
+    var ss = getOrCreateReviewPortalDataSpreadsheet(folder, source);
+    var cocsFolder = getOrCreateAssessmentCocsFolder(folder, source);
+    var backupFolder = getOrCreateAssessmentBackupFolder(folder, source);
+    var techPhotosFolder = getOrCreateTechnicianPhotosFolder(folder, source);
+    var rawJsonUrl = createRawReviewDataJsonBackup(backupFolder, id, fieldData);
+    var handoffPhotos = collectHandoffPhotos(source, fieldData);
+    var technicianPhotoSync = syncTechnicianPhotosFolder(techPhotosFolder, handoffPhotos);
+    if (technicianPhotoSync.failed > 0) {
+      throw new Error('Photos folder copy failed for ' + technicianPhotoSync.failed + ' Drive-backed photo(s).');
+    }
 
-  return {
-    folderId: folder.getId(),
-    folderUrl: folder.getUrl(),
-    spreadsheetId: ss.getId(),
-    spreadsheetUrl: ss.getUrl(),
-    rawJsonUrl: rawJsonUrl,
-    rawKeyCount: Object.keys(fieldData).length,
-    dynamicFieldCount: getDynamicReviewFieldRows(fieldData).length
-  };
+    writeReviewPortalDataSpreadsheet(ss, source, fieldData, rawJsonUrl);
+    writePhotoLogSpreadsheetTab(ss, handoffPhotos, techPhotosFolder, technicianPhotoSync);
+    var trackerResult = source.isTestTraining
+      ? { row: '', url: '', status: 'skipped_test_training' }
+      : upsertReportTrackerHandoffRow(source, {
+          folder: folder,
+          spreadsheet: ss,
+          rawJsonUrl: rawJsonUrl,
+          technicianPhotosFolder: techPhotosFolder
+        });
+
+    var result = {
+      status: 'ready',
+      isTestTraining: source.isTestTraining === true,
+      runId: runId,
+      updatedAt: new Date().toISOString(),
+      assessmentNumber: source.assessmentNumber || '',
+      folderId: folder.getId(),
+      folderUrl: folder.getUrl(),
+      spreadsheetId: ss.getId(),
+      spreadsheetUrl: ss.getUrl(),
+      technicianPhotosFolderId: techPhotosFolder.getId(),
+      technicianPhotosFolderUrl: techPhotosFolder.getUrl(),
+      photosFolderId: techPhotosFolder.getId(),
+      photosFolderUrl: techPhotosFolder.getUrl(),
+      cocsFolderId: cocsFolder.getId(),
+      cocsFolderUrl: cocsFolder.getUrl(),
+      backupFolderId: backupFolder.getId(),
+      backupFolderUrl: backupFolder.getUrl(),
+      rawJsonUrl: rawJsonUrl,
+      trackerRow: trackerResult.row,
+      trackerUrl: trackerResult.url,
+      trackerStatus: trackerResult.status || 'ready',
+      error: '',
+      rawKeyCount: Object.keys(fieldData).length,
+      dynamicFieldCount: getDynamicReviewFieldRows(fieldData).length,
+      photoLogCount: handoffPhotos.length,
+      technicianPhotoCopyCount: technicianPhotoSync.copied,
+      technicianPhotoExistingCount: technicianPhotoSync.existing,
+      technicianPhotoSkippedCount: technicianPhotoSync.skipped,
+      technicianPhotoFailedCount: technicianPhotoSync.failed
+    };
+    saveReviewHandoffState(id, result);
+    return result;
+  } catch(e) {
+    saveReviewHandoffState(id, {
+      status: 'failed',
+      runId: runId,
+      failedAt: new Date().toISOString(),
+      inspectionId: id,
+      error: e && e.message ? e.message : String(e)
+    });
+    throw e;
+  }
 }
 
 function buildReviewHandoffSource(id, submitData, reviewedData) {
@@ -960,13 +1436,43 @@ function buildReviewHandoffSource(id, submitData, reviewedData) {
 
 function getOrCreateReviewHandoffFolder(source) {
   var folderId = source.folderId || source.driveFolderId || source.drive_folder_id || '';
-  if (folderId) return DriveApp.getFolderById(folderId);
+  if (folderId) {
+    try {
+      var existing = DriveApp.getFolderById(folderId);
+      return {
+        folder: existing,
+        assessmentNumber: isTestTrainingInspection(source) ? '' : (source.assessmentNumber || parseAssessmentNumberFromFolderName(existing.getName() || '')),
+        isTestTraining: isTestTrainingInspection(source)
+      };
+    } catch(e) {
+      console.warn('Saved assessment folder ID could not be opened; falling back to folder search/create:', folderId, e.message);
+      source.folderId = '';
+      source.driveFolderId = '';
+      source.drive_folder_id = '';
+    }
+  }
 
-  var assessmentNum = getNextAssessmentNumber();
+  var isTestTraining = isTestTrainingInspection(source);
+  var assessmentNum = isTestTraining ? '' : (source.assessmentNumber || getNextAssessmentNumber());
   var folderName = generateFolderName(assessmentNum, source);
-  return USE_SHARED_DRIVE
-    ? getOrCreateInspectionFolderInSharedDrive(DRIVE_FOLDER_ID, folderName, source.inspectionId)
-    : DriveApp.getFolderById(DRIVE_FOLDER_ID).createFolder(folderName);
+  var parentFolder = getAssessmentParentFolder(source);
+  var folder = USE_SHARED_DRIVE
+    ? getOrCreateInspectionFolderInSharedDrive(parentFolder.getId(), folderName, source.inspectionId, source)
+    : parentFolder.createFolder(folderName);
+  return {
+    folder: folder,
+    assessmentNumber: isTestTraining ? '' : (parseAssessmentNumberFromFolderName(folder.getName() || '') || assessmentNum),
+    isTestTraining: isTestTraining
+  };
+}
+
+function parseAssessmentNumberFromFolderName(name) {
+  var match = String(name || '').match(/^(\d{3})\b/);
+  return match ? match[1] : '';
+}
+
+function getOrCreateTechnicianPhotosFolder(parentFolder, source) {
+  return getOrCreateAssessmentPhotosFolder(parentFolder, source);
 }
 
 function getOrCreateReviewPortalDataSpreadsheet(folder, source) {
@@ -992,11 +1498,22 @@ function getOrCreateReviewPortalDataSpreadsheet(folder, source) {
 }
 
 function createRawReviewDataJsonBackup(folder, id, fieldData) {
-  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss');
-  var name = 'Raw Review Data — ' + id + ' — ' + stamp + '.json';
-  var payload = JSON.stringify({ inspectionId: id, fieldData: fieldData || {} }, null, 2);
-  var blob = Utilities.newBlob(payload, 'application/json', name);
-  var file = folder.createFile(blob);
+  var name = 'Raw Review Data — ' + id + ' — latest.json';
+  var payload = JSON.stringify({
+    inspectionId: id,
+    generatedAt: new Date().toISOString(),
+    rawKeyCount: Object.keys(fieldData || {}).length,
+    fieldData: fieldData || {}
+  }, null, 2);
+  var files = folder.getFilesByName(name);
+  var file;
+  if (files.hasNext()) {
+    file = files.next();
+    file.setContent(payload);
+  } else {
+    var blob = Utilities.newBlob(payload, 'application/json', name);
+    file = folder.createFile(blob);
+  }
   return file.getUrl();
 }
 
@@ -1006,6 +1523,306 @@ function writeReviewPortalDataSpreadsheet(ss, source, fieldData, rawJsonUrl) {
 
   var raw = getOrResetSheet(ss, RAW_REVIEW_DATA_TAB_NAME, 1);
   writeRawReviewData(raw, fieldData, rawJsonUrl);
+}
+
+function collectHandoffPhotos(source, fieldData) {
+  var out = [];
+  var seen = {};
+
+  function addPhoto(photo) {
+    if (!photo || typeof photo !== 'object') return;
+    var id = photo.photoId || photo.photo_id || photo.id || '';
+    var url = photo.driveUrl || photo.drive_url || photo.url || photo.highResUrl || photo.thumbnailUrl || '';
+    var storagePath = photo.storagePath || photo.storage_path || '';
+    var key = id || url || storagePath;
+    if (!key || seen[key]) return;
+    seen[key] = true;
+    out.push({
+      photoId: id,
+      room: photo.roomName || photo.room_name || photo.room || '',
+      step: photo.stepName || photo.step_name || photo.step || photo.slot || '',
+      caption: photo.caption || photo.aiCaption || '',
+      driveUrl: url,
+      storagePath: storagePath,
+      timestamp: photo.timestamp || photo.created_at || photo.createdAt || '',
+      included: photo.included === true ? 'Yes' : (photo.included === false ? 'No' : '')
+    });
+  }
+
+  function addPhotoArray(value) {
+    if (!Array.isArray(value)) return;
+    value.forEach(addPhoto);
+  }
+
+  addPhotoArray(source.photos);
+  addPhotoArray(source.workerPhotos);
+  addPhotoArray(fieldData && fieldData.photos);
+  Object.keys(fieldData || {}).forEach(function(key) {
+    var value = fieldData[key];
+    if (/^photo_/.test(key) && value && typeof value === 'object') {
+      addPhoto({
+        photoId: key.replace(/^photo_/, ''),
+        caption: value.caption || '',
+        included: value.included
+      });
+    }
+  });
+  return out;
+}
+
+function getDriveFileIdFromUrl(url) {
+  var text = String(url || '');
+  var match = text.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (match) return match[1];
+  match = text.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : '';
+}
+
+function safeDriveFileName(value, fallback) {
+  var clean = String(value || fallback || 'Photo')
+    .replace(/[\\/:*?"<>|#%{}~&]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (clean.length > 140) clean = clean.substring(0, 140).trim();
+  return clean || fallback || 'Photo';
+}
+
+function technicianPhotoCopyName(photo, sourceFileId, index) {
+  var parts = [
+    photo.photoId || sourceFileId || ('photo-' + (index + 1)),
+    photo.room || '',
+    photo.step || ''
+  ].filter(Boolean);
+  return safeDriveFileName(parts.join(' - '), 'Technician Photo ' + (index + 1));
+}
+
+function buildTechnicianPhotoExistingMap(folder) {
+  var existing = {};
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var file = files.next();
+    var name = '';
+    var desc = '';
+    try { name = file.getName() || ''; } catch(e) {}
+    try { desc = file.getDescription() || ''; } catch(e) {}
+    var photoMatch = (desc + '\n' + name).match(/photoId:\s*([^\n]+)/i);
+    var sourceMatch = (desc + '\n' + name).match(/sourceFileId:\s*([a-zA-Z0-9_-]+)/i);
+    if (photoMatch) existing['photo:' + String(photoMatch[1]).trim()] = true;
+    if (sourceMatch) existing['file:' + String(sourceMatch[1]).trim()] = true;
+  }
+  return existing;
+}
+
+function syncTechnicianPhotosFolder(folder, photos) {
+  var result = { copied: 0, existing: 0, skipped: 0, failed: 0 };
+  if (!folder || !photos || !photos.length) return result;
+  var existing = buildTechnicianPhotoExistingMap(folder);
+  photos.forEach(function(photo, index) {
+    var sourceFileId = getDriveFileIdFromUrl(photo.driveUrl || '');
+    if (!sourceFileId) {
+      result.skipped++;
+      return;
+    }
+    var photoKey = photo.photoId ? 'photo:' + photo.photoId : '';
+    var fileKey = 'file:' + sourceFileId;
+    if ((photoKey && existing[photoKey]) || existing[fileKey]) {
+      result.existing++;
+      return;
+    }
+    try {
+      var sourceFile = DriveApp.getFileById(sourceFileId);
+      var copy = sourceFile.makeCopy(technicianPhotoCopyName(photo, sourceFileId, index), folder);
+      copy.setDescription([
+        photo.photoId ? 'photoId: ' + photo.photoId : '',
+        'sourceFileId: ' + sourceFileId,
+        photo.room ? 'room: ' + photo.room : '',
+        photo.step ? 'step: ' + photo.step : '',
+        photo.caption ? 'caption: ' + photo.caption : ''
+      ].filter(Boolean).join('\n'));
+      try { copy.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
+      if (photoKey) existing[photoKey] = true;
+      existing[fileKey] = true;
+      result.copied++;
+    } catch(e) {
+      console.warn('Technician photo copy failed:', e.message);
+      result.failed++;
+    }
+  });
+  return result;
+}
+
+function writePhotoLogSpreadsheetTab(ss, photos, techPhotosFolder, technicianPhotoSync) {
+  var sheet = getOrResetSheet(ss, 'Photo Log', 2);
+  var folderUrl = techPhotosFolder ? techPhotosFolder.getUrl() : '';
+  var sync = technicianPhotoSync || { copied: 0, existing: 0, skipped: 0, failed: 0 };
+  var rows = [[
+    'Photo ID',
+    'Room',
+    'Step',
+    'Caption',
+    'Drive URL',
+    'Supabase Storage Path',
+    'Included',
+    'Timestamp',
+    'Photos Folder',
+    'Technician Folder Sync'
+  ]];
+  (photos || []).forEach(function(photo) {
+    rows.push([
+      photo.photoId || '',
+      photo.room || '',
+      photo.step || '',
+      photo.caption || '',
+      photo.driveUrl || '',
+      photo.storagePath || '',
+      photo.included || '',
+      photo.timestamp || '',
+      folderUrl,
+      photo.driveUrl ? 'Drive copy/link checked' : 'No Drive URL; use Supabase storage path'
+    ]);
+  });
+  if (rows.length === 1) rows.push(['No photos found in review/source payload.', '', '', '', '', '', '', '', folderUrl, '']);
+  rows.push(['Technician folder sync summary', '', '', '', '', '', '', '', folderUrl,
+    'copied=' + sync.copied + ', existing=' + sync.existing + ', skipped=' + sync.skipped + ', failed=' + sync.failed
+  ]);
+  sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
+  sheet.getRange(1, 1, 1, rows[0].length).setFontWeight('bold').setBackground('#e8f1dc');
+  sheet.setFrozenRows(1);
+  sheet.setColumnWidth(1, 160);
+  sheet.setColumnWidth(2, 180);
+  sheet.setColumnWidth(3, 180);
+  sheet.setColumnWidth(4, 320);
+  sheet.setColumnWidth(5, 420);
+  sheet.setColumnWidth(6, 320);
+  sheet.setColumnWidth(9, 360);
+  sheet.setColumnWidth(10, 240);
+}
+
+function normalizeTrackerHeader(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[#&/()._-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getReportTrackerHeaderMap(sheet) {
+  var lastColumn = Math.max(sheet.getLastColumn(), 41);
+  var map = { exact: {}, normalized: {} };
+  [6, 7].forEach(function(rowNum) {
+    var row = sheet.getRange(rowNum, 1, 1, lastColumn).getValues()[0];
+    row.forEach(function(value, index) {
+      var exact = String(value || '').trim();
+      if (!exact) return;
+      var col = index + 1;
+      if (!map.exact[exact]) map.exact[exact] = col;
+      var normalized = normalizeTrackerHeader(exact);
+      if (normalized && !map.normalized[normalized]) map.normalized[normalized] = col;
+    });
+  });
+  return map;
+}
+
+function findTrackerColumn(headerMap, labels, fallbackCol) {
+  for (var i = 0; i < labels.length; i++) {
+    var label = String(labels[i] || '').trim();
+    if (headerMap.exact[label]) return headerMap.exact[label];
+    var normalized = normalizeTrackerHeader(label);
+    if (headerMap.normalized[normalized]) return headerMap.normalized[normalized];
+  }
+  return fallbackCol || 0;
+}
+
+function getTrackerColumns(sheet) {
+  var headers = getReportTrackerHeaderMap(sheet);
+  return {
+    trackerStatus: 1,
+    assessment: findTrackerColumn(headers, ['Assessment #', 'Assessment No', 'Assessment Number', 'Assessment'], 2),
+    customerId: findTrackerColumn(headers, ['C-ID', 'Customer ID', 'Customer Id', 'CID'], 3),
+    homeId: findTrackerColumn(headers, ['H-ID', 'Home ID', 'HID'], 4),
+    reportId: findTrackerColumn(headers, ['RPT-ID', 'Report ID', 'RPT ID', 'Report'], 5),
+    address: findTrackerColumn(headers, ['Address', 'Property Address', 'Street Address'], 6),
+    inspector: findTrackerColumn(headers, ['Inspector', 'Technician', 'Inspector Name'], 7),
+    date: findTrackerColumn(headers, ['Date', 'Inspection Date', 'Assessment Date'], 8),
+    status: findTrackerColumn(headers, ['Status', 'Report Status', 'Assessment Status'], 9),
+    inhId: findTrackerColumn(headers, ['INH-ID', 'INH ID', 'Inspection ID', 'InspectionId'], 10),
+    client: findTrackerColumn(headers, ['Client', 'Client Name', 'Customer', 'Customer Name', 'Name'], 11),
+    folder: findTrackerColumn(headers, ['Assessment Folder', 'Folder Link', 'Drive Folder', 'Folder URL', 'Folder'], 41)
+  };
+}
+
+function findNextAvailableTrackerRow(sheet) {
+  var lastRow = Math.max(sheet.getLastRow(), TRACKER_DATA_START);
+  var values = sheet.getRange(TRACKER_DATA_START, 1, lastRow - TRACKER_DATA_START + 1, 11).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var hasAnyValue = values[i].some(function(cell) {
+      return String(cell || '').trim() !== '';
+    });
+    if (!hasAnyValue) return TRACKER_DATA_START + i;
+  }
+  return lastRow + 1;
+}
+
+function findTrackerRowByInspectionId(sheet, col, inspectionId) {
+  if (!col || !inspectionId) return 0;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < TRACKER_DATA_START) return 0;
+  var values = sheet.getRange(TRACKER_DATA_START, col, lastRow - TRACKER_DATA_START + 1, 1).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === String(inspectionId).trim()) {
+      return TRACKER_DATA_START + i;
+    }
+  }
+  return 0;
+}
+
+function trackerFormula(url, label) {
+  if (!url) return '';
+  return '=HYPERLINK("' + String(url).replace(/"/g, '""') + '","' + String(label || 'Open').replace(/"/g, '""') + '")';
+}
+
+function writeTrackerCell(sheet, row, col, value, overwrite) {
+  if (!col || value === undefined || value === null || value === '') return;
+  var range = sheet.getRange(row, col);
+  if (!overwrite && String(range.getValue() || '').trim()) return;
+  range.setValue(value);
+}
+
+function upsertReportTrackerHandoffRow(source, artifacts) {
+  requireAppsScriptDriveTrackerWriter('upsertReportTrackerHandoffRow');
+  var ss = SpreadsheetApp.openById(TRACKER_SHEET_ID);
+  var sheet = ss.getSheetByName(TRACKER_TAB_REPORT);
+  if (!sheet) throw new Error('Report tracker tab not found: ' + TRACKER_TAB_REPORT);
+  var columns = getTrackerColumns(sheet);
+  var inspectionId = source.inspectionId || source.id || '';
+  var row = findTrackerRowByInspectionId(sheet, columns.inhId, inspectionId);
+  if (!row) {
+    row = findNextAvailableTrackerRow(sheet);
+  }
+
+  var folderUrl = artifacts.folder ? artifacts.folder.getUrl() : '';
+  var assessmentNumber = source.assessmentNumber || parseAssessmentNumberFromFolderName(artifacts.folder ? artifacts.folder.getName() : '');
+  var inspectionDate = source.inspectionDate || (source.submittedAt ? String(source.submittedAt).substring(0, 10) : '');
+  var trackerStatus = 'In Progress';
+
+  writeTrackerCell(sheet, row, columns.trackerStatus, trackerStatus, true);
+  writeTrackerCell(sheet, row, columns.assessment, assessmentNumber, false);
+  writeTrackerCell(sheet, row, columns.customerId, source.customerId || source.cId || source.cid || '', false);
+  writeTrackerCell(sheet, row, columns.homeId, source.homeId || source.hId || source.hid || '', false);
+  writeTrackerCell(sheet, row, columns.reportId, source.reportId || source.rptId || source.rpt_id || '', false);
+  writeTrackerCell(sheet, row, columns.address, source.propertyAddress || source.address || '', false);
+  writeTrackerCell(sheet, row, columns.inspector, source.inspectorName || source.inspector || '', false);
+  writeTrackerCell(sheet, row, columns.date, inspectionDate, false);
+  writeTrackerCell(sheet, row, columns.status, trackerStatus, true);
+  writeTrackerCell(sheet, row, columns.inhId, inspectionId, false);
+  writeTrackerCell(sheet, row, columns.client, source.clientName || '', false);
+  writeTrackerCell(sheet, row, columns.folder, trackerFormula(folderUrl, 'Assessment Folder'), true);
+
+  return {
+    row: row,
+    url: ss.getUrl() + '#gid=' + sheet.getSheetId() + '&range=A' + row,
+    status: trackerStatus
+  };
 }
 
 function getOrResetSheet(ss, title, zeroBasedIndex) {
@@ -1093,8 +1910,8 @@ function writeFormattedReviewPortalData(sheet, source, fieldData) {
     ['Field', 'Value', 'Notes'],
     ['Status', source.status || '', 'From review portal submit'],
     ['Submitted At', source.submittedAt || (fieldData.submission && fieldData.submission.submittedAt) || '', ''],
-    ['Completion Score', source.completionScore || (fieldData.submission && fieldData.submission.completionScore) || '', ''],
-    ['Completion Grade', source.completionGrade || (fieldData.submission && fieldData.submission.completionGrade) || '', ''],
+    ['Review Readiness', formatReviewReadiness_(source.reviewReadiness || (fieldData.submission && fieldData.submission.reviewReadiness) || null), 'Required Finish Review items at submit'],
+    ['Blockers At Submit', source.blockerCount || (fieldData.submission && fieldData.submission.blockerCount) || 0, ''],
     ['Review Updated At', new Date().toISOString(), ''],
     ['Report Builder Notes', fieldData.reportBuilderNotes || source.reportBuilderNotes || '', 'Tanner-facing note from review portal'],
     ['', '', '']
@@ -1177,6 +1994,7 @@ function yesNoText(value) {
 // ── MAIN PROCESSING ──────────────────────────────────────
 
 function processInspection(data) {
+  requireAppsScriptDriveTrackerWriter('processInspection');
   var result;
   // Option A: Append to master sheet as a row
   if (MASTER_SHEET_ID) {
@@ -1251,10 +2069,7 @@ function getNextAssessmentNumber() {
 //
 function generateFolderName(assessmentNum, data) {
   var lastName   = getClientLastName(data.clientName);
-  var fullAddr   = (data.propertyAddress || '').trim();
-  var streetAddr = fullAddr.indexOf(',') > -1
-    ? fullAddr.substring(0, fullAddr.indexOf(',')).trim()
-    : fullAddr;
+  var streetAddr = getStreetAddressForFolder(data);
   if (!streetAddr) streetAddr = data.inspectionId || 'Unknown';
 
   var dateStr = '';
@@ -1266,6 +2081,9 @@ function generateFolderName(assessmentNum, data) {
     dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   }
 
+  if (isTestTrainingInspection(data)) {
+    return 'TEST – ' + dateStr + ' – ' + lastName + ' – ' + streetAddr;
+  }
   return assessmentNum + ' – ' + dateStr + ' – ' + lastName + ' – ' + streetAddr;
 }
 
@@ -1278,17 +2096,19 @@ function getClientLastName(fullName) {
 }
 
 function createInspectionSheet(data) {
+  requireAppsScriptDriveTrackerWriter('createInspectionSheet');
   var inspId = data.inspectionId || '';
 
   // Determine assessment number and canonical folder name (new format: ### – YYYY-MM-DD – LastName – Street)
-  var assessmentNum = getNextAssessmentNumber();
+  var isTestTraining = isTestTrainingInspection(data);
+  var assessmentNum = isTestTraining ? '' : (data.assessmentNumber || getNextAssessmentNumber());
   var folderName    = generateFolderName(assessmentNum, data);
   // Deduplicate: search for existing folder/sheet with this inspectionId
   var inspFolder = null;
   var ss = null;
 
   if (USE_SHARED_DRIVE) {
-    inspFolder = getOrCreateInspectionFolderInSharedDrive(DRIVE_FOLDER_ID, folderName, inspId);
+    inspFolder = getOrCreateInspectionFolderInSharedDrive(getAssessmentParentFolder(data).getId(), folderName, inspId, data);
     if (inspId) {
       var sheetIter = inspFolder.getFiles();
       while (sheetIter.hasNext()) {
@@ -1300,7 +2120,7 @@ function createInspectionSheet(data) {
       }
     }
   } else {
-    var parentFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    var parentFolder = getAssessmentParentFolder(data);
     if (inspId) {
       var folders = parentFolder.getFolders();
       while (folders.hasNext()) {
@@ -1355,7 +2175,10 @@ function createInspectionSheet(data) {
   const csv = ss.insertSheet('CSV Output');
   writeCSVOutput(csv, data);
   
-  const photoResults = uploadPhotosToFolder(inspFolder, data);
+  getOrCreateAssessmentCocsFolder(inspFolder, data);
+  getOrCreateAssessmentBackupFolder(inspFolder, data);
+  const photosFolder = getOrCreateAssessmentPhotosFolder(inspFolder, data);
+  const photoResults = uploadPhotosToFolder(photosFolder, data);
 
   const followUpRooms = (data.rooms || []).filter(r => r.followUpNeeded === 'Yes');
   if (followUpRooms.length > 0) {
@@ -1373,6 +2196,9 @@ function createInspectionSheet(data) {
     spreadsheetId: ss.getId(),
     folderUrl: inspFolder.getUrl(),
     folderId: inspFolder.getId(),
+    photosFolderUrl: photosFolder.getUrl(),
+    photosFolderId: photosFolder.getId(),
+    isTestTraining: isTestTraining,
     inspectionId: data.inspectionId,
     photosUploaded: photoResults.length
   };
@@ -1381,6 +2207,7 @@ function createInspectionSheet(data) {
 // ── FOLLOW-UP PHOTO UPLOAD ───────────────────────────────
 
 function processPhotoUpload(data) {
+  requireAppsScriptDriveTrackerWriter('processPhotoUpload');
   var inspectionId = data.inspectionId;
   if (!inspectionId) throw new Error('No inspectionId in photo upload payload');
 
@@ -1388,15 +2215,7 @@ function processPhotoUpload(data) {
   var targetSheet = null;
 
   if (USE_SHARED_DRIVE) {
-    var sharedParent = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-    var sharedFolders = sharedParent.getFolders();
-    while (sharedFolders.hasNext()) {
-      var sf = sharedFolders.next();
-      if (sf.getName().indexOf(inspectionId) > -1) {
-        targetFolder = sf;
-        break;
-      }
-    }
+    targetFolder = findInspectionFolderForPhotoUpload(data);
   } else {
     var parentFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
     var folders = parentFolder.getFolders();
@@ -1410,6 +2229,7 @@ function processPhotoUpload(data) {
   }
 
   if (!targetFolder) throw new Error('Inspection folder not found for ' + inspectionId);
+  var photosFolder = getOrCreateAssessmentPhotosFolder(targetFolder, data);
 
   // Find spreadsheet in folder
   var files = targetFolder.getFiles();
@@ -1439,7 +2259,7 @@ function processPhotoUpload(data) {
         ? roomLabel + ' - ' + captionLabel + '.' + ext
         : roomLabel + ' - Photo ' + String(idx + 1).padStart(2, '0') + '.' + ext;
       var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), 'image/' + ext, filename);
-      var driveFile = targetFolder.createFile(blob);
+      var driveFile = photosFolder.createFile(blob);
       if (photo.caption || photo.timestamp) {
         var desc = [photo.caption, photo.timestamp ? 'Taken: ' + photo.timestamp : ''].filter(Boolean).join(' | ');
         driveFile.setDescription(desc);

@@ -1,0 +1,517 @@
+{
+  "status": "ok",
+  "inspection": {
+    "inspectionId": "LOCAL-PRACTICE-V65",
+    "id": "LOCAL-PRACTICE-V65",
+    "inspectionType": "Test / Training",
+    "isTest": true,
+    "is_test": true,
+    "clientName": "Practice Client",
+    "propertyAddress": "100 Smoke Test Way, Basalt CO",
+    "inspectorName": "Practice Inspector",
+    "inspectionDate": "2026-07-30",
+    "residenceType": "Single-Family Home",
+    "yearBuilt": "1998",
+    "squareFootage": "2400",
+    "numberOfBedrooms": "3",
+    "numberOfBathrooms": "2",
+    "numberOfLevels": "2",
+    "basement": "Yes - Finished",
+    "carpetedRooms": "2",
+    "waterSource": "Municipal",
+    "waterFiltration": "Carbon filter",
+    "waterSoftener": "No",
+    "stoveType": "Gas",
+    "fireplace": "Gas",
+    "pets": "No",
+    "smokingVaping": "No",
+    "clientConcerns": "Practice concern: kitchen odor after dishwasher cycle and HVAC filter age.",
+    "knownProblemAreas": "Kitchen sink cabinet and utility room filter rack.",
+    "weatherConditions": "Clear, 72 F",
+    "occupancyDuringInspection": "Occupied - Active",
+    "windowsOpen": "No",
+    "particulateMatter": "Indoor PM2.5 stable during practice run.",
+    "startedAt": "2026-07-30T14:00:00.000Z",
+    "endedAt": "2026-07-30T16:15:00.000Z",
+    "completedAt": "2026-07-30T16:15:00.000Z",
+    "status": "completed",
+    "appVersion": "v157-practice-fixture",
+    "photoCount": 8,
+    "testsConfirmed": {
+      "testBreeze": true,
+      "testQtrak": true,
+      "testRadon": true,
+      "testWaterPanel": true,
+      "testPFAS": true,
+      "testMicroplastics": true,
+      "testATP": true
+    },
+    "utilityRoom": {
+      "heatingType": "Natural Gas Furnace",
+      "acType": "Central AC",
+      "ventilationType": "Bathroom Exhaust Fan(s), ERV",
+      "filterSize": "16x25x4",
+      "filterRating": "MERV 11",
+      "filterCondition": "Loaded with visible dust",
+      "filterEstimatedAge": "6+ months",
+      "radonMitigationPresent": "No",
+      "waterFiltrationPresent": "Yes",
+      "waterFiltType": "Carbon filter"
+    },
+    "radonSetup": {
+      "roomName": "Lowest Level",
+      "radonLocation": "Basement family room, center of room",
+      "radonReading": "Monitor placed - result pending"
+    },
+    "rooms": [
+      {
+        "stepId": "radon",
+        "roomName": "Lowest Level",
+        "type": "room-test",
+        "level": "lowest",
+        "notes": "",
+        "flirDone": "No",
+        "flirConcerns": "No",
+        "breezeDone": "No",
+        "qtrakCaptured": "No",
+        "photos": []
+      },
+      {
+        "stepId": "kitchen",
+        "roomName": "Kitchen",
+        "type": "kitchen",
+        "level": "main",
+        "notes": "Inspector noted odor at dishwasher filter and staining at the sink base. ATP was run before and after cleaning.",
+        "flirDone": "Yes",
+        "flirConcerns": "No",
+        "breezeDone": "Yes",
+        "breezeLocation": "Countertop near sink",
+        "qtrakCaptured": "Yes",
+        "qtrakDone": "Yes",
+        "qtrakLocation": "Kitchen island, breathing zone height",
+        "photos": []
+      },
+      {
+        "stepId": "blue-room",
+        "roomName": "Blue Room",
+        "type": "bedroom",
+        "level": "upper",
+        "notes": "",
+        "flirDone": "No",
+        "flirConcerns": "No",
+        "breezeDone": "No",
+        "qtrakCaptured": "No",
+        "flirGuidance": "Practice-only internal guidance that should stay hidden from Captured Inspector Fields.",
+        "photos": []
+      },
+      {
+        "stepId": "utility",
+        "roomName": "Utility Room",
+        "type": "utility",
+        "level": "main",
+        "notes": "Inspector observed a loaded HVAC filter and documented the filter rack.",
+        "flirDone": "Yes",
+        "flirConcerns": "No",
+        "breezeDone": "No",
+        "qtrakCaptured": "No",
+        "photos": []
+      }
+    ],
+    "stepData": {
+      "radon": {
+        "roomName": "Lowest Level",
+        "type": "room-test",
+        "level": "lowest",
+        "notes": "",
+        "flirDone": "No",
+        "flirConcerns": "No",
+        "breezeDone": "No",
+        "qtrakCaptured": "No"
+      },
+      "kitchen": {
+        "roomName": "Kitchen",
+        "type": "kitchen",
+        "level": "main",
+        "notes": "Inspector noted odor at dishwasher filter and staining at the sink base. ATP was run before and after cleaning.",
+        "aiSummary": "Kitchen has dishwasher odor and sink-base staining documented with before, after, and ATP evidence.",
+        "flirDone": "Yes",
+        "flirConcerns": "No",
+        "breezeDone": "Yes",
+        "breezeLocation": "Countertop near sink",
+        "qtrakCaptured": "Yes",
+        "qtrakDone": "Yes",
+        "qtrakLocation": "Kitchen island, breathing zone height"
+      },
+      "blue-room": {
+        "roomName": "Blue Room",
+        "type": "bedroom",
+        "level": "upper",
+        "notes": "",
+        "aiSummary": "",
+        "flirDone": "No",
+        "flirConcerns": "No",
+        "breezeDone": "No",
+        "qtrakCaptured": "No",
+        "flirGuidance": "Practice-only internal guidance that should stay hidden from Captured Inspector Fields.",
+        "qtrakScanStainsGuidance": "Practice-only Q-Trak workflow guidance that should stay hidden."
+      },
+      "utility": {
+        "roomName": "Utility Room",
+        "type": "utility",
+        "level": "main",
+        "notes": "Inspector observed a loaded HVAC filter and documented the filter rack.",
+        "aiSummary": "Utility room filter should be replaced and filter rack should be reviewed.",
+        "flirDone": "Yes",
+        "flirConcerns": "No",
+        "breezeDone": "No",
+        "qtrakCaptured": "No"
+      },
+      "atp-kitchen": {
+        "roomName": "Kitchen",
+        "type": "atp-kitchen",
+        "atpSurface": "Dishwasher filter",
+        "atpPreRLU": "812",
+        "atpPreStatus": "Fail",
+        "atpCleaned": "Yes",
+        "atpPostRLU": "44",
+        "atpPostStatus": "Pass",
+        "_atpBeforePhotos": [
+          {
+            "photoId": "practice-atp-before",
+            "roomName": "Kitchen",
+            "stepName": "ATP Before",
+            "caption": "ATP before swab at dishwasher filter",
+            "timestamp": "2026-07-30T14:45:00.000Z",
+            "storagePath": "inspection-photos/LOCAL-PRACTICE-V65/practice-atp-before.jpg",
+            "highResUrl": "photos/1CR7mbigzItFL14sHsQMxqJ89RUc4_cVv.jpg",
+            "photoKey": "_atpBeforePhotos",
+            "photoRole": "ATP Before"
+          }
+        ],
+        "_atpAfterPhotos": [
+          {
+            "photoId": "practice-atp-after",
+            "roomName": "Kitchen",
+            "stepName": "ATP After",
+            "caption": "ATP after cleaning at dishwasher filter",
+            "timestamp": "2026-07-30T14:56:00.000Z",
+            "storagePath": "inspection-photos/LOCAL-PRACTICE-V65/practice-atp-after.jpg",
+            "highResUrl": "photos/10N_ER_qGFaINBcLja7J0TW4XLBGbnrup.jpg",
+            "photoKey": "_atpAfterPhotos",
+            "photoRole": "ATP After"
+          }
+        ]
+      },
+      "water-samples": {
+        "roomName": "Kitchen",
+        "type": "water-samples",
+        "waterSampleId": "WATER-PRACTICE-001",
+        "pfasSampleId": "PFAS-PRACTICE-001",
+        "microplasticsSampleId": "MICRO-PRACTICE-001",
+        "photos": [
+          {
+            "photoId": "practice-water-pfas",
+            "roomName": "Kitchen",
+            "stepName": "Water Samples",
+            "caption": "PFAS and water panel sample labels",
+            "timestamp": "2026-07-30T15:04:00.000Z",
+            "storagePath": "inspection-photos/LOCAL-PRACTICE-V65/practice-water-pfas.jpg",
+            "highResUrl": "photos/115Dp9ZADZg45rWfJDApnRXy6v37aJwwI.jpg",
+            "photoKey": "waterSamplePhotos",
+            "photoRole": "Sample"
+          }
+        ]
+      }
+    },
+    "photos": [
+      {
+        "photoId": "practice-kitchen-before",
+        "roomName": "Kitchen",
+        "stepName": "Before",
+        "caption": "Dishwasher filter before cleaning",
+        "timestamp": "2026-07-30T14:32:00.000Z",
+        "storagePath": "inspection-photos/LOCAL-PRACTICE-V65/practice-kitchen-before.jpg",
+        "highResUrl": "photos/1OR5nji3idOsNm2lKSKZsjId00fGaoeaj.jpg",
+        "driveUrl": "photos/1OR5nji3idOsNm2lKSKZsjId00fGaoeaj.jpg",
+        "photoKey": "_dishwasherFilterBeforePhotos",
+        "photoRole": "Before",
+        "included": true
+      },
+      {
+        "photoId": "practice-kitchen-after",
+        "roomName": "Kitchen",
+        "stepName": "After",
+        "caption": "Dishwasher filter after cleaning",
+        "timestamp": "2026-07-30T14:42:00.000Z",
+        "storagePath": "inspection-photos/LOCAL-PRACTICE-V65/practice-kitchen-after.jpg",
+        "highResUrl": "photos/1qGyuaOcMX9IU0ceezOzE2pxw8_4JBD__.jpg",
+        "driveUrl": "photos/1qGyuaOcMX9IU0ceezOzE2pxw8_4JBD__.jpg",
+        "photoKey": "_dishwasherFilterAfterPhotos",
+        "photoRole": "After",
+        "included": true
+      },
+      {
+        "photoId": "practice-atp-before",
+        "roomName": "Kitchen",
+        "stepName": "ATP Before",
+        "caption": "ATP before swab at dishwasher filter",
+        "timestamp": "2026-07-30T14:45:00.000Z",
+        "storagePath": "inspection-photos/LOCAL-PRACTICE-V65/practice-atp-before.jpg",
+        "highResUrl": "photos/1CR7mbigzItFL14sHsQMxqJ89RUc4_cVv.jpg",
+        "driveUrl": "photos/1CR7mbigzItFL14sHsQMxqJ89RUc4_cVv.jpg",
+        "photoKey": "_atpBeforePhotos",
+        "photoRole": "ATP Before",
+        "included": true
+      },
+      {
+        "photoId": "practice-atp-after",
+        "roomName": "Kitchen",
+        "stepName": "ATP After",
+        "caption": "ATP after cleaning at dishwasher filter",
+        "timestamp": "2026-07-30T14:56:00.000Z",
+        "storagePath": "inspection-photos/LOCAL-PRACTICE-V65/practice-atp-after.jpg",
+        "highResUrl": "photos/10N_ER_qGFaINBcLja7J0TW4XLBGbnrup.jpg",
+        "driveUrl": "photos/10N_ER_qGFaINBcLja7J0TW4XLBGbnrup.jpg",
+        "photoKey": "_atpAfterPhotos",
+        "photoRole": "ATP After",
+        "included": true
+      },
+      {
+        "photoId": "practice-water-pfas",
+        "roomName": "Kitchen",
+        "stepName": "Water Samples",
+        "caption": "PFAS and water panel sample labels",
+        "timestamp": "2026-07-30T15:04:00.000Z",
+        "storagePath": "inspection-photos/LOCAL-PRACTICE-V65/practice-water-pfas.jpg",
+        "highResUrl": "photos/115Dp9ZADZg45rWfJDApnRXy6v37aJwwI.jpg",
+        "driveUrl": "photos/115Dp9ZADZg45rWfJDApnRXy6v37aJwwI.jpg",
+        "photoKey": "waterSamplePhotos",
+        "photoRole": "Sample",
+        "included": true
+      },
+      {
+        "photoId": "practice-qtrak-kitchen",
+        "roomName": "Kitchen",
+        "stepName": "Q-Trak Reading",
+        "caption": "Q-Trak staged at kitchen island",
+        "timestamp": "2026-07-30T15:12:00.000Z",
+        "storagePath": "inspection-photos/LOCAL-PRACTICE-V65/practice-qtrak-kitchen.jpg",
+        "highResUrl": "photos/1TMB2OyLtGeVufykEylTilT_PY5y3M4Ec.jpg",
+        "driveUrl": "photos/1TMB2OyLtGeVufykEylTilT_PY5y3M4Ec.jpg",
+        "photoKey": "qtrakPhotos",
+        "photoRole": "Q-Trak",
+        "included": true
+      },
+      {
+        "photoId": "practice-breeze-kitchen",
+        "roomName": "Kitchen",
+        "stepName": "Breeze Setup",
+        "caption": "Breeze unit on kitchen counter",
+        "timestamp": "2026-07-30T15:20:00.000Z",
+        "storagePath": "inspection-photos/LOCAL-PRACTICE-V65/practice-breeze-kitchen.jpg",
+        "highResUrl": "photos/1I9DXJRnOD2lLAMGsaYkc4C_pSEOpYcPj.jpg",
+        "driveUrl": "photos/1I9DXJRnOD2lLAMGsaYkc4C_pSEOpYcPj.jpg",
+        "photoKey": "breezePhotos",
+        "photoRole": "Breeze",
+        "included": true
+      },
+      {
+        "photoId": "practice-utility-hvac",
+        "roomName": "Utility Room",
+        "stepName": "HVAC Filter",
+        "caption": "Loaded HVAC filter in utility room",
+        "timestamp": "2026-07-30T15:35:00.000Z",
+        "storagePath": "inspection-photos/LOCAL-PRACTICE-V65/practice-utility-hvac.jpg",
+        "highResUrl": "photos/1z5hmx4s_c9zfeR7IIjP51qMpMPDbzana.jpg",
+        "driveUrl": "photos/1z5hmx4s_c9zfeR7IIjP51qMpMPDbzana.jpg",
+        "photoKey": "hvacFilterPhotos",
+        "photoRole": "HVAC",
+        "included": true
+      }
+    ],
+    "reviewedData": {
+      "summary": {
+        "reportBuilderNotes": "Practice report builder note: verify kitchen dishwasher odor, ATP before/after result, water sample IDs, and utility filter recommendation.",
+        "aiFollowUpPlan": "Kitchen: recheck dishwasher odor and sink-base staining after cleaning. Utility Room: replace HVAC filter and confirm filter rack fit."
+      },
+      "radon": {
+        "noIssuesFound": true,
+        "voiceReviewed": false,
+        "inspectorNotes": "",
+        "aiSummary": ""
+      },
+      "kitchen": {
+        "voiceReviewed": true,
+        "noIssuesFound": false,
+        "inspectorNotes": "Inspector noted odor at dishwasher filter and staining at the sink base. ATP was run before and after cleaning.",
+        "aiSummary": "Kitchen dishwasher filter odor and sink-base staining were documented with before, after, and ATP evidence.",
+        "qtrakLocation": "Kitchen island, breathing zone height",
+        "breezeLocation": "Countertop near sink"
+      },
+      "blue-room": {
+        "noIssuesFound": true,
+        "voiceReviewed": false,
+        "inspectorNotes": "",
+        "aiSummary": ""
+      },
+      "utility": {
+        "voiceReviewed": true,
+        "noIssuesFound": false,
+        "inspectorNotes": "Inspector observed a loaded HVAC filter and documented the filter rack.",
+        "aiSummary": "Utility room filter should be replaced and filter rack should be reviewed."
+      },
+      "tests": {
+        "testATP_confirmed": true,
+        "testATP_surface": "Dishwasher filter",
+        "testATP_preRLU": "812",
+        "testATP_preStatus": "Fail",
+        "testATP_cleaned": "Yes",
+        "testATP_postRLU": "44",
+        "testATP_postStatus": "Pass",
+        "testATP_notes": "Practice ATP before/after data should stay with Kitchen evidence.",
+        "testWaterPanel_confirmed": true,
+        "waterSampleId": "WATER-PRACTICE-001",
+        "testPFAS_confirmed": true,
+        "pfasSampleId": "PFAS-PRACTICE-001",
+        "testMicroplastics_confirmed": true,
+        "microplasticsSampleId": "MICRO-PRACTICE-001",
+        "testBreeze_confirmed": true,
+        "breezeSampleId": "BREEZE-PRACTICE-001",
+        "testRadon_confirmed": true,
+        "radonSampleId": "RADON-PRACTICE-001"
+      },
+      "roomData": {
+        "followUpItems": [
+          {
+            "stepId": "kitchen",
+            "room": "Kitchen",
+            "recheckIn": "2 weeks",
+            "watchFor": "Odor returning at dishwasher filter or visible staining under sink."
+          },
+          {
+            "stepId": "utility",
+            "room": "Utility Room",
+            "recheckIn": "30 days",
+            "watchFor": "HVAC filter replacement and proper rack seal."
+          }
+        ]
+      },
+      "photo_practice-kitchen-before": {
+        "included": true,
+        "placement": {
+          "roomName": "Kitchen",
+          "stepName": "Before"
+        }
+      },
+      "photo_practice-kitchen-after": {
+        "included": true,
+        "placement": {
+          "roomName": "Kitchen",
+          "stepName": "After"
+        }
+      },
+      "photo_practice-atp-before": {
+        "included": true,
+        "placement": {
+          "roomName": "Kitchen",
+          "stepName": "ATP Before"
+        }
+      },
+      "photo_practice-atp-after": {
+        "included": true,
+        "placement": {
+          "roomName": "Kitchen",
+          "stepName": "ATP After"
+        }
+      },
+      "photo_practice-water-pfas": {
+        "included": true,
+        "placement": {
+          "roomName": "Kitchen",
+          "stepName": "Water Samples"
+        }
+      },
+      "photo_practice-qtrak-kitchen": {
+        "included": true,
+        "placement": {
+          "roomName": "Kitchen",
+          "stepName": "Q-Trak Reading"
+        }
+      },
+      "photo_practice-breeze-kitchen": {
+        "included": true,
+        "placement": {
+          "roomName": "Kitchen",
+          "stepName": "Breeze Setup"
+        }
+      },
+      "photo_practice-utility-hvac": {
+        "included": true,
+        "placement": {
+          "roomName": "Utility Room",
+          "stepName": "HVAC Filter"
+        }
+      },
+      "system": {
+        "tannerHandoff": {
+          "status": "ready",
+          "isTestTraining": true,
+          "isTest": true,
+          "is_test": true,
+          "folderId": "LOCAL_PRACTICE_FOLDER",
+          "folderUrl": "https://drive.google.com/drive/folders/LOCAL_PRACTICE_FOLDER",
+          "spreadsheetId": "LOCAL_PRACTICE_REVIEW_DATA",
+          "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/LOCAL_PRACTICE_REVIEW_DATA/edit",
+          "rawReviewDataUrl": "https://drive.google.com/file/d/LOCAL_PRACTICE_RAW_REVIEW_DATA/view",
+          "trackerRow": "",
+          "trackerUrl": "",
+          "trackerStatus": "skipped_test_training",
+          "photosFolderUrl": "https://drive.google.com/drive/folders/LOCAL_PRACTICE_PHOTOS",
+          "technicianPhotosFolderUrl": "https://drive.google.com/drive/folders/LOCAL_PRACTICE_PHOTOS",
+          "cocsFolderUrl": "https://drive.google.com/drive/folders/LOCAL_PRACTICE_COCS",
+          "backupFolderUrl": "https://drive.google.com/drive/folders/LOCAL_PRACTICE_BACKUP",
+          "photoLogRows": 8,
+          "createdAt": "2026-07-30T16:20:00.000Z"
+        },
+        "startInspectionShell": {
+          "status": "skipped_test_training",
+          "isTestTraining": true,
+          "inspectionId": "LOCAL-PRACTICE-V65",
+          "trackerStatus": "skipped_test_training",
+          "updatedAt": "2026-07-30T14:00:05.000Z",
+          "error": ""
+        }
+      }
+    },
+    "fieldUsageMetrics": {
+      "schemaVersion": "field-usage-v1",
+      "sessions": {
+        "session-practice-1": {
+          "userName": "Practice Inspector",
+          "activeSeconds": 4200,
+          "startedAt": "2026-07-30T14:00:00.000Z",
+          "lastActiveAt": "2026-07-30T16:10:00.000Z",
+          "screenViews": {
+            "kitchen": 6,
+            "utility": 3,
+            "final-checks": 2
+          }
+        }
+      },
+      "events": [
+        {
+          "type": "photo_added",
+          "screenKey": "kitchen",
+          "stepId": "kitchen",
+          "createdAt": "2026-07-30T14:32:00.000Z"
+        },
+        {
+          "type": "final_submit_success",
+          "screenKey": "final-checks",
+          "stepId": "final-checks",
+          "createdAt": "2026-07-30T16:15:00.000Z"
+        }
+      ]
+    }
+  }
+}

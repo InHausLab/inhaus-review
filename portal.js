@@ -9,14 +9,24 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const REVIEW_PORTAL_VERSION = 'V50';
+const ENABLE_WORKER_HANDOFF = false;
+// Frontend-visible Worker routing token used by the inspector app for
+// app-facing photo/status routes. This is not a private service credential.
+const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
+const REVIEW_PORTAL_VERSION = 'V65';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
+const API_HANDOFF_TIMEOUT_MS = 180000;
+const LEGACY_STATIC_FALLBACK_INSPECTION_IDS = new Set([
+  'INH-20260727-86EZAT',
+  'INH-20260722-VCMSTE'
+]);
 // Frontend routing token already used by the inspector app for Apps Script posts.
 // This is not a private secret; it only selects the deployed authenticated route.
 const SYNC_SECRET = 'ihl-sync-2026';
 
 const IS_DEMO = (APPS_SCRIPT_URL === 'PLACEHOLDER_URL');
+const IS_LOCAL_PREVIEW = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
 /* ============================================================
    MOCK DATA (placeholder / demo mode)
@@ -163,6 +173,7 @@ let _currentPage = null;     // 'list' | 'review'
 const _postVisibleCounts = new Map(); // expanded optional post-content rows per inspection
 let _finishTrackerOpen = false;
 let _reviewDataHealth = null;
+let _handoffRepairInFlight = false;
 
 const REVIEW_ACTIVITY_IDLE_MS = 90000;
 const REVIEW_ACTIVITY_TICK_MS = 10000;
@@ -369,6 +380,24 @@ function queueReviewActivityField(stepId, key, value) {
     });
 }
 
+function sendReviewActivityEventToWorker(event) {
+  if (IS_DEMO || !event?.inspectionId) return;
+  fetch(PHOTO_WORKER_URL + '/review-activity-events', {
+    method: 'POST',
+    headers: workerAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      inspectionId: event.inspectionId,
+      token: ACCESS_TOKEN,
+      actor: event.reviewerName || '',
+      eventType: event.type || 'activity',
+      eventPayload: event
+    })
+  }).catch(err => {
+    _reviewActivity.loadWarning = err?.message || _reviewActivity.loadWarning || 'Activity event save failed';
+    console.warn('Review activity event save failed:', err);
+  });
+}
+
 function currentReviewActivitySessionPayload(reason = 'heartbeat') {
   return {
     sessionId: _reviewActivity.sessionId,
@@ -419,6 +448,7 @@ function recordReviewActivityEvent(type, detail = {}) {
   };
   _reviewActivity.cloudEvents[eventId] = event;
   queueReviewActivityField('_reviewActivityEvents', eventId, event);
+  sendReviewActivityEventToWorker(event);
   flushReviewActivitySession(type, true);
 }
 
@@ -1057,10 +1087,7 @@ async function deleteReviewedPhoto(photoId) {
   if (!photoId || !_inspection?.inspectionId) return false;
   const response = await fetch(PHOTO_WORKER_URL + '/delete-review-photo', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${ACCESS_TOKEN}`,
-      'Content-Type': 'application/json'
-    },
+    headers: workerAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ inspectionId: _inspection.inspectionId, photoId })
   });
   const data = await response.json().catch(() => ({}));
@@ -1100,6 +1127,18 @@ function countInspectionArray(value) {
 
 function createReviewDataHealthSnapshot(insp = {}) {
   return {
+    sourcePath: '',
+    sourceError: '',
+    usedReviewStorageSource: false,
+    usedLegacyStaticFallback: false,
+    reviewStorageLoaded: false,
+    reviewStorageError: '',
+    reviewStorageRecoveryAvailable: false,
+    autoRecoverySaved: false,
+    autoRecoveryError: '',
+    workerStatusLoaded: false,
+    workerStatusError: '',
+    workerStatus: null,
     baseStatus: String(insp.status || ''),
     baseSubmittedAt: String(insp.submittedToTannerAt || insp.submittedAt || ''),
     basePhotoCount: Number(insp.photoCount) || 0,
@@ -1115,15 +1154,67 @@ function createReviewDataHealthSnapshot(insp = {}) {
   };
 }
 
+function extractWorkerPhotoArray(data) {
+  if (Array.isArray(data)) return data;
+  if (!data || typeof data !== 'object') return [];
+  const candidates = [
+    data.photos,
+    data.rows,
+    data.items,
+    data.records,
+    data.data
+  ];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+  return [];
+}
+
 async function loadWorkerPhotos(inspectionId) {
   if (!inspectionId) return [];
-  const url = new URL(PHOTO_WORKER_URL + '/inspection-photos');
-  url.searchParams.set('inspectionId', inspectionId);
-  url.searchParams.set('token', inspectionId.toLowerCase());
-  const response = await fetch(url.toString(), { cache: 'no-store' });
-  if (!response.ok) throw new Error('Photo recovery failed: ' + response.status);
-  const data = await response.json();
-  return Array.isArray(data.photos) ? data.photos : [];
+  const routes = ['/inspection-photos'];
+  let lastError = null;
+  for (const route of routes) {
+    const url = new URL(PHOTO_WORKER_URL + route);
+    url.searchParams.set('inspectionId', inspectionId);
+    url.searchParams.set('id', inspectionId);
+    url.searchParams.set('token', inspectionId.toLowerCase());
+    const response = await fetch(url.toString(), {
+      cache: 'no-store',
+      headers: workerAuthHeaders()
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok) return extractWorkerPhotoArray(data);
+    lastError = new Error(data.error || `Photo recovery failed: ${response.status}`);
+    if (response.status !== 404) break;
+  }
+  throw lastError || new Error('Photo recovery failed');
+}
+
+function getExpectedWorkerPhotoIds(inspection) {
+  const ids = new Set();
+  (inspection?.photos || []).forEach(photo => {
+    const id = String(photo?.photoId || photo?.photo_id || '').trim();
+    if (id) ids.add(id);
+  });
+  return Array.from(ids);
+}
+
+async function loadWorkerInspectionStatus(inspectionId, inspection = null) {
+  if (!inspectionId) return null;
+  const response = await fetch(PHOTO_WORKER_URL + '/inspection-status', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      inspectionId,
+      expectedPhotoIds: getExpectedWorkerPhotoIds(inspection),
+      sharedSecret: PHOTO_UPLOAD_SHARED_SECRET
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Inspection status failed: ${response.status}`);
+  return data;
 }
 
 const STATUS_TOOLTIPS = {
@@ -1196,7 +1287,7 @@ function setSaveIndicator(state, time = '') {
    API CALLS
    ============================================================ */
 
-async function apiFetch(params, method = 'GET', body = null) {
+async function apiFetch(params, method = 'GET', body = null, options = {}) {
   if (IS_DEMO) return null;
   const url = new URL(APPS_SCRIPT_URL);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
@@ -1209,7 +1300,7 @@ async function apiFetch(params, method = 'GET', body = null) {
     opts.body = JSON.stringify(payload);
   }
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), API_FETCH_TIMEOUT_MS);
+  const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs || API_FETCH_TIMEOUT_MS);
   opts.signal = controller.signal;
   let res;
   try {
@@ -1240,16 +1331,195 @@ async function visionProxyFetch(payload, options = {}) {
   });
 }
 
+function workerAuthHeaders(extra = {}) {
+  return {
+    Authorization: `Bearer ${ACCESS_TOKEN}`,
+    'x-worker-token': ACCESS_TOKEN,
+    ...extra
+  };
+}
+
+async function requestWorkerHandoffPackage(inspectionId, payload = {}) {
+  const maxAttempts = Math.max(1, Number(payload.maxAttempts || 6));
+  const receiptContext = {
+    expectedPhotoCount: Number(_inspection?.photoCount || (_inspection?.photos || []).length || 0),
+    expectedRoomCount: Array.isArray(_inspection?.rooms) ? _inspection.rooms.length : 0
+  };
+  let lastData = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), API_HANDOFF_TIMEOUT_MS);
+    try {
+      const response = await fetch(PHOTO_WORKER_URL + '/handoff-jobs', {
+        method: 'POST',
+        headers: workerAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          inspectionId,
+          token: ACCESS_TOKEN,
+          ...payload
+        }),
+        signal: controller.signal
+      });
+      const data = await response.json().catch(() => ({}));
+      lastData = data;
+      const receipt = data?.artifactReceipt || data?.reviewPortalData || null;
+      const missing = getMissingHandoffReceiptFields(receipt || {}, receiptContext);
+      if (response.ok && receipt && !missing.length) {
+        return {
+          ...data,
+          reviewPortalData: receipt,
+          tannerNotification: receipt.notification || data.tannerNotification || null
+        };
+      }
+      const pendingPhotos = Number(receipt?.photoFolderPendingCount || receipt?.counts?.photoFolderPendingCount || 0);
+      const failedPhotos = Number(receipt?.photoFolderFailedCount || receipt?.technicianPhotoFailedCount || receipt?.counts?.photoFolderFailedCount || 0);
+      const stillRunning = /running|queued|repairing|waiting/i.test(String(data?.status || receipt?.status || ''));
+      if (attempt < maxAttempts && pendingPhotos > 0 && failedPhotos === 0 && stillRunning) {
+        await sleep(1200);
+        continue;
+      }
+      const detail = data?.lastError || data?.error || receipt?.error || (missing.length ? `missing ${missing.join(', ')}` : `Worker handoff failed: ${response.status}`);
+      throw new Error(detail);
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+  const receipt = lastData?.artifactReceipt || lastData?.reviewPortalData || null;
+  const pendingPhotos = Number(receipt?.photoFolderPendingCount || receipt?.counts?.photoFolderPendingCount || 0);
+  throw new Error(pendingPhotos > 0 ? `Photo package still copying: ${pendingPhotos} remaining` : 'Worker handoff did not complete.');
+}
+
+function sleep(ms) {
+  return new Promise(resolve => window.setTimeout(resolve, ms));
+}
+
+function getWorkerHandoffMaxAttempts(insp) {
+  const photoCount = Number(insp?.photoCount || (Array.isArray(insp?.photos) ? insp.photos.length : 0) || 0);
+  if (!photoCount) return 6;
+  return Math.min(24, Math.max(6, Math.ceil(photoCount / 10) + 3));
+}
+
 async function loadCloudReview(inspectionId) {
   const url = new URL(PHOTO_WORKER_URL + '/get-review');
   url.searchParams.set('inspectionId', inspectionId);
-  const response = await fetch(url.toString(), {
-    cache: 'no-store',
-    headers: { Authorization: `Bearer ${ACCESS_TOKEN}` }
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), API_FETCH_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(url.toString(), {
+      cache: 'no-store',
+      headers: workerAuthHeaders(),
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      throw new Error('Review storage request timed out');
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeout);
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `Review load failed: ${response.status}`);
   return data;
+}
+
+function clonePlainObject(value) {
+  if (!value || typeof value !== 'object') return value;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (err) {
+    return Array.isArray(value) ? value.slice() : { ...value };
+  }
+}
+
+function stripInlinePayloadsForReviewStorage(value, depth = 0) {
+  if (value === undefined || value === null) return value;
+  if (depth > 8) return '[truncated]';
+  if (Array.isArray(value)) {
+    return value.map(item => stripInlinePayloadsForReviewStorage(item, depth + 1));
+  }
+  if (typeof value !== 'object') return value;
+
+  const cleaned = {};
+  Object.entries(value).forEach(([key, child]) => {
+    if (/^(dataUrl|imageData|thumbnailDataUrl|base64|blob)$/i.test(key)) return;
+    cleaned[key] = stripInlinePayloadsForReviewStorage(child, depth + 1);
+  });
+  return cleaned;
+}
+
+function hasRecoverableSourcePayload(insp = {}) {
+  if (!insp || typeof insp !== 'object') return false;
+  return Boolean(
+    countInspectionArray(insp.rooms) ||
+    countInspectionArray(insp.findings) ||
+    countInspectionArray(insp.photos) ||
+    (insp.stepData && typeof insp.stepData === 'object' && Object.keys(insp.stepData).length)
+  );
+}
+
+function buildReviewStorageSourceSnapshot(insp = {}) {
+  const snapshot = stripInlinePayloadsForReviewStorage(clonePlainObject(insp) || {});
+  delete snapshot.reviewedData;
+  delete snapshot._reviewDataHealth;
+  delete snapshot._reviewActivitySessions;
+  delete snapshot._reviewActivityEvents;
+  return snapshot;
+}
+
+async function ensureReviewStorageSourceSnapshot(inspectionId, insp, health) {
+  if (!inspectionId || !insp || !health) return false;
+  if (health.reviewStorageRecoveryAvailable) return false;
+  if (health.sourcePath !== 'apps-script-detail') return false;
+  if (!hasRecoverableSourcePayload(insp)) return false;
+
+  try {
+    await saveCloudReviewField(inspectionId, {
+      stepId: 'system',
+      key: 'inspectionRecovery',
+      value: buildReviewStorageSourceSnapshot(insp)
+    });
+    health.reviewStorageLoaded = true;
+    health.reviewStorageError = '';
+    health.reviewStorageRecoveryAvailable = true;
+    health.autoRecoverySaved = true;
+    return true;
+  } catch (err) {
+    health.autoRecoveryError = err?.message || 'Source snapshot save failed';
+    return false;
+  }
+}
+
+function getInspectionRecoveryFromReviewFields(fieldData = {}) {
+  if (!fieldData || typeof fieldData !== 'object') return null;
+  const system = fieldData.system && typeof fieldData.system === 'object' && !Array.isArray(fieldData.system)
+    ? fieldData.system
+    : {};
+  const candidates = [
+    system.inspectionRecovery,
+    fieldData.inspectionRecovery,
+    fieldData.sourceInspection,
+    fieldData.submittedInspection,
+    fieldData.inspection
+  ];
+  return candidates.find(candidate =>
+    candidate &&
+    typeof candidate === 'object' &&
+    !Array.isArray(candidate) &&
+    (candidate.inspectionId || candidate.id || candidate.rooms || candidate.stepData)
+  ) || null;
+}
+
+function stripInspectionRecoveryFromReviewFields(fieldData = {}) {
+  const reviewFields = extractReviewActivityData(clonePlainObject(fieldData) || {});
+  if (reviewFields.system && typeof reviewFields.system === 'object' && !Array.isArray(reviewFields.system)) {
+    const systemFields = { ...reviewFields.system };
+    delete systemFields.inspectionRecovery;
+    if (Object.keys(systemFields).length) reviewFields.system = systemFields;
+    else delete reviewFields.system;
+  }
+  return reviewFields;
 }
 
 function stripLocalOnlySubmissionState(data) {
@@ -1294,10 +1564,7 @@ function getServerSubmittedReviewState(insp = {}) {
 async function saveCloudReviewField(inspectionId, field) {
   const response = await fetch(PHOTO_WORKER_URL + '/save-review', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${ACCESS_TOKEN}`,
-      'Content-Type': 'application/json'
-    },
+    headers: workerAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ inspectionId, field })
   });
   const data = await response.json().catch(() => ({}));
@@ -1307,15 +1574,16 @@ async function saveCloudReviewField(inspectionId, field) {
 
 async function saveReviewSubmissionReceipt(inspectionId, receipt, reportBuilderNotes) {
   const fields = [
-    { stepId: 'summary', key: 'submission', value: receipt },
     { stepId: 'summary', key: 'status', value: receipt.status },
     { stepId: 'summary', key: 'submittedAt', value: receipt.submittedAt },
     { stepId: 'summary', key: 'submittedToTannerAt', value: receipt.submittedAt },
-    { stepId: 'summary', key: 'completionScore', value: receipt.completionScore },
-    { stepId: 'summary', key: 'completionGrade', value: receipt.completionGrade },
-    { stepId: 'summary', key: 'sameDayBonus', value: receipt.sameDayBonus },
-    { stepId: 'summary', key: 'sameDayBonusAmt', value: receipt.sameDayBonusAmt },
-    { stepId: 'summary', key: 'reportBuilderNotes', value: reportBuilderNotes || '' }
+    { stepId: 'summary', key: 'reviewReadiness', value: receipt.reviewReadiness || null },
+    { stepId: 'summary', key: 'readinessStatus', value: receipt.readinessStatus || '' },
+    { stepId: 'summary', key: 'readinessCompleted', value: receipt.readinessCompleted || 0 },
+    { stepId: 'summary', key: 'readinessRequired', value: receipt.readinessRequired || 0 },
+    { stepId: 'summary', key: 'blockerCount', value: receipt.blockerCount || 0 },
+    { stepId: 'summary', key: 'reportBuilderNotes', value: reportBuilderNotes || '' },
+    { stepId: 'summary', key: 'submission', value: receipt }
   ];
 
   for (const field of fields) {
@@ -1333,8 +1601,237 @@ async function saveReviewSubmissionReceipt(inspectionId, receipt, reportBuilderN
   return verifiedSubmission;
 }
 
-async function verifyTannerToolPackage(inspectionId) {
+async function saveReviewSubmissionAttempt(inspectionId, receipt, reportBuilderNotes) {
+  const attempt = {
+    ...receipt,
+    status: 'Handoff in progress',
+    attemptedAt: new Date().toISOString()
+  };
+  const fields = [
+    { stepId: 'summary', key: 'submissionAttempt', value: attempt },
+    { stepId: 'summary', key: 'lastSubmissionAttemptAt', value: attempt.attemptedAt },
+    { stepId: 'summary', key: 'reportBuilderNotes', value: reportBuilderNotes || '' }
+  ];
+  for (const field of fields) {
+    await saveCloudReviewField(inspectionId, field);
+  }
+  return attempt;
+}
+
+async function saveReviewSubmissionFailure(inspectionId, message) {
+  try {
+    await saveCloudReviewField(inspectionId, {
+      stepId: 'summary',
+      key: 'lastSubmissionFailure',
+      value: {
+        failedAt: new Date().toISOString(),
+        message: message || 'Submission failed'
+      }
+    });
+  } catch(e) {
+    console.warn('Could not save submission failure receipt:', e);
+  }
+}
+
+async function saveReviewHandoffReceipt(inspectionId, handoffResult) {
+  if (!inspectionId || !handoffResult || typeof handoffResult !== 'object') return false;
+  const expectedPhotoCount = Number(_inspection?.photoCount || (_inspection?.photos || []).length || 0);
+  const expectedRoomCount = Array.isArray(_inspection?.rooms) ? _inspection.rooms.length : 0;
+  const missing = getMissingHandoffReceiptFields(handoffResult, { expectedPhotoCount, expectedRoomCount });
+  if (missing.length) {
+    throw new Error('Tanner handoff receipt incomplete: ' + missing.join(', '));
+  }
+  const fields = [
+    { stepId: 'summary', key: 'reviewPortalData', value: handoffResult },
+    { stepId: 'summary', key: 'folderId', value: handoffResult.folderId || '' },
+    { stepId: 'summary', key: 'folderUrl', value: handoffResult.folderUrl || '' },
+    { stepId: 'summary', key: 'assessmentFolderId', value: handoffResult.folderId || '' },
+    { stepId: 'summary', key: 'assessmentFolderUrl', value: handoffResult.folderUrl || '' },
+    { stepId: 'summary', key: 'reviewPortalDataSpreadsheetId', value: handoffResult.spreadsheetId || '' },
+    { stepId: 'summary', key: 'reviewPortalDataSpreadsheetUrl', value: handoffResult.spreadsheetUrl || '' },
+    { stepId: 'summary', key: 'reviewPortalDataUrl', value: handoffResult.spreadsheetUrl || '' },
+    { stepId: 'summary', key: 'rawReviewDataUrl', value: handoffResult.rawJsonUrl || handoffResult.rawReviewDataUrl || '' },
+    { stepId: 'summary', key: 'rawReviewDataJsonUrl', value: handoffResult.rawJsonUrl || handoffResult.rawReviewDataUrl || '' },
+    { stepId: 'summary', key: 'technicianPhotosFolderId', value: handoffResult.technicianPhotosFolderId || '' },
+    { stepId: 'summary', key: 'technicianPhotosFolderUrl', value: handoffResult.technicianPhotosFolderUrl || '' },
+    { stepId: 'summary', key: 'photosFolderId', value: handoffResult.photosFolderId || handoffResult.technicianPhotosFolderId || '' },
+    { stepId: 'summary', key: 'photosFolderUrl', value: handoffResult.photosFolderUrl || handoffResult.technicianPhotosFolderUrl || '' },
+    { stepId: 'summary', key: 'cocsFolderId', value: handoffResult.cocsFolderId || '' },
+    { stepId: 'summary', key: 'cocsFolderUrl', value: handoffResult.cocsFolderUrl || '' },
+    { stepId: 'summary', key: 'backupFolderId', value: handoffResult.backupFolderId || '' },
+    { stepId: 'summary', key: 'backupFolderUrl', value: handoffResult.backupFolderUrl || '' },
+    { stepId: 'summary', key: 'trackerRow', value: handoffResult.trackerRow || '' },
+    { stepId: 'summary', key: 'trackerUrl', value: handoffResult.trackerUrl || '' },
+    { stepId: 'summary', key: 'trackerRowUrl', value: handoffResult.trackerUrl || '' },
+    { stepId: 'summary', key: 'trackerStatus', value: handoffResult.trackerStatus || '' },
+    { stepId: 'summary', key: 'handoffAttemptCount', value: handoffResult.attemptCount || '' },
+    { stepId: 'summary', key: 'handoffLastRunAt', value: handoffResult.lastRunAt || '' },
+    { stepId: 'summary', key: 'handoffNextRunAt', value: handoffResult.nextRunAt || '' },
+    { stepId: 'summary', key: 'isTestTraining', value: handoffResult.isTestTraining === true },
+    { stepId: 'system', key: 'tannerHandoff', value: handoffResult }
+  ];
+
+  for (const field of fields) {
+    await saveCloudReviewField(inspectionId, field);
+  }
+  return true;
+}
+
+function applyHandoffReceiptToInspection(handoffResult) {
+  if (!_inspection || !handoffResult) return;
+  if (!_inspection.reviewedData) _inspection.reviewedData = {};
+  _inspection.reviewedData.reviewPortalData = handoffResult;
+  Object.assign(_inspection.reviewedData, {
+    folderId: handoffResult.folderId || '',
+    folderUrl: handoffResult.folderUrl || '',
+    assessmentFolderId: handoffResult.folderId || '',
+    assessmentFolderUrl: handoffResult.folderUrl || '',
+    reviewPortalDataSpreadsheetId: handoffResult.spreadsheetId || '',
+    reviewPortalDataSpreadsheetUrl: handoffResult.spreadsheetUrl || '',
+    reviewPortalDataUrl: handoffResult.spreadsheetUrl || '',
+    rawReviewDataUrl: handoffResult.rawJsonUrl || handoffResult.rawReviewDataUrl || '',
+    rawReviewDataJsonUrl: handoffResult.rawJsonUrl || handoffResult.rawReviewDataUrl || '',
+    technicianPhotosFolderId: handoffResult.technicianPhotosFolderId || '',
+    technicianPhotosFolderUrl: handoffResult.technicianPhotosFolderUrl || '',
+    photosFolderId: handoffResult.photosFolderId || handoffResult.technicianPhotosFolderId || '',
+    photosFolderUrl: handoffResult.photosFolderUrl || handoffResult.technicianPhotosFolderUrl || '',
+    cocsFolderId: handoffResult.cocsFolderId || '',
+    cocsFolderUrl: handoffResult.cocsFolderUrl || '',
+    backupFolderId: handoffResult.backupFolderId || '',
+    backupFolderUrl: handoffResult.backupFolderUrl || '',
+    trackerRow: handoffResult.trackerRow || '',
+    trackerUrl: handoffResult.trackerUrl || '',
+    trackerRowUrl: handoffResult.trackerUrl || '',
+    trackerStatus: handoffResult.trackerStatus || '',
+    isTestTraining: handoffResult.isTestTraining === true,
+    handoffStatus: handoffResult.status || '',
+    handoffAttemptCount: handoffResult.attemptCount || '',
+    handoffLastRunAt: handoffResult.lastRunAt || '',
+    handoffNextRunAt: handoffResult.nextRunAt || '',
+    handoffUpdatedAt: handoffResult.updatedAt || '',
+    lastHandoffError: handoffResult.error || ''
+  });
+  if (!_inspection.reviewedData.system || typeof _inspection.reviewedData.system !== 'object') {
+    _inspection.reviewedData.system = {};
+  }
+  _inspection.reviewedData.system.tannerHandoff = handoffResult;
+}
+
+function normalizedHandoffStatus(value) {
+  return String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+}
+
+function isReadyHandoffStatus(value) {
+  return ['ready', 'complete', 'completed', 'submitted', 'success', 'succeeded'].includes(normalizedHandoffStatus(value));
+}
+
+function isTestTrainingInspectionRecord(insp = {}, handoff = {}) {
+  if (handoff && (handoff.is_test === true || handoff.isTest === true)) return true;
+  if (handoff && handoff.isTestTraining === true) return true;
+  if (insp && (insp.is_test === true || insp.isTest === true)) return true;
+  if (insp && (insp.reviewedData?.is_test === true || insp.reviewedData?.isTest === true)) return true;
+  const explicit = [
+    insp.inspectionType,
+    insp.assessmentType,
+    insp.assessmentPurpose,
+    insp.inspectionMode,
+    insp.reviewedData?.inspectionType,
+    insp.reviewedData?.isTestTraining === true ? 'test' : ''
+  ].filter(Boolean).join(' ');
+  return /test|training|practice|demo/i.test(explicit);
+}
+
+function handoffCountValue(handoff = {}, keys = []) {
+  const counts = handoff && typeof handoff.counts === 'object' && !Array.isArray(handoff.counts)
+    ? handoff.counts
+    : {};
+  for (const key of keys) {
+    const value = handoff[key] !== undefined ? handoff[key] : counts[key];
+    if (value !== undefined && value !== null && value !== '') {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
+    }
+  }
+  return null;
+}
+
+function getMissingHandoffReceiptFields(handoff = {}, context = {}) {
+  const missing = [];
+  const status = normalizedHandoffStatus(handoff.status || handoff.handoffStatus || '');
+  const trackerStatus = normalizedHandoffStatus(handoff.trackerStatus || '');
+  const isTestTraining = handoff.isTestTraining === true || handoff.is_test === true || handoff.isTest === true || trackerStatus === 'skipped-test-training';
+  if (status && !isReadyHandoffStatus(status)) {
+    missing.push(`handoff status ${status}`);
+  }
+  if (!(handoff.folderUrl || handoff.folderId)) missing.push('assessment folder');
+  if (!(handoff.spreadsheetUrl || handoff.spreadsheetId)) missing.push('review data spreadsheet');
+  if (!(handoff.rawJsonUrl || handoff.rawReviewDataUrl)) missing.push('raw backup');
+  if (!isTestTraining && !(handoff.trackerUrl || handoff.trackerRow || handoff.trackerRowUrl)) missing.push('tracker row');
+  if (!(handoff.photosFolderUrl || handoff.photosFolderId || handoff.technicianPhotosFolderUrl || handoff.technicianPhotosFolderId)) {
+    missing.push('photos folder');
+  }
+  const failedPhotoCopies = Number(handoff.photoFolderFailedCount || handoff.technicianPhotoFailedCount || handoff.counts?.photoFolderFailedCount || 0);
+  const pendingPhotoCopies = Number(handoff.photoFolderPendingCount || handoff.counts?.photoFolderPendingCount || 0);
+  if (failedPhotoCopies > 0) {
+    missing.push(`${failedPhotoCopies} photo folder copy failure${failedPhotoCopies === 1 ? '' : 's'}`);
+  }
+  if (pendingPhotoCopies > 0) {
+    missing.push(`${pendingPhotoCopies} photo folder copy pending`);
+  }
+  const expectedPhotoCount = Number(context.expectedPhotoCount || 0);
+  const expectedRoomCount = Number(context.expectedRoomCount || 0);
+  const rawReviewKeyCount = handoffCountValue(handoff, ['rawReviewKeyCount']);
+  const formattedReviewRowCount = handoffCountValue(handoff, ['formattedReviewRowCount']);
+  const photoLogCount = handoffCountValue(handoff, ['photoLogCount']);
+  const roomDetailCount = handoffCountValue(handoff, ['roomDetailCount']);
+  if (rawReviewKeyCount !== null && rawReviewKeyCount <= 0) {
+    missing.push('raw review data rows');
+  }
+  if (formattedReviewRowCount !== null && formattedReviewRowCount <= 0) {
+    missing.push('formatted review rows');
+  }
+  if (expectedPhotoCount > 0 && photoLogCount !== null && photoLogCount < expectedPhotoCount) {
+    missing.push(`photo log rows ${photoLogCount}/${expectedPhotoCount}`);
+  }
+  if (expectedRoomCount > 0 && roomDetailCount !== null && roomDetailCount < expectedRoomCount) {
+    missing.push(`room detail rows ${roomDetailCount}/${expectedRoomCount}`);
+  }
+  return missing;
+}
+
+function getHandoffReceiptFromReviewFields(fieldData = {}) {
+  if (!fieldData || typeof fieldData !== 'object') return null;
+  const system = fieldData.system && typeof fieldData.system === 'object' && !Array.isArray(fieldData.system)
+    ? fieldData.system
+    : {};
+  const candidates = [
+    system.tannerHandoff,
+    fieldData.reviewPortalData,
+    fieldData.tannerHandoff
+  ];
+  return candidates.find(candidate => candidate && typeof candidate === 'object' && !Array.isArray(candidate)) || null;
+}
+
+async function verifyTannerHandoffPackage(inspectionId) {
   const verified = await loadCloudReview(inspectionId);
+  const handoffReceipt = getHandoffReceiptFromReviewFields(verified.fieldData || {});
+  const expectedPhotoCount = Number(_inspection?.photoCount || (_inspection?.photos || []).length || 0);
+  const expectedRoomCount = Array.isArray(_inspection?.rooms) ? _inspection.rooms.length : 0;
+  const missingHandoff = getMissingHandoffReceiptFields(handoffReceipt || {}, { expectedPhotoCount, expectedRoomCount });
+  if (missingHandoff.length) {
+    throw new Error('Tanner handoff package was not confirmed: ' + missingHandoff.join(', ') + '.');
+  }
+  let photoCount = 0;
+  try {
+    photoCount = (await loadWorkerPhotos(inspectionId)).length;
+  } catch (err) {
+    if (expectedPhotoCount > 0) throw new Error('Tanner photo package was not confirmed. Please retry.');
+  }
+  return { verified, handoffReceipt, photoCount };
+}
+
+async function verifyTannerToolPackage(inspectionId) {
+  const { verified, photoCount } = await verifyTannerHandoffPackage(inspectionId);
   const verifiedSubmission = getServerSubmittedReviewState({
     status: 'Submitted to Tanner',
     reviewedData: verified.fieldData || {}
@@ -1343,15 +1840,68 @@ async function verifyTannerToolPackage(inspectionId) {
     throw new Error('Submission was not confirmed by review storage. Please retry.');
   }
 
-  let photoCount = 0;
-  try {
-    photoCount = (await loadWorkerPhotos(inspectionId)).length;
-  } catch (err) {
-    const expectedPhotos = Number(_inspection?.photoCount || (_inspection?.photos || []).length || 0);
-    if (expectedPhotos > 0) throw new Error('Tanner photo package was not confirmed. Please retry.');
+  return { ...verifiedSubmission, photoCount };
+}
+
+async function repairTannerHandoffPackage() {
+  if (IS_DEMO) {
+    showToast('Demo mode - Tanner package repair is not available', 'demo');
+    return;
+  }
+  if (_handoffRepairInFlight) return;
+
+  const { id, token } = getURLParams();
+  if (!id) {
+    showToast('Missing inspection ID; cannot repair Tanner package.', 'error');
+    return;
   }
 
-  return { ...verifiedSubmission, photoCount };
+  const ok = window.confirm(
+    'Repair Tanner package now?\n\n' +
+    'This may create or update the Drive folder, Review Portal Data sheet, Raw Review Data backup, Photos/COCs/Backup folders, and tracker status.\n\n' +
+    'It will not mark the review as newly submitted.'
+  );
+  if (!ok) return;
+
+  _handoffRepairInFlight = true;
+  renderTannerPackageCheck(_inspection || {});
+  showToast('Repairing Tanner package...', 'info', 7000);
+
+  try {
+    const response = ENABLE_WORKER_HANDOFF
+      ? await requestWorkerHandoffPackage(id, {
+          requestedBy: 'review-portal-repair',
+          maxAttempts: getWorkerHandoffMaxAttempts(_inspection),
+          reviewedData: _inspection?.reviewedData || {}
+        })
+      : await apiFetch({}, 'POST', {
+          action: 'repairHandoff',
+          id,
+          token,
+          reviewedData: _inspection?.reviewedData || {}
+        }, { timeoutMs: API_HANDOFF_TIMEOUT_MS });
+    const handoffResult = response?.reviewPortalData || null;
+    const missing = getMissingHandoffReceiptFields(handoffResult || {}, {
+      expectedPhotoCount: Number(_inspection?.photoCount || (_inspection?.photos || []).length || 0),
+      expectedRoomCount: Array.isArray(_inspection?.rooms) ? _inspection.rooms.length : 0
+    });
+    if (!handoffResult || missing.length) {
+      throw new Error('Repair did not return a complete handoff receipt: ' + missing.join(', '));
+    }
+    applyHandoffReceiptToInspection(handoffResult);
+    if (_inspection) {
+      renderTannerPackageCheck(_inspection);
+      const results = evaluateGate(_inspection);
+      renderFinishTracker(results);
+      updateSubmitButton(results);
+    }
+    showToast('Tanner package repaired and receipt confirmed.', 'success', 7000);
+  } catch (err) {
+    showToast(`Tanner package repair failed: ${err.message}`, 'error', 9000);
+  } finally {
+    _handoffRepairInFlight = false;
+    if (_inspection) renderTannerPackageCheck(_inspection);
+  }
 }
 
 function mergeCheckpointValue(base, incoming) {
@@ -1443,7 +1993,7 @@ async function loadInspectionList() {
         data = await staticResp.json();
       }
     } catch (err) {
-      tableBody.innerHTML = `<tr><td colspan="10" class="empty-state">
+      tableBody.innerHTML = `<tr><td colspan="9" class="empty-state">
         Failed to load inspections: ${err.message}
       </td></tr>`;
       showToast('Failed to load inspections', 'error');
@@ -1459,7 +2009,7 @@ function renderInspectionList(inspections, tableBody, countLabel) {
   if (countLabel) countLabel.textContent = `${inspections.length} inspection${inspections.length !== 1 ? 's' : ''}`;
 
   if (!inspections.length) {
-    tableBody.innerHTML = `<tr><td colspan="10" class="empty-state">No inspections found.</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="9" class="empty-state">No inspections found.</td></tr>`;
     return;
   }
 
@@ -1471,7 +2021,6 @@ function renderInspectionList(inspections, tableBody, countLabel) {
     const reviewToken = insp.reviewToken || ACCESS_TOKEN;
     const id = insp.id || insp.inspectionId || '';
     const sourcePhotoCount = Number(insp.photoCount) || 0;
-    const score = insp.completionScore ?? insp.reviewScore ?? insp.score ?? '';
     const row = document.createElement('tr');
     row.dataset.inspectionId = id;
     row.innerHTML = `
@@ -1483,7 +2032,6 @@ function renderInspectionList(inspections, tableBody, countLabel) {
       <td>${formatDate(insp.inspectionDate)}</td>
       <td>${escapeHTML(insp.inspectorName)}</td>
       <td>${statusBadgeHTML(insp.status)}</td>
-      <td>${score === '' ? '—' : escapeHTML(score)}</td>
       <td data-photo-count-cell="${escapeHTML(id)}">
         ${photoCountListHTML(sourcePhotoCount, 'checking')}
       </td>
@@ -1512,9 +2060,9 @@ function photoCountListHTML(sourceCount, state = 'source', workerCount = null) {
     </div>`;
   }
   if (state === 'recovered') {
-    return `<div class="list-photo-count recovered" title="App list says ${source}; recovered count is ${worker}">
+    return `<div class="list-photo-count recovered" title="App list says ${source}; photo service has ${worker}">
       <strong>${worker}</strong>
-      <span>Recovered photos · app list ${source}</span>
+      <span>Photo service recovered · app list ${source}</span>
     </div>`;
   }
   if (state === 'matched') {
@@ -1546,14 +2094,6 @@ async function loadWorkerPhotoCount(inspectionId) {
   return photos.length;
 }
 
-async function loadStaticPhotoCount(inspectionId) {
-  const response = await fetch(`./api/inspections/${encodeURIComponent(inspectionId)}.json?t=` + Date.now());
-  if (!response.ok) return 0;
-  const data = await response.json();
-  const inspection = data.inspection || data;
-  return Array.isArray(inspection.photos) ? inspection.photos.length : 0;
-}
-
 async function enrichInspectionListPhotoCounts(inspections, tableBody) {
   const queue = (inspections || [])
     .map(insp => ({
@@ -1569,24 +2109,18 @@ async function enrichInspectionListPhotoCounts(inspections, tableBody) {
       const row = cell?.closest('tr');
       if (!cell) continue;
       try {
-        const [workerResult, staticResult] = await Promise.allSettled([
-          loadWorkerPhotoCount(item.id),
-          loadStaticPhotoCount(item.id)
-        ]);
-        const workerCount = workerResult.status === 'fulfilled' ? workerResult.value : 0;
-        const staticCount = staticResult.status === 'fulfilled' ? staticResult.value : 0;
-        const bestCount = Math.max(workerCount, staticCount);
-        if (bestCount > item.sourcePhotoCount) {
-          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'recovered', bestCount);
+        const workerCount = await loadWorkerPhotoCount(item.id);
+        if (workerCount > item.sourcePhotoCount) {
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'recovered', workerCount);
           row?.classList.add('list-row-photo-recovered');
-        } else if (bestCount === item.sourcePhotoCount && bestCount > 0) {
-          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'matched', bestCount);
+        } else if (workerCount === item.sourcePhotoCount && workerCount > 0) {
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'matched', workerCount);
           row?.classList.remove('list-row-photo-recovered');
-        } else if (item.sourcePhotoCount > 0 && bestCount === 0) {
-          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'service-empty', bestCount);
+        } else if (item.sourcePhotoCount > 0 && workerCount === 0) {
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'service-empty', workerCount);
           row?.classList.add('list-row-photo-warning');
         } else {
-          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'source', bestCount);
+          cell.innerHTML = photoCountListHTML(item.sourcePhotoCount, 'source', workerCount);
           row?.classList.remove('list-row-photo-recovered', 'list-row-photo-warning');
         }
       } catch (err) {
@@ -1599,6 +2133,13 @@ async function enrichInspectionListPhotoCounts(inspections, tableBody) {
   await Promise.allSettled(workers);
 }
 
+async function loadStaticInspectionFallback(id) {
+  const staticResp = await fetch(`./api/inspections/${id}.json?t=` + Date.now());
+  if (!staticResp.ok) throw new Error(`Static inspection unavailable: ${staticResp.status}`);
+  const staticData = await staticResp.json();
+  return staticData.inspection || staticData;
+}
+
 /* ============================================================
    REVIEW PAGE — BOOTSTRAP
    ============================================================ */
@@ -1608,8 +2149,23 @@ async function loadInspection() {
   const { id, token } = getURLParams();
 
   let insp;
+  let cloudReview = null;
+  let cloudFields = null;
+  let localPreviewStaticInspection = null;
+  const aggregateMeta = {
+    sourcePath: '',
+    sourceError: '',
+    usedReviewStorageSource: false,
+    usedLegacyStaticFallback: false,
+    reviewStorageLoaded: false,
+    reviewStorageError: '',
+    reviewStorageRecoveryAvailable: false,
+    autoRecoverySaved: false,
+    autoRecoveryError: ''
+  };
   if (IS_DEMO) {
     insp = JSON.parse(JSON.stringify(MOCK_INSPECTION));
+    aggregateMeta.sourcePath = 'demo';
     const bar = qs('#demo-bar');
     if (bar) bar.classList.remove('hidden');
   } else {
@@ -1617,16 +2173,69 @@ async function loadInspection() {
       showToast('Missing inspection ID or token', 'error');
       return;
     }
+
+    if (IS_LOCAL_PREVIEW) {
+      try {
+        localPreviewStaticInspection = await loadStaticInspectionFallback(id);
+      } catch (localErr) {
+        aggregateMeta.sourceError = localErr?.message || 'Local static preview unavailable';
+      }
+    }
+
+    if (localPreviewStaticInspection) {
+      aggregateMeta.reviewStorageError = 'Skipped in local preview fixture mode';
+    } else {
+      try {
+        cloudReview = await loadCloudReview(id);
+        cloudFields = cloudReview.fieldData && typeof cloudReview.fieldData === 'object'
+          ? cloudReview.fieldData
+          : {};
+        aggregateMeta.reviewStorageLoaded = true;
+        aggregateMeta.reviewStorageRecoveryAvailable = Boolean(getInspectionRecoveryFromReviewFields(cloudFields));
+      } catch (reviewErr) {
+        aggregateMeta.reviewStorageError = reviewErr?.message || 'Review storage unavailable';
+        console.warn('Cloud review recovery unavailable:', reviewErr);
+      }
+    }
+
     try {
       try {
-        const liveData = await apiFetch({ action: 'get', id, token });
-        insp = liveData.inspection || liveData;
-        if (!insp || !insp.inspectionId) throw new Error('Live inspection unavailable');
+        if (localPreviewStaticInspection) {
+          insp = clonePlainObject(localPreviewStaticInspection);
+          aggregateMeta.sourcePath = LEGACY_STATIC_FALLBACK_INSPECTION_IDS.has(id)
+            ? 'local-static-safety'
+            : 'local-static-preview';
+          aggregateMeta.usedLegacyStaticFallback = LEGACY_STATIC_FALLBACK_INSPECTION_IDS.has(id);
+        }
+        if (!insp) {
+          const liveData = await apiFetch(
+            { action: 'get', id, token },
+            'GET',
+            null,
+            { timeoutMs: IS_LOCAL_PREVIEW ? 4000 : API_FETCH_TIMEOUT_MS }
+          );
+          insp = liveData.inspection || liveData;
+          if (!insp || !insp.inspectionId) throw new Error('Live inspection unavailable');
+          aggregateMeta.sourcePath = 'apps-script-detail';
+        }
       } catch (apiErr) {
-        const staticResp = await fetch(`./api/inspections/${id}.json?t=` + Date.now());
-        if (!staticResp.ok) throw apiErr;
-        const staticData = await staticResp.json();
-        insp = staticData.inspection || staticData;
+        try {
+          aggregateMeta.sourceError = apiErr?.message || 'Apps Script detail unavailable';
+          const recovery = getInspectionRecoveryFromReviewFields(cloudFields);
+          if (recovery) {
+            insp = clonePlainObject(recovery);
+            aggregateMeta.sourcePath = 'review-storage-recovery';
+            aggregateMeta.usedReviewStorageSource = true;
+          } else {
+            insp = await loadStaticInspectionFallback(id);
+            aggregateMeta.sourcePath = LEGACY_STATIC_FALLBACK_INSPECTION_IDS.has(id)
+              ? 'legacy-static-safety'
+              : 'static-json-fallback';
+            aggregateMeta.usedLegacyStaticFallback = true;
+          }
+        } catch (fallbackErr) {
+          throw apiErr || fallbackErr;
+        }
       }
     } catch (err) {
       showToast(`Failed to load inspection: ${err.message}`, 'error');
@@ -1639,40 +2248,31 @@ async function loadInspection() {
   // recovery save cannot hide previously completed steps from the portal.
   insp = mergeInspectionCheckpoints(insp);
   _reviewDataHealth = createReviewDataHealthSnapshot(insp);
+  Object.assign(_reviewDataHealth, aggregateMeta);
+
+  if (!IS_DEMO && id) {
+    await ensureReviewStorageSourceSnapshot(id, insp, _reviewDataHealth);
+  }
 
   // Reviewer edits are persisted independently of Apps Script so they survive
   // device changes even when Google's web-app POST redirect drops the body.
-  if (!IS_DEMO && id) {
-    try {
-      const cloudReview = await loadCloudReview(id);
-      if (cloudReview.fieldData && typeof cloudReview.fieldData === 'object') {
-        const cloudFields = cloudReview.fieldData;
-        const inspectionRecovery = cloudFields.system?.inspectionRecovery;
-        if (inspectionRecovery && typeof inspectionRecovery === 'object') {
-          // Keep the preserved full checkpoint underneath the current live
-          // summary. Live values win, while missing steps/findings are restored.
-          if (_reviewDataHealth) {
-            _reviewDataHealth.recoveryApplied = true;
-            _reviewDataHealth.recoveryRooms = countInspectionArray(inspectionRecovery.rooms);
-            _reviewDataHealth.recoveryFindings = countInspectionArray(inspectionRecovery.findings);
-          }
-          insp = mergeCheckpointValue(inspectionRecovery, insp);
-        }
-
-        // The recovery payload is inspection source data, not a reviewer field.
-        // Do not copy it into reviewedData or render it as editable report data.
-        const reviewFields = extractReviewActivityData({ ...cloudFields });
-        if (reviewFields.system && typeof reviewFields.system === 'object' && !Array.isArray(reviewFields.system)) {
-          const systemFields = { ...reviewFields.system };
-          delete systemFields.inspectionRecovery;
-          if (Object.keys(systemFields).length) reviewFields.system = systemFields;
-          else delete reviewFields.system;
-        }
-        insp.reviewedData = mergeReviewData(insp.reviewedData || {}, reviewFields);
+  if (!IS_DEMO && id && cloudFields) {
+    const inspectionRecovery = getInspectionRecoveryFromReviewFields(cloudFields);
+    if (inspectionRecovery) {
+      // Keep the preserved full checkpoint underneath the current live
+      // summary. Live values win, while missing steps/findings are restored.
+      if (_reviewDataHealth) {
+        _reviewDataHealth.recoveryApplied = true;
+        _reviewDataHealth.recoveryRooms = countInspectionArray(inspectionRecovery.rooms);
+        _reviewDataHealth.recoveryFindings = countInspectionArray(inspectionRecovery.findings);
       }
-    } catch (reviewErr) {
-      console.warn('Cloud review recovery unavailable:', reviewErr);
+      insp = mergeCheckpointValue(clonePlainObject(inspectionRecovery), insp);
     }
+
+    // The recovery payload is inspection source data, not a reviewer field.
+    // Do not copy it into reviewedData or render it as editable report data.
+    const reviewFields = stripInspectionRecoveryFromReviewFields(cloudFields);
+    insp.reviewedData = mergeReviewData(insp.reviewedData || {}, reviewFields);
   }
 
   // Migrate older backend drafts that nested top-level review fields under
@@ -1697,6 +2297,21 @@ async function loadInspection() {
     } catch (photoErr) {
       if (_reviewDataHealth) _reviewDataHealth.workerPhotoError = photoErr?.message || 'Photo recovery unavailable';
       console.warn('Direct photo recovery unavailable:', photoErr);
+    }
+  }
+
+  if (!IS_DEMO && id) {
+    try {
+      const workerStatus = await loadWorkerInspectionStatus(id, insp);
+      if (_reviewDataHealth) {
+        _reviewDataHealth.workerStatusLoaded = true;
+        _reviewDataHealth.workerStatus = workerStatus;
+      }
+    } catch (statusErr) {
+      if (_reviewDataHealth) {
+        _reviewDataHealth.workerStatusError = statusErr?.message || 'Inspection status unavailable';
+      }
+      console.warn('Inspection status check unavailable:', statusErr);
     }
   }
 
@@ -2370,9 +2985,6 @@ function renderPostContentSection(insp, locked) {
     ])
   });
 
-  // ---- Completion Score ----
-  renderScoreCard(body, insp);
-
   if (!locked) {
     // Wire up all inputs in this section
     qsa('#post-content-body input, #post-content-body textarea, #post-content-body select').forEach(inp => {
@@ -2445,7 +3057,7 @@ function photoIdentityCandidates(photo, index) {
   ].filter(value => String(value || '').trim()).map(value => String(value));
 }
 
-function scorePhotoKey(photo, index) {
+function placementPhotoKey(photo, index) {
   return photoIdentityCandidates(photo, index)[0] || `photo-${index + 1}`;
 }
 
@@ -2499,7 +3111,7 @@ function collectPhotoPlacementState(insp = {}) {
   const portalPlacementByKey = new Map();
 
   photos.forEach((photo, index) => {
-    const key = scorePhotoKey(photo, index);
+    const key = placementPhotoKey(photo, index);
     const candidates = photoIdentityCandidates(photo, index);
     if (candidates.some(candidate => slotIds.has(candidate))) {
       placedKeys.add(key);
@@ -2524,127 +3136,13 @@ function collectPhotoPlacementState(insp = {}) {
   };
 }
 
-/* ============================================================
-   COMPLETION SCORE
-   ============================================================ */
-
-function calculateCompletionScore(insp) {
-  const rd       = insp.reviewedData || {};
-  const photos   = insp.photos       || [];
-  const steps    = insp.stepData     || {};
-  const tests    = insp.testsConfirmed || {};
-
-  const tryParse = key => { try { return JSON.parse(rd[key] || '[]'); } catch(e) { return []; } };
-
-  // --- Category 1: Photo placement (30 pts) ---
-  const photoPlacement = collectPhotoPlacementState(insp);
-  let photoScore = 30; // full credit if no photos
-  if (photos.length > 0) {
-    photoScore = Math.round((photoPlacement.placedCount / photos.length) * 30);
-  }
-
-  // --- Category 2: Observations filled (25 pts) ---
-  let obsFilled = 0;
-  for (let i = 1; i <= 6; i++) {
-    const note  = (rd[`obs_${i}_note`] || '').trim();
-    const loc   = (rd[`obs_${i}_location`] || '').trim();
-    const hasPhoto = tryParse(`obs_${i}_photoIds`).length > 0;
-    if (note && loc && hasPhoto) obsFilled += 1;       // full point
-    else if (note || loc)        obsFilled += 0.5;     // half point — text but no photo or no location
-  }
-  const obsScore = Math.round((obsFilled / 6) * 25);
-
-  // --- Category 3: Actions taken filled (25 pts) ---
-  let actionsFilled = 0;
-  for (let i = 1; i <= 6; i++) {
-    const desc = (rd[`actionTaken_${i}_desc`] || insp.postAssessment?.[`actionTaken_${i}_desc`] || '').trim();
-    const hasPhoto = tryParse(`actionTaken_${i}_photoIds`).length > 0;
-    if (desc && hasPhoto) actionsFilled += 1;
-    else if (desc)        actionsFilled += 0.6;
-  }
-  const actionsScore = Math.round((actionsFilled / 6) * 25);
-
-  // --- Category 4: Checklist gates (20 pts) ---
-  const gateResults  = evaluateGate(insp);
-  const gatePassed   = gateResults.filter(r => r.pass).length;
-  const gateScore    = Math.round((gatePassed / gateResults.length) * 20);
-
-  const total = Math.min(100, photoScore + obsScore + actionsScore + gateScore);
-
-  let grade, gradeClass;
-  if (total >= 95) { grade = 'A+'; gradeClass = 'score-a-plus'; }
-  else if (total >= 85) { grade = 'A';  gradeClass = 'score-a'; }
-  else if (total >= 75) { grade = 'B';  gradeClass = 'score-b'; }
-  else if (total >= 65) { grade = 'C';  gradeClass = 'score-c'; }
-  else if (total >= 50) { grade = 'D';  gradeClass = 'score-d'; }
-  else                  { grade = 'F';  gradeClass = 'score-f'; }
-
-  return {
-    total, grade, gradeClass,
-    categories: [
-      { key: 'score-photos', label: 'Photos placed', score: photoScore, max: 30, detail: photos.length === 0 ? 'No photos' : `${photoPlacement.placedCount} of ${photos.length} portal placed`, selector: '#photos-card', action: 'reportPhotos' },
-      { key: 'score-observations', label: 'Observations', score: obsScore, max: 25, detail: `${Math.round(obsFilled)} of 6 complete`, selector: '#finish-observations' },
-      { key: 'score-actions', label: 'Actions taken', score: actionsScore, max: 25, detail: `${Math.round(actionsFilled)} of 6 complete`, selector: '#finish-actions' },
-      { key: 'score-checklist', label: 'Checklist', score: gateScore, max: 20, detail: `${gatePassed} of ${gateResults.length} items`, selector: '#gate-section' }
-    ]
-  };
-}
-
-function renderScoreCard(body, insp) {
-  const score = calculateCompletionScore(insp);
-  const submittedReview = getServerSubmittedReviewState(insp);
-  const isSubmittedScore = submittedReview.submitted;
-
-  const card = el('div', { class: `score-card ${score.gradeClass}` });
-
-  // Left: big number + grade
-  const scoreLeft = el('div', { class: 'score-left' });
-  scoreLeft.appendChild(el('div', { class: 'score-number' }, isSubmittedScore ? String(score.total) : 'Draft'));
-  scoreLeft.appendChild(el('div', { class: 'score-grade' }, isSubmittedScore ? score.grade : `${score.total}/100`));
-  card.appendChild(scoreLeft);
-
-  // Right: label + breakdown
-  const scoreRight = el('div', { class: 'score-right' });
-  const titleRow = el('div', { class: 'score-title-row' });
-  titleRow.appendChild(el('div', { class: 'score-title' }, isSubmittedScore
-    ? `${score.total} out of 100 — Submitted Review Score`
-    : 'No submitted review score yet'));
-  titleRow.appendChild(el('div', { class: 'score-subtitle' }, isSubmittedScore
-    ? 'This score is saved from the review portal submission package.'
-    : `Current draft progress is ${score.total} out of 100. It becomes the review score only after Submit to Tanner succeeds.`));
-  scoreRight.appendChild(titleRow);
-
-  const bars = el('div', { class: 'score-bars' });
-  score.categories.forEach(cat => {
-    const incomplete = cat.score < cat.max;
-    const row = el(incomplete ? 'button' : 'div', {
-      class: `score-bar-row${incomplete ? ' score-bar-link' : ''}`,
-      ...(incomplete ? { type: 'button', 'aria-label': `Improve ${cat.label}` } : {})
-    });
-    if (incomplete) row.addEventListener('click', () => goToFinishItem(cat));
-    row.appendChild(el('div', { class: 'score-bar-label' }, cat.label));
-    const track = el('div', { class: 'score-bar-track' });
-    const fill = el('div', { class: 'score-bar-fill' });
-    fill.style.width = `${Math.round((cat.score / cat.max) * 100)}%`;
-    track.appendChild(fill);
-    row.appendChild(track);
-    row.appendChild(el('div', { class: 'score-bar-pts' }, `${cat.score}/${cat.max}`));
-    row.appendChild(el('div', { class: 'score-bar-detail' }, cat.detail));
-    bars.appendChild(row);
-  });
-  scoreRight.appendChild(bars);
-  card.appendChild(scoreRight);
-
-  body.appendChild(card);
-}
-
 function renderPhotoLibrary(body, allPhotos, rd, insp) {
   if (!allPhotos || allPhotos.length === 0) return;
 
   const scoringInspection = { ...(insp || {}), photos: allPhotos, reviewedData: rd };
   const placementState = collectPhotoPlacementState(scoringInspection);
   const photoSlotMap = placementState.slotMap;
-  const placed = allPhotos.filter((photo, index) => placementState.placedKeys.has(scorePhotoKey(photo, index)));
+  const placed = allPhotos.filter((photo, index) => placementState.placedKeys.has(placementPhotoKey(photo, index)));
   const inReportSections = allPhotos.filter(p => photoSlotMap[p.photoId]);
   const unplaced = allPhotos.length - placed.length;
 
@@ -2688,7 +3186,7 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
   allPhotos.forEach((photo, index) => {
     const slots = photoSlotMap[photo.photoId] || [];
     const isInReportSection = slots.length > 0;
-    const placementKey = scorePhotoKey(photo, index);
+    const placementKey = placementPhotoKey(photo, index);
     const isPlaced = placementState.placedKeys.has(placementKey);
     const portalPlacement = placementState.portalPlacementByKey.get(placementKey);
     const placementLabel = [portalPlacement?.roomName, portalPlacement?.stepName]
@@ -3473,6 +3971,30 @@ function renderReviewDataHealthBanner(insp) {
   if (!banner) return;
   const health = _reviewDataHealth || {};
   const notes = [];
+  if (health.usedReviewStorageSource) {
+    notes.push('Loaded the source inspection from review storage recovery because Apps Script detail was unavailable.');
+  }
+  if (health.usedLegacyStaticFallback) {
+    notes.push(LEGACY_STATIC_FALLBACK_INSPECTION_IDS.has(insp.inspectionId || insp.id)
+      ? 'Using protected legacy static fallback for this current report.'
+      : 'Using static JSON fallback; this is not approved for net-new inspections.');
+  }
+  if (health.autoRecoverySaved) {
+    notes.push('Source inspection snapshot was saved to review storage for recovery.');
+  }
+  if (health.autoRecoveryError) {
+    notes.push(`Source snapshot save failed: ${health.autoRecoveryError}.`);
+  }
+  if (health.reviewStorageError) {
+    notes.push(`Review storage check unavailable: ${health.reviewStorageError}.`);
+  }
+  const protectedLegacy = LEGACY_STATIC_FALLBACK_INSPECTION_IDS.has(insp.inspectionId || insp.id);
+  if (!IS_DEMO && !health.reviewStorageRecoveryAvailable && !protectedLegacy) {
+    notes.push('Source inspection snapshot is not saved in review storage; this handoff is not recoverable yet.');
+  }
+  if (health.sourceError && health.sourcePath !== 'apps-script-detail') {
+    notes.push(`Primary detail source unavailable: ${health.sourceError}.`);
+  }
   const baseLookedThin = (health.baseRooms || 0) === 0 ||
     ((health.basePhotos || 0) === 0 && (health.workerPhotos || 0) > 0);
   if (health.recoveryApplied && baseLookedThin) {
@@ -3483,6 +4005,9 @@ function renderReviewDataHealthBanner(insp) {
   }
   if (health.workerPhotoError) {
     notes.push(`Photo service check unavailable: ${health.workerPhotoError}.`);
+  }
+  if (health.workerStatusError) {
+    notes.push(`Inspection status receipt unavailable: ${health.workerStatusError}.`);
   }
   const sourceCount = Math.max(Number(health.basePhotoCount) || 0, Number(health.basePhotos) || 0);
   const workerCount = Number(health.workerPhotos) || 0;
@@ -3505,7 +4030,7 @@ function renderReviewDataHealthBanner(insp) {
     return;
   }
   banner.classList.remove('hidden');
-  const hasMismatch = notes.some(note => /mismatch|unavailable|not have a confirmed/i.test(note));
+  const hasMismatch = notes.some(note => /mismatch|unavailable|failed|not have a confirmed/i.test(note));
   banner.classList.toggle('warning', hasMismatch);
   banner.replaceChildren(
     el('div', { class: 'data-health-icon' }, hasMismatch ? '!' : 'i'),
@@ -3522,6 +4047,39 @@ function firstNonEmptyValue(...values) {
     if (String(value).trim() !== '') return value;
   }
   return '';
+}
+
+function readObjectPath(source, path) {
+  if (!source || typeof source !== 'object') return undefined;
+  return String(path || '').split('.').reduce((current, key) => {
+    if (!current || typeof current !== 'object') return undefined;
+    return current[key];
+  }, source);
+}
+
+function firstObjectPathValue(source, paths = []) {
+  for (const path of paths) {
+    const value = readObjectPath(source, path);
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return '';
+}
+
+function numberFromValue(value) {
+  if (value === undefined || value === null || value === '') return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatHandoffRunnerDetail({ attemptCount, lastRunAt, nextRunAt, pendingPhotoCount } = {}) {
+  const pieces = [];
+  const attempts = Number(attemptCount) || 0;
+  const pending = Number(pendingPhotoCount) || 0;
+  if (attempts) pieces.push(`attempt ${attempts}`);
+  if (lastRunAt) pieces.push(`last ${formatDateTime(lastRunAt)}`);
+  if (nextRunAt) pieces.push(`retry ${formatDateTime(nextRunAt)}`);
+  if (pending) pieces.push(`${pending} photo${pending === 1 ? '' : 's'} pending`);
+  return pieces.join(' · ');
 }
 
 function driveFolderUrlFromId(id) {
@@ -3557,6 +4115,10 @@ function findFirstStringMatching(value, matcher, depth = 0, seen = new Set()) {
 
 function buildTannerPackageState(insp = {}) {
   const reviewed = insp.reviewedData || {};
+  const health = _reviewDataHealth || {};
+  const workerStatus = health.workerStatus && typeof health.workerStatus === 'object'
+    ? health.workerStatus
+    : {};
   const submission = getServerSubmittedReviewState(insp).submission || {};
   const system = reviewed.system || insp.system || {};
   const handoff = firstNonEmptyValue(
@@ -3567,6 +4129,67 @@ function buildTannerPackageState(insp = {}) {
     system.tannerHandoff
   );
   const handoffObj = handoff && typeof handoff === 'object' ? handoff : {};
+  const isTestTraining = isTestTrainingInspectionRecord(insp, handoffObj);
+  const protectedLegacy = LEGACY_STATIC_FALLBACK_INSPECTION_IDS.has(insp.inspectionId || insp.id);
+  const sourceSnapshotReady = Boolean(
+    IS_DEMO ||
+    health.reviewStorageRecoveryAvailable ||
+    health.sourcePath === 'review-storage-recovery' ||
+    (protectedLegacy && health.usedLegacyStaticFallback)
+  );
+  const reviewStorageReady = Boolean(IS_DEMO || health.reviewStorageLoaded);
+  const workerStatusText = firstObjectPathValue(workerStatus, [
+    'handoffStatus',
+    'handoff.status',
+    'tannerHandoff.status',
+    'submission.status',
+    'status'
+  ]);
+  const workerStatusExpectedPhotos = numberFromValue(firstObjectPathValue(workerStatus, [
+    'expectedPhotos',
+    'photos.expectedCount',
+    'photos.count',
+    'counts.expectedPhotos'
+  ]));
+  const workerStatusStoredPhotos = numberFromValue(firstObjectPathValue(workerStatus, [
+    'storedPhotos',
+    'databasePhotos',
+    'photos.storedCount',
+    'photos.databaseCount',
+    'counts.storedPhotos'
+  ]));
+  const workerStatusMirroredPhotos = numberFromValue(firstObjectPathValue(workerStatus, [
+    'mirroredPhotos',
+    'photos.driveUrlCount',
+    'photos.mirroredCount',
+    'counts.mirroredPhotos'
+  ]));
+  const workerMissingPhotoCount = Array.isArray(workerStatus.missingPhotoIds)
+    ? workerStatus.missingPhotoIds.length
+    : 0;
+  const workerMissingMirrorCount = Array.isArray(workerStatus.missingMirrorPhotoIds)
+    ? workerStatus.missingMirrorPhotoIds.length
+    : 0;
+  const workerStatusComplete = Boolean(IS_DEMO || (
+    health.workerStatusLoaded &&
+    workerStatus.complete !== false &&
+    workerMissingPhotoCount === 0
+  ));
+  const workerStatusDetail = (() => {
+    if (!health.workerStatusLoaded) return health.workerStatusError || 'Inspection status not confirmed';
+    const expected = workerStatusExpectedPhotos || 0;
+    const stored = workerStatusStoredPhotos || 0;
+    if (expected || stored) {
+      const pieces = [`${stored}/${expected || stored} stored`];
+      if (workerStatusMirroredPhotos || workerMissingMirrorCount) {
+        pieces.push(`${workerStatusMirroredPhotos} mirrored`);
+      }
+      if (workerMissingPhotoCount) pieces.push(`${workerMissingPhotoCount} missing`);
+      if (workerMissingMirrorCount) pieces.push(`${workerMissingMirrorCount} mirror pending`);
+      return pieces.join(' · ');
+    }
+    return workerStatusText ? String(workerStatusText) : 'Status endpoint responded';
+  })();
 
   const folderId = firstNonEmptyValue(
     insp.folderId,
@@ -3574,7 +4197,17 @@ function buildTannerPackageState(insp = {}) {
     reviewed.folderId,
     reviewed.assessmentFolderId,
     handoffObj.folderId,
-    handoffObj.assessmentFolderId
+    handoffObj.assessmentFolderId,
+    firstObjectPathValue(workerStatus, [
+      'folderId',
+      'assessmentFolderId',
+      'assessment_folder_id',
+      'folder.id',
+      'assessmentFolder.id',
+      'handoff.folderId',
+      'handoff.assessmentFolderId',
+      'tannerHandoff.folderId'
+    ])
   );
   let folderUrl = firstNonEmptyValue(
     insp.folderUrl,
@@ -3583,10 +4216,21 @@ function buildTannerPackageState(insp = {}) {
     reviewed.assessmentFolderUrl,
     handoffObj.folderUrl,
     handoffObj.assessmentFolderUrl,
+    firstObjectPathValue(workerStatus, [
+      'folderUrl',
+      'assessmentFolderUrl',
+      'assessment_folder_url',
+      'folder.url',
+      'assessmentFolder.url',
+      'handoff.folderUrl',
+      'handoff.assessmentFolderUrl',
+      'tannerHandoff.folderUrl'
+    ]),
     folderId ? driveFolderUrlFromId(folderId) : ''
   );
   if (!folderUrl) {
-    folderUrl = findFirstStringMatching(insp, value => /drive\.google\.com\/drive\/folders\//i.test(value));
+    folderUrl = findFirstStringMatching(insp, value => /drive\.google\.com\/drive\/folders\//i.test(value)) ||
+      findFirstStringMatching(workerStatus, value => /drive\.google\.com\/drive\/folders\//i.test(value));
   }
 
   const spreadsheetId = firstNonEmptyValue(
@@ -3595,7 +4239,16 @@ function buildTannerPackageState(insp = {}) {
     reviewed.spreadsheetId,
     reviewed.reviewPortalDataSpreadsheetId,
     handoffObj.spreadsheetId,
-    handoffObj.reviewPortalDataSpreadsheetId
+    handoffObj.reviewPortalDataSpreadsheetId,
+    firstObjectPathValue(workerStatus, [
+      'spreadsheetId',
+      'reviewPortalDataSpreadsheetId',
+      'spreadsheet.id',
+      'reviewPortalData.id',
+      'handoff.spreadsheetId',
+      'handoff.reviewPortalDataSpreadsheetId',
+      'tannerHandoff.spreadsheetId'
+    ])
   );
   let spreadsheetUrl = firstNonEmptyValue(
     insp.spreadsheetUrl,
@@ -3607,10 +4260,21 @@ function buildTannerPackageState(insp = {}) {
     handoffObj.spreadsheetUrl,
     handoffObj.reviewPortalDataUrl,
     handoffObj.reviewPortalDataSpreadsheetUrl,
+    firstObjectPathValue(workerStatus, [
+      'spreadsheetUrl',
+      'reviewPortalDataUrl',
+      'reviewPortalDataSpreadsheetUrl',
+      'spreadsheet.url',
+      'reviewPortalData.url',
+      'handoff.spreadsheetUrl',
+      'handoff.reviewPortalDataUrl',
+      'tannerHandoff.spreadsheetUrl'
+    ]),
     spreadsheetId ? spreadsheetUrlFromId(spreadsheetId) : ''
   );
   if (!spreadsheetUrl) {
-    spreadsheetUrl = findFirstStringMatching(insp, value => /docs\.google\.com\/spreadsheets\//i.test(value));
+    spreadsheetUrl = findFirstStringMatching(insp, value => /docs\.google\.com\/spreadsheets\//i.test(value)) ||
+      findFirstStringMatching(workerStatus, value => /docs\.google\.com\/spreadsheets\//i.test(value));
   }
 
   const rawBackupUrl = firstNonEmptyValue(
@@ -3619,7 +4283,29 @@ function buildTannerPackageState(insp = {}) {
     reviewed.rawReviewDataJsonUrl,
     handoffObj.rawReviewDataUrl,
     handoffObj.rawReviewDataJsonUrl,
-    handoffObj.rawJsonUrl
+    handoffObj.rawJsonUrl,
+    firstObjectPathValue(workerStatus, [
+      'rawReviewDataUrl',
+      'rawReviewDataJsonUrl',
+      'rawJsonUrl',
+      'raw.url',
+      'handoff.rawReviewDataUrl',
+      'handoff.rawJsonUrl',
+      'tannerHandoff.rawJsonUrl'
+    ])
+  );
+  const photosFolderUrl = firstNonEmptyValue(
+    insp.photosFolderUrl,
+    reviewed.photosFolderUrl,
+    handoffObj.photosFolderUrl,
+    handoffObj.technicianPhotosFolderUrl,
+    firstObjectPathValue(workerStatus, [
+      'photosFolderUrl',
+      'technicianPhotosFolderUrl',
+      'handoff.photosFolderUrl',
+      'handoff.technicianPhotosFolderUrl',
+      'tannerHandoff.photosFolderUrl'
+    ])
   );
   const trackerValue = firstNonEmptyValue(
     insp.trackerUrl,
@@ -3630,10 +4316,116 @@ function buildTannerPackageState(insp = {}) {
     reviewed.trackerRow,
     handoffObj.trackerUrl,
     handoffObj.trackerRowUrl,
-    handoffObj.trackerRow
+    handoffObj.trackerRow,
+    firstObjectPathValue(workerStatus, [
+      'trackerUrl',
+      'trackerRowUrl',
+      'trackerRow',
+      'tracker.url',
+      'tracker.row',
+      'handoff.trackerUrl',
+      'handoff.trackerRowUrl',
+      'tannerHandoff.trackerUrl'
+    ])
   );
+  const trackerSkipped = isTestTraining && normalizedHandoffStatus(handoffObj.trackerStatus || '') === 'skipped-test-training';
+  const handoffStatus = String(firstNonEmptyValue(
+    insp.handoffStatus,
+    reviewed.handoffStatus,
+    handoffObj.status,
+    handoffObj.handoffStatus,
+    firstObjectPathValue(workerStatus, [
+      'handoff.status',
+      'tannerHandoff.status'
+    ])
+  ) || '').trim();
+  const handoffReceiptMissing = Object.keys(handoffObj).length ? getMissingHandoffReceiptFields(handoffObj, {
+    expectedPhotoCount: Number(insp.photoCount || (Array.isArray(insp.photos) ? insp.photos.length : 0) || 0),
+    expectedRoomCount: Array.isArray(insp.rooms) ? insp.rooms.length : 0
+  }) : [];
+  const handoffReady = handoffReceiptMissing.length
+    ? false
+    : (handoffStatus
+      ? isReadyHandoffStatus(handoffStatus)
+      : Boolean(folderUrl && spreadsheetUrl && rawBackupUrl && (trackerValue || trackerSkipped)));
+  const handoffError = firstNonEmptyValue(
+    insp.lastHandoffError,
+    reviewed.lastHandoffError,
+    handoffObj.error,
+    firstObjectPathValue(workerStatus, [
+      'handoff.error',
+      'tannerHandoff.error'
+    ])
+  );
+  const handoffAttemptCount = numberFromValue(firstNonEmptyValue(
+    insp.handoffAttemptCount,
+    reviewed.handoffAttemptCount,
+    handoffObj.attemptCount,
+    firstObjectPathValue(workerStatus, [
+      'handoff.attemptCount',
+      'tannerHandoff.attemptCount',
+      'attemptCount'
+    ])
+  ));
+  const handoffLastRunAt = firstNonEmptyValue(
+    insp.handoffLastRunAt,
+    reviewed.handoffLastRunAt,
+    handoffObj.lastRunAt,
+    firstObjectPathValue(workerStatus, [
+      'handoff.lastRunAt',
+      'tannerHandoff.lastRunAt',
+      'lastRunAt'
+    ])
+  );
+  const handoffNextRunAt = firstNonEmptyValue(
+    insp.handoffNextRunAt,
+    reviewed.handoffNextRunAt,
+    handoffObj.nextRunAt,
+    firstObjectPathValue(workerStatus, [
+      'handoff.nextRunAt',
+      'tannerHandoff.nextRunAt',
+      'nextRunAt'
+    ])
+  );
+  const handoffPendingPhotoCount = numberFromValue(firstNonEmptyValue(
+    handoffObj.photoFolderPendingCount,
+    handoffObj.counts?.photoFolderPendingCount,
+    firstObjectPathValue(workerStatus, [
+      'handoff.photoFolderPendingCount',
+      'handoff.counts.photoFolderPendingCount',
+      'tannerHandoff.photoFolderPendingCount'
+    ])
+  ));
+  const handoffRunnerDetail = formatHandoffRunnerDetail({
+    attemptCount: handoffAttemptCount,
+    lastRunAt: handoffLastRunAt,
+    nextRunAt: handoffNextRunAt,
+    pendingPhotoCount: handoffPendingPhotoCount
+  });
 
   const photoCount = countInspectionArray(insp.photos);
+  const statusPhotoCount = numberFromValue(firstObjectPathValue(workerStatus, [
+    'photoCount',
+    'photosCount',
+    'photo_count',
+    'storedPhotos',
+    'databasePhotos',
+    'counts.photos',
+    'counts.workerPhotos',
+    'photos.count',
+    'summary.photoCount'
+  ]));
+  const workerPhotoCount = Math.max(
+    Number(health.workerPhotos) || 0,
+    statusPhotoCount,
+    workerStatusStoredPhotos
+  );
+  const expectedPhotoCount = Math.max(
+    photoCount,
+    Number(health.basePhotoCount) || 0,
+    Number(health.basePhotos) || 0,
+    workerStatusExpectedPhotos
+  );
   const roomCount = buildReviewRoomRecords(insp).length;
   const reportNotes = firstNonEmptyValue(
     insp.reportBuilderNotes,
@@ -3647,6 +4439,39 @@ function buildTannerPackageState(insp = {}) {
     readyCount: 0,
     items: [
       {
+        label: 'Source snapshot',
+        ok: sourceSnapshotReady,
+        detail: sourceSnapshotReady
+          ? (health.sourcePath === 'review-storage-recovery' ? 'Loaded from review storage' : 'Recoverable source saved')
+          : 'Needs source snapshot in review storage'
+      },
+      {
+        label: 'Review storage',
+        ok: reviewStorageReady,
+        detail: reviewStorageReady ? 'Review fields connected' : (health.reviewStorageError || 'Review storage not confirmed')
+      },
+      {
+        label: 'Photo service',
+        ok: expectedPhotoCount === 0 || workerPhotoCount > 0,
+        detail: expectedPhotoCount === 0
+          ? 'No photos expected'
+          : `${workerPhotoCount}/${expectedPhotoCount} photo${expectedPhotoCount === 1 ? '' : 's'} confirmed`
+      },
+      {
+        label: 'Worker status receipt',
+        ok: workerStatusComplete,
+        detail: workerStatusDetail
+      },
+      {
+        label: 'Tanner handoff receipt',
+        ok: handoffReady,
+        detail: handoffStatus
+          ? [handoffError ? `${handoffStatus}: ${handoffError}` : handoffStatus, handoffRunnerDetail].filter(Boolean).join(' · ')
+          : (handoffReady
+            ? ['Package receipt linked', handoffRunnerDetail].filter(Boolean).join(' · ')
+            : (handoffRunnerDetail || 'No completed handoff receipt yet'))
+      },
+      {
         label: 'Assessment folder',
         ok: Boolean(folderUrl || folderId),
         detail: folderUrl || folderId ? 'Drive folder linked' : 'Needs Drive folder link',
@@ -3659,10 +4484,12 @@ function buildTannerPackageState(insp = {}) {
         href: spreadsheetUrl
       },
       {
-        label: 'Technician photos',
-        ok: photoCount > 0,
-        detail: `${photoCount} photo${photoCount === 1 ? '' : 's'} loaded`,
-        href: folderUrl
+        label: 'Photos folder',
+        ok: Boolean(photosFolderUrl) || photoCount > 0,
+        detail: photosFolderUrl
+          ? 'Photos folder linked'
+          : `${photoCount} photo${photoCount === 1 ? '' : 's'} loaded`,
+        href: photosFolderUrl || folderUrl
       },
       {
         label: 'Room data',
@@ -3679,7 +4506,7 @@ function buildTannerPackageState(insp = {}) {
       {
         label: 'Report builder notes',
         ok: Boolean(String(reportNotes || '').trim()),
-        detail: reportNotes ? 'Notes entered for Tanner' : 'Needs Tanner-facing notes'
+        detail: reportNotes ? 'Report builder notes entered' : 'Needs report builder notes'
       },
       {
         label: 'Raw review backup',
@@ -3689,8 +4516,8 @@ function buildTannerPackageState(insp = {}) {
       },
       {
         label: 'Tracker reference',
-        ok: Boolean(trackerValue),
-        detail: trackerValue ? String(trackerValue) : 'No tracker row/link in this portal record'
+        ok: Boolean(trackerValue) || trackerSkipped,
+        detail: trackerValue ? String(trackerValue) : (trackerSkipped ? 'Skipped for test/training package' : 'No tracker row/link in this portal record')
       }
     ]
   };
@@ -3709,9 +4536,22 @@ function renderTannerPackageCheck(insp) {
   mount.appendChild(el('div', { class: 'tanner-package-header' },
     el('div', {},
       el('div', { class: 'tanner-package-title' }, 'Tanner Package Check'),
-      el('div', { class: 'tanner-package-subtitle' }, 'Confirms the handoff pieces Tanner needs before report scoring.')
+      el('div', { class: 'tanner-package-subtitle' }, 'Confirms the handoff pieces Tanner needs before report building.')
     ),
-    el('div', { class: 'tanner-package-score' }, `${readyCount}/${state.items.length}`)
+    el('div', { class: 'tanner-package-count' }, `${readyCount}/${state.items.length}`)
+  ));
+
+  const repairBtn = el('button', {
+    type: 'button',
+    class: 'tanner-package-repair-btn',
+    onclick: repairTannerHandoffPackage
+  }, _handoffRepairInFlight ? 'Repairing...' : 'Repair Tanner Package');
+  repairBtn.disabled = IS_DEMO || _handoffRepairInFlight;
+  mount.appendChild(el('div', { class: 'tanner-package-actions' },
+    repairBtn,
+    el('span', {}, ready
+      ? 'Package receipt is complete.'
+      : 'Rebuilds Drive, sheet, raw backup, photos folder, and tracker without changing submission status.')
   ));
 
   const grid = el('div', { class: 'tanner-package-grid' });
@@ -6188,7 +7028,7 @@ function renderPhotoPlacementAudit(insp, photos) {
       el('div', { class: 'photo-placement-audit-title' }, 'Photo Placement Audit'),
       el('div', { class: 'photo-placement-audit-subtitle' }, 'Checks important evidence photos before Tanner gets the package.')
     ),
-    el('div', { class: 'photo-placement-audit-score' },
+    el('div', { class: 'photo-placement-audit-count' },
       `${audit.placedCount}/${audit.evidence.length || 0} placed`
     )
   ));
@@ -7339,8 +8179,66 @@ function evaluateGate(insp) {
   const boulderOk = !isTestConfirmedForReview(insp, 'testBoulderBlue') ||
     String(reviewedTests.boulderBlueSampleId ?? reviewed.boulderBlueSampleId ?? insp.boulderBlueSampleId ?? '').trim() !== '';
   const samplesOk = waterOk && boulderOk;
+  const health = _reviewDataHealth || {};
+  const protectedLegacy = LEGACY_STATIC_FALLBACK_INSPECTION_IDS.has(insp.inspectionId || insp.id);
+  const expectedBackendPhotos = Math.max(
+    photos.length,
+    Number(health.basePhotoCount) || 0,
+    Number(health.basePhotos) || 0
+  );
+  const workerStatus = health.workerStatus && typeof health.workerStatus === 'object'
+    ? health.workerStatus
+    : {};
+  const workerMissingPhotoCount = Array.isArray(workerStatus.missingPhotoIds)
+    ? workerStatus.missingPhotoIds.length
+    : 0;
+  const workerStoredPhotos = Number(workerStatus.storedPhotos || workerStatus.databasePhotos || 0) || 0;
+  const workerExpectedPhotos = Number(workerStatus.expectedPhotos || expectedBackendPhotos || 0) || 0;
+  const workerStatusComplete = Boolean(
+    health.workerStatusLoaded &&
+    workerStatus.complete !== false &&
+    workerMissingPhotoCount === 0 &&
+    (workerExpectedPhotos === 0 || workerStoredPhotos > 0)
+  );
+  const workerStatusDetail = health.workerStatusLoaded
+    ? `${workerStoredPhotos}/${workerExpectedPhotos || workerStoredPhotos} source photos confirmed${workerMissingPhotoCount ? ` · ${workerMissingPhotoCount} missing` : ''}`
+    : (health.workerStatusError || 'Worker status receipt not confirmed');
+  const backendGateResults = IS_DEMO ? [] : [
+    {
+      key: 'reviewStorage',
+      label: 'Review storage connected',
+      pass: Boolean(health.reviewStorageLoaded && !health.reviewStorageError),
+      selector: '#data-health-banner',
+      action: 'backendCheck'
+    },
+    {
+      key: 'sourceSnapshot',
+      label: 'Source inspection backed up for handoff',
+      pass: Boolean(health.reviewStorageRecoveryAvailable || (protectedLegacy && health.usedLegacyStaticFallback)),
+      selector: '#data-health-banner',
+      action: 'backendCheck'
+    },
+    {
+      key: 'photoService',
+      label: expectedBackendPhotos
+        ? `Photo service confirmed (${Number(health.workerPhotos) || 0}/${expectedBackendPhotos})`
+        : 'Photo service checked',
+      pass: expectedBackendPhotos === 0 || Number(health.workerPhotos) > 0,
+      selector: '#photos-card',
+      action: 'backendCheck'
+    },
+    {
+      key: 'workerStatus',
+      label: 'Source-photo receipt confirmed',
+      pass: workerStatusComplete,
+      selector: '#data-health-banner',
+      action: 'backendCheck',
+      detail: workerStatusDetail
+    }
+  ];
 
   return [
+    ...backendGateResults,
     {
       key: 'notes',
       label: `Room review complete (${completedRooms.length}/${roomRecords.length})`,
@@ -7396,6 +8294,27 @@ function evaluateGate(insp) {
       action: 'openDetails'
     }
   ];
+}
+
+function buildReviewReadinessReceipt(results = []) {
+  const items = Array.isArray(results) ? results : [];
+  const blockers = items
+    .filter(item => !item.pass)
+    .map(item => ({
+      key: item.key || '',
+      label: item.label || '',
+      detail: item.detail || ''
+    }));
+  const passed = items.length - blockers.length;
+  return {
+    status: blockers.length ? 'blocked' : 'ready',
+    passed,
+    total: items.length,
+    blockerCount: blockers.length,
+    blockers,
+    checkedAt: new Date().toISOString(),
+    portalVersion: REVIEW_PORTAL_VERSION
+  };
 }
 
 function renderGate(results) {
@@ -7519,8 +8438,6 @@ function renderFinishTracker(results) {
   const failures = results.filter(item => !item.pass);
   const passed = results.length - failures.length;
   const ready = failures.length === 0;
-  const score = calculateCompletionScore(_inspection);
-  const incompleteScoreItems = score.categories.filter(category => category.score < category.max);
 
   const tracker = el('aside', {
     id: 'finish-tracker',
@@ -7583,32 +8500,6 @@ function renderFinishTracker(results) {
     });
   }
   panel.appendChild(required);
-
-  const optional = el('details', { class: 'finish-tracker-optional' });
-  optional.appendChild(el('summary', {},
-    el('span', {}, `Optional review quality · ${score.total} out of 100`),
-    el('span', { class: 'finish-tracker-optional-count' }, `${incompleteScoreItems.length} categories`)
-  ));
-  const optionalBody = el('div', { class: 'finish-tracker-optional-body' },
-    el('p', {}, 'These are suggestions only. The required blockers above control whether the report can be submitted.')
-  );
-  if (!incompleteScoreItems.length) {
-    optionalBody.appendChild(el('div', { class: 'finish-tracker-ready-message' }, 'All score categories are complete.'));
-  } else {
-    incompleteScoreItems.forEach(item => {
-      const button = el('button', { class: 'finish-tracker-score-item', type: 'button' },
-        el('span', {},
-          el('strong', {}, item.label),
-          el('small', {}, item.detail)
-        ),
-        el('span', { class: 'finish-tracker-score-points' }, `${item.score}/${item.max} →`)
-      );
-      button.addEventListener('click', () => goToFinishItem(item));
-      optionalBody.appendChild(button);
-    });
-  }
-  optional.appendChild(optionalBody);
-  panel.appendChild(optional);
   tracker.appendChild(panel);
   document.body.appendChild(tracker);
 }
@@ -7630,110 +8521,13 @@ function updateSubmitButton(results) {
    SECTION 6 — SUBMIT TO TANNER
    ============================================================ */
 
-let _bonusClockInterval = null;
-
-function getBonusTier(endedAt) {
-  if (!endedAt) return null;
-  const elapsedMs = Date.now() - new Date(endedAt).getTime();
-  const hrs = elapsedMs / 3600000;
-  if (hrs < 4) return { amount: 75, label: 'Full bonus',     nextAt: 4,  nextAmount: 50,  color: '#16a34a', bg: '#dcfce7', bar: '#16a34a' };
-  if (hrs < 6) return { amount: 50, label: 'Reduced bonus',  nextAt: 6,  nextAmount: 25,  color: '#d97706', bg: '#fef9c3', bar: '#f59e0b' };
-  if (hrs < 8) return { amount: 25, label: 'Minimum bonus',  nextAt: 8,  nextAmount: 0,   color: '#ea580c', bg: '#fff7ed', bar: '#f97316' };
-  return { amount: 0, label: 'Window closed', nextAt: null, nextAmount: null, color: '#9ca3af', bg: '#f5f5f5', bar: '#9ca3af' };
-}
-
-function formatHMS(ms) {
-  if (ms <= 0) return '0:00:00';
-  const totalSec = Math.floor(ms / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-}
-
-function renderBonusClock(wrap, insp, score) {
-  const endedAt = insp.endedAt || insp.completedAt || null;
-  const tier = getBonusTier(endedAt);
-  if (!tier) return;
-
-  const qualifies = score.total >= 85;
-  const pct = endedAt && tier.nextAt
-    ? Math.max(0, 100 - ((Date.now() - new Date(endedAt).getTime()) / (tier.nextAt * 3600000)) * 100)
-    : (tier.amount > 0 ? 5 : 0);
-
-  const msUntilNext = tier.nextAt
-    ? Math.max(0, new Date(endedAt).getTime() + tier.nextAt * 3600000 - Date.now())
-    : 0;
-
-  wrap.innerHTML = '';
-  const clock = el('div', { class: 'bonus-clock', style: `background:${tier.bg};border-color:${tier.bar}` });
-
-  // Top row: icon + time + amount
-  const top = el('div', { class: 'bonus-clock-top' });
-
-  const left = el('div', { class: 'bonus-clock-left' });
-  left.appendChild(el('div', { class: 'bonus-clock-label' }, '⚡ Same-Day Bonus Window'));
-  const timeEl = el('div', { class: 'bonus-clock-time', style: `color:${tier.color}`, id: 'bonus-clock-time' },
-    tier.nextAt ? formatHMS(msUntilNext) : 'Window closed');
-  left.appendChild(timeEl);
-  left.appendChild(el('div', { class: 'bonus-clock-sublabel', style: `color:${tier.color}` },
-    tier.nextAt ? `until bonus drops to $${tier.nextAmount}` : 'Submit tomorrow for base pay only'));
-  top.appendChild(left);
-
-  const right = el('div', { class: 'bonus-clock-right' });
-  right.appendChild(el('div', { class: 'bonus-clock-amount', style: `color:${tier.color}` },
-    tier.amount > 0 ? `$${tier.amount}` : '$0'));
-  right.appendChild(el('div', { class: 'bonus-clock-amount-label' }, tier.label));
-  top.appendChild(right);
-  clock.appendChild(top);
-
-  // Progress bar
-  const track = el('div', { class: 'bonus-bar-track' });
-  const fill  = el('div', { class: 'bonus-bar-fill', style: `width:${pct}%;background:${tier.bar}` });
-  track.appendChild(fill);
-  clock.appendChild(track);
-  clock.appendChild(el('div', { class: 'bonus-bar-labels' },
-    el('span', {}, '← Less time'),
-    el('span', {}, 'Just left home →')));
-
-  // Status message
-  let msg, msgStyle;
-  if (tier.amount === 0) {
-    msg = 'Bonus window closed. Your score still counts toward monthly performance.';
-    msgStyle = 'color:#9ca3af';
-  } else if (!qualifies) {
-    msg = `Score is ${score.total} — need 85+ to qualify. ${score.total < 85 ? `${85 - score.total} more points needed.` : ''}`;
-    msgStyle = 'color:#dc2626;font-weight:600';
-  } else {
-    msg = `✅ You qualify! Score ${score.total} (${score.grade}). Submit now to earn $${tier.amount}.`;
-    msgStyle = `color:${tier.color};font-weight:700`;
-  }
-  clock.appendChild(el('div', { class: 'bonus-clock-msg', style: msgStyle }, msg));
-  wrap.appendChild(clock);
-
-  // Live tick
-  if (_bonusClockInterval) clearInterval(_bonusClockInterval);
-  if (tier.nextAt && tier.amount > 0) {
-    _bonusClockInterval = setInterval(() => {
-      const newMs = Math.max(0, new Date(endedAt).getTime() + tier.nextAt * 3600000 - Date.now());
-      const el2 = document.getElementById('bonus-clock-time');
-      if (el2) el2.textContent = formatHMS(newMs);
-      if (newMs === 0) {
-        clearInterval(_bonusClockInterval);
-        renderSubmitSection(_inspection, false);
-      }
-    }, 1000);
-  }
-}
-
 function renderSubmitSection(insp, locked) {
   updatePhotoSummary(insp.photos || []);
 
-  // Score in submit section
-  const scoreWrap = qs('#submit-score-wrap');
-  if (scoreWrap) {
-    scoreWrap.innerHTML = '';
-    scoreWrap.appendChild(el('div', { class: 'submit-finish-note' },
+  const guidanceWrap = qs('#submit-guidance-wrap');
+  if (guidanceWrap) {
+    guidanceWrap.innerHTML = '';
+    guidanceWrap.appendChild(el('div', { class: 'submit-finish-note' },
       'Use Finish Review for the remaining items. When it says Ready to submit, this button unlocks.'
     ));
   }
@@ -7758,60 +8552,103 @@ async function submitToTanner() {
   }
 
   const { id, token } = getURLParams();
+  if (_inspection) {
+    const gateResults = evaluateGate(_inspection);
+    const blockers = gateResults.filter(item => !item.pass);
+    if (blockers.length) {
+      renderGate(gateResults);
+      renderFinishTracker(gateResults);
+      updateSubmitButton(gateResults);
+      setFinishTrackerOpen(true);
+      showToast(`Finish Review has ${blockers.length} blocker${blockers.length === 1 ? '' : 's'} remaining.`, 'error', 5000);
+      return;
+    }
+  }
+
   const submitButtons = qsa('#submit-btn, #submit-btn-bottom');
   submitButtons.forEach(btn => {
     btn.disabled = true;
     btn.textContent = 'Submitting…';
   });
 
-  // Calculate and save score before submitting
-  const finalScore   = _inspection ? calculateCompletionScore(_inspection) : null;
+  const finalGateResults = _inspection ? evaluateGate(_inspection) : [];
+  const reviewReadiness = buildReviewReadinessReceipt(finalGateResults);
   const submittedAt  = new Date().toISOString();
-  const endedAt      = _inspection?.endedAt || _inspection?.completedAt || null;
-  const bonusTier    = getBonusTier(endedAt);
-  const bonusEarned  = finalScore && finalScore.total >= 85 && bonusTier && bonusTier.amount > 0;
   const notesEl      = qs('#field-report-notes');
   const reportBuilderNotes = notesEl ? notesEl.value : (_inspection?.reportBuilderNotes || '');
   const submissionReceipt = {
     status: 'Submitted to Tanner',
     submittedAt,
-    completionScore: finalScore ? finalScore.total : null,
-    completionGrade: finalScore ? finalScore.grade : null,
-    sameDayBonus: bonusEarned || false,
-    sameDayBonusAmt: bonusEarned ? bonusTier.amount : 0
+    reviewReadiness,
+    readinessStatus: reviewReadiness.status,
+    readinessCompleted: reviewReadiness.passed,
+    readinessRequired: reviewReadiness.total,
+    blockerCount: reviewReadiness.blockerCount
   };
 
   if (_inspection) {
     _inspection.reportBuilderNotes = reportBuilderNotes;
     if (!_inspection.reviewedData) _inspection.reviewedData = {};
     _inspection.reviewedData.reportBuilderNotes = reportBuilderNotes;
-    _inspection.reviewedData.submission = submissionReceipt;
     if (!_inspection.reviewedData.summary) _inspection.reviewedData.summary = {};
     _inspection.reviewedData.summary.reportBuilderNotes = reportBuilderNotes;
   }
 
-  let notificationWarning = '';
+  let handoffResult = null;
   try {
-    await saveReviewSubmissionReceipt(id, submissionReceipt, reportBuilderNotes);
+    await saveReviewSubmissionAttempt(id, submissionReceipt, reportBuilderNotes);
 
-    try {
-      await apiFetch({}, 'POST', { action: 'submit', id, token,
-        completionScore:  finalScore ? finalScore.total : null,
-        completionGrade:  finalScore ? finalScore.grade : null,
-        submittedAt,
-        sameDayBonus:     bonusEarned || false,
-        sameDayBonusAmt:  bonusEarned ? bonusTier.amount : 0,
-        reviewedData:     _inspection?.reviewedData || {},
-        reportBuilderNotes,
-        photos:           _inspection?.photos || []
-      });
-    } catch (notifyErr) {
-      notificationWarning = notifyErr?.message || 'Tanner notification was not confirmed.';
-      console.warn('Tanner notification submit failed after receipt save:', notifyErr);
+    const submitResponse = ENABLE_WORKER_HANDOFF
+      ? await requestWorkerHandoffPackage(id, {
+          requestedBy: 'review-portal-submit',
+          maxAttempts: getWorkerHandoffMaxAttempts(_inspection),
+          submitAttempt: submissionReceipt,
+          submittedAt,
+          reviewReadiness,
+          readinessStatus: reviewReadiness.status,
+          readinessCompleted: reviewReadiness.passed,
+          readinessRequired: reviewReadiness.total,
+          blockerCount: reviewReadiness.blockerCount,
+          reviewedData: _inspection?.reviewedData || {},
+          reportBuilderNotes,
+          photos: _inspection?.photos || []
+        })
+      : await apiFetch({}, 'POST', { action: 'submit', id, token,
+          submittedAt,
+          reviewReadiness,
+          readinessStatus:  reviewReadiness.status,
+          readinessCompleted: reviewReadiness.passed,
+          readinessRequired: reviewReadiness.total,
+          blockerCount: reviewReadiness.blockerCount,
+          reviewedData:     _inspection?.reviewedData || {},
+          reportBuilderNotes,
+          photos:           _inspection?.photos || []
+        }, { timeoutMs: API_HANDOFF_TIMEOUT_MS });
+    if (submitResponse?.handoffWarning) {
+      throw new Error('Tanner handoff failed: ' + submitResponse.handoffWarning);
     }
-
-    await verifyTannerToolPackage(id);
+    const notificationWarning = submitResponse?.notificationWarning || '';
+    handoffResult = submitResponse?.reviewPortalData || null;
+    if (!handoffResult) {
+      throw new Error('Tanner handoff did not return a package receipt.');
+    }
+    if (submitResponse?.tannerNotification && _inspection) {
+      if (!_inspection.reviewedData) _inspection.reviewedData = {};
+      if (!_inspection.reviewedData.system || typeof _inspection.reviewedData.system !== 'object') {
+        _inspection.reviewedData.system = {};
+      }
+      _inspection.reviewedData.system.tannerNotification = submitResponse.tannerNotification;
+      _inspection.reviewedData.tannerNotificationStatus = submitResponse.tannerNotification.status || '';
+      _inspection.reviewedData.lastTannerNotificationError = submitResponse.tannerNotification.error || '';
+    }
+    await saveReviewHandoffReceipt(id, handoffResult);
+    await verifyTannerHandoffPackage(id);
+    await saveReviewSubmissionReceipt(id, submissionReceipt, reportBuilderNotes);
+    if (notificationWarning) {
+      showToast('Tanner package confirmed, but notification email needs attention: ' + notificationWarning, 'info', 10000);
+    }
   } catch (err) {
+    await saveReviewSubmissionFailure(id, err.message || String(err || 'Submission failed'));
     showToast(`Submission failed: ${err.message}`, 'error');
     submitButtons.forEach(btn => {
       btn.disabled = false;
@@ -7820,16 +8657,15 @@ async function submitToTanner() {
     return;
   }
 
-  if (notificationWarning) {
-    showToast(`Submitted and saved. Tanner notification needs manual backup: ${notificationWarning}`, 'info', 9000);
-  } else {
-    showToast('Submitted. Tanner has been notified.', 'success', 6000);
-  }
+  showToast('Submitted. Tanner package confirmed.', 'success', 6000);
   if (_inspection) {
     _inspection.status = 'Submitted to Tanner';
     _inspection.submittedToTannerAt = submittedAt;
     _inspection.reviewedData = _inspection.reviewedData || {};
     _inspection.reviewedData.submission = submissionReceipt;
+    if (handoffResult) {
+      applyHandoffReceiptToInspection(handoffResult);
+    }
   }
 
   // Show submitted banner + lock page

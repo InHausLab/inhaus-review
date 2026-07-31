@@ -1,2 +1,15 @@
 *.inspect.ndjson
 .tmp-*/
+.DS_Store
+
+# Local support artifacts; keep on disk, do not ship as portal code.
+/InHaus-Command-Center.pptx
+/InHaus-Workflow-Map.html
+/alexis-guide.html
+/phototest.html
+/room-mockup.html
+/inhaus-vision-proxy-worker.js
+/alexis-photos/
+/photos/
+/review-data-backups/
+/inhaus-workflow-site/
