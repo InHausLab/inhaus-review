@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V71';
+const REVIEW_PORTAL_VERSION = 'V72';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -1300,6 +1300,7 @@ async function workerFetchJson(path, options = {}) {
     method: options.method || 'GET',
     headers: workerAuthHeaders(options.body ? { 'Content-Type': 'application/json' } : {})
   };
+  if (opts.method === 'GET') opts.cache = 'no-store';
   if (options.body) opts.body = JSON.stringify(options.body);
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs || API_FETCH_TIMEOUT_MS);
