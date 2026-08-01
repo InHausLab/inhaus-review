@@ -36,6 +36,20 @@ test('test training start shell creates pickup artifacts without a tracker row',
   assert.doesNotMatch(startShell, /return skipped/);
 });
 
+test('tracker writer matches Tanner Report Tracker columns', () => {
+  const start = appsScript.indexOf('function getTrackerColumns(sheet)');
+  const end = appsScript.indexOf('function findNextAvailableTrackerRow', start);
+  const trackerColumns = appsScript.slice(start, end);
+  assert.match(trackerColumns, /assessmentType:[\s\S]*Assessment Type/);
+  assert.match(trackerColumns, /client:[\s\S]*Name/);
+  assert.match(trackerColumns, /serviceLocation:[\s\S]*Service Location/);
+  assert.match(trackerColumns, /customerId:[\s\S]*Client ID/);
+  assert.match(trackerColumns, /inhId:[\s\S]*Inspector App ID/);
+  assert.doesNotMatch(trackerColumns, /inspector:/);
+  assert.match(appsScript, /function inferServiceLocationForTracker\(source\)/);
+  assert.match(appsScript, /writeTrackerCell\(sheet, row, columns\.serviceLocation, inferServiceLocationForTracker\(source\), false\)/);
+});
+
 test('real Apps Script POSTs carry the shared sync key', () => {
   assert.match(portal, /'x-sync-secret': body\['x-sync-secret'\] \|\| SYNC_SECRET/);
   assert.match(smokeScript, /action: 'submitSmoke'/);

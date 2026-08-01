@@ -1816,15 +1816,15 @@ function getTrackerColumns(sheet) {
   return {
     trackerStatus: 1,
     assessment: findTrackerColumn(headers, ['Assessment #', 'Assessment No', 'Assessment Number', 'Assessment'], 2),
-    customerId: findTrackerColumn(headers, ['C-ID', 'Customer ID', 'Customer Id', 'CID'], 3),
-    homeId: findTrackerColumn(headers, ['H-ID', 'Home ID', 'HID'], 4),
-    reportId: findTrackerColumn(headers, ['RPT-ID', 'Report ID', 'RPT ID', 'Report'], 5),
+    assessmentType: findTrackerColumn(headers, ['Assessment Type', 'Type'], 3),
+    client: findTrackerColumn(headers, ['Name', 'Client', 'Client Name', 'Customer', 'Customer Name'], 4),
+    date: findTrackerColumn(headers, ['Assessment Date', 'Date', 'Inspection Date'], 5),
     address: findTrackerColumn(headers, ['Address', 'Property Address', 'Street Address'], 6),
-    inspector: findTrackerColumn(headers, ['Inspector', 'Technician', 'Inspector Name'], 7),
-    date: findTrackerColumn(headers, ['Date', 'Inspection Date', 'Assessment Date'], 8),
-    status: findTrackerColumn(headers, ['Status', 'Report Status', 'Assessment Status'], 9),
-    inhId: findTrackerColumn(headers, ['INH-ID', 'INH ID', 'Inspection ID', 'InspectionId'], 10),
-    client: findTrackerColumn(headers, ['Client', 'Client Name', 'Customer', 'Customer Name', 'Name'], 11),
+    serviceLocation: findTrackerColumn(headers, ['Service Location', 'Market', 'Location'], 7),
+    customerId: findTrackerColumn(headers, ['Client ID', 'C-ID', 'Customer ID', 'Customer Id', 'CID'], 8),
+    homeId: findTrackerColumn(headers, ['Home ID', 'H-ID', 'HID'], 9),
+    reportId: findTrackerColumn(headers, ['Report ID', 'RPT-ID', 'RPT ID', 'Report'], 10),
+    inhId: findTrackerColumn(headers, ['Inspector App ID', 'INH-ID', 'INH ID', 'Inspection ID', 'InspectionId'], 11),
     folder: findTrackerColumn(headers, ['Assessment Folder', 'Folder Link', 'Drive Folder', 'Folder URL', 'Folder'], 41)
   };
 }
@@ -1859,6 +1859,22 @@ function trackerFormula(url, label) {
   return '=HYPERLINK("' + String(url).replace(/"/g, '""') + '","' + String(label || 'Open').replace(/"/g, '""') + '")';
 }
 
+function inferServiceLocationForTracker(source) {
+  var explicit = String(
+    (source && (source.serviceLocation || source.market || source.region || source.location)) ||
+    ''
+  ).trim().toUpperCase();
+  if (explicit === 'MSP' || explicit === 'CO') return explicit;
+
+  var text = String(
+    (source && (source.propertyAddress || source.address || source.city || source.state || '')) ||
+    ''
+  ).toUpperCase();
+  if (/\b(MN|MINNESOTA|MINNEAPOLIS|ST PAUL|SAINT PAUL|EDEN PRAIRIE|MSP)\b/.test(text)) return 'MSP';
+  if (/\b(CO|COLORADO|ASPEN|BASALT|DENVER|BOULDER|CARBONDALE|GLENWOOD)\b/.test(text)) return 'CO';
+  return 'CO';
+}
+
 function writeTrackerCell(sheet, row, col, value, overwrite) {
   if (!col || value === undefined || value === null || value === '') return;
   var range = sheet.getRange(row, col);
@@ -1882,18 +1898,19 @@ function upsertReportTrackerHandoffRow(source, artifacts) {
   var assessmentNumber = source.assessmentNumber || parseAssessmentNumberFromFolderName(artifacts.folder ? artifacts.folder.getName() : '');
   var inspectionDate = source.inspectionDate || (source.submittedAt ? String(source.submittedAt).substring(0, 10) : '');
   var trackerStatus = 'In Progress';
+  var assessmentType = source.assessmentType || source.inspectionType || 'Home Health Assessment';
 
   writeTrackerCell(sheet, row, columns.trackerStatus, trackerStatus, true);
   writeTrackerCell(sheet, row, columns.assessment, assessmentNumber, false);
+  writeTrackerCell(sheet, row, columns.assessmentType, assessmentType, false);
+  writeTrackerCell(sheet, row, columns.client, source.clientName || '', false);
+  writeTrackerCell(sheet, row, columns.date, inspectionDate, false);
+  writeTrackerCell(sheet, row, columns.address, source.propertyAddress || source.address || '', false);
+  writeTrackerCell(sheet, row, columns.serviceLocation, inferServiceLocationForTracker(source), false);
   writeTrackerCell(sheet, row, columns.customerId, source.customerId || source.cId || source.cid || '', false);
   writeTrackerCell(sheet, row, columns.homeId, source.homeId || source.hId || source.hid || '', false);
   writeTrackerCell(sheet, row, columns.reportId, source.reportId || source.rptId || source.rpt_id || '', false);
-  writeTrackerCell(sheet, row, columns.address, source.propertyAddress || source.address || '', false);
-  writeTrackerCell(sheet, row, columns.inspector, source.inspectorName || source.inspector || '', false);
-  writeTrackerCell(sheet, row, columns.date, inspectionDate, false);
-  writeTrackerCell(sheet, row, columns.status, trackerStatus, true);
   writeTrackerCell(sheet, row, columns.inhId, inspectionId, false);
-  writeTrackerCell(sheet, row, columns.client, source.clientName || '', false);
   writeTrackerCell(sheet, row, columns.folder, trackerFormula(folderUrl, 'Assessment Folder'), true);
 
   return {
