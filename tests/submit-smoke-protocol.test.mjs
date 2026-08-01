@@ -3,91 +3,34 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const portal = readFileSync(new URL('../portal.js', import.meta.url), 'utf8');
-const appsScript = readFileSync(new URL('../InHaus_Google_Apps_Script.gs', import.meta.url), 'utf8');
+const report = readFileSync(new URL('../report.js', import.meta.url), 'utf8');
 const smokeScript = readFileSync(new URL('../scripts/smoke-submit-path.mjs', import.meta.url), 'utf8');
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 
-test('backend has a non-mutating submit smoke action', () => {
-  assert.match(appsScript, /data\.action === 'submitSmoke'/);
-  assert.match(appsScript, /function submitReviewSmokeCheck\(data\)/);
-  assert.match(appsScript, /getInspectionForReview\(id, data\.token\)/);
-  assert.match(appsScript, /statusChanged: false/);
-  assert.match(appsScript, /emailSent: false/);
+test('portal uses the Worker as its only production backend', () => {
+  assert.match(portal, /workerFetchJson\('\/inspections'\)/);
+  assert.match(portal, /workerFetchJson\(`\/inspections\/\$\{encodeURIComponent\(id\)\}`/);
+  assert.match(portal, /requestWorkerHandoffPackage\(id/);
+  assert.match(portal, /workerFetchJson\('\/review-unlock'/);
+  assert.doesNotMatch(portal, /APPS_SCRIPT_URL/);
+  assert.doesNotMatch(portal, /script\.google\.com/);
+  assert.doesNotMatch(portal, /ENABLE_WORKER_HANDOFF/);
+  assert.match(report, /REPORT_WORKER_URL/);
+  assert.match(report, /\/get-review/);
+  assert.match(report, /\/inspection-photos/);
+  assert.doesNotMatch(report, /script\.google\.com|REPORT_REVIEW_API_URL|REPORT_BRIDGE_API_URL/);
 });
 
-test('backend success wrapper keeps transport status separate from action status', () => {
-  assert.match(appsScript, /function successResponsePayload\(result\)/);
-  assert.match(appsScript, /payload\.actionStatus = payload\.status/);
-  assert.match(appsScript, /payload\.status = 'ok'/);
-  assert.match(appsScript, /JSON\.stringify\(successResponsePayload\(result\)\)/);
-  assert.match(appsScript, /JSON\.stringify\(successResponsePayload\(activeResult\)\)/);
-  assert.match(appsScript, /JSON\.stringify\(successResponsePayload\(listResult\)\)/);
-  assert.match(appsScript, /JSON\.stringify\(successResponsePayload\(inspectionResult\)\)/);
-});
-
-test('backend has a fast active-only cloud pickup list', () => {
-  const start = appsScript.indexOf('function listActiveCloudInspections(token)');
-  const end = appsScript.indexOf('function getInspectionForReview', start);
-  const activeListFunction = appsScript.slice(start, end);
-  assert.match(appsScript, /params\.action === 'listActive'/);
-  assert.match(appsScript, /function listActiveCloudInspections\(token\)/);
-  assert.match(appsScript, /function hasUsableResumeData\(data\)/);
-  assert.doesNotMatch(activeListFunction, /normalizeInspectionForReviewApi/);
-});
-
-test('test training start shell creates pickup artifacts without a tracker row', () => {
-  const start = appsScript.indexOf('function startInspectionShell(data)');
-  const end = appsScript.indexOf('// ── REVIEW PORTAL DATA HANDOFF', start);
-  const startShell = appsScript.slice(start, end);
-  assert.match(startShell, /source\.isTestTraining = isTestTrainingInspection\(source\)/);
-  assert.match(startShell, /getOrCreateReviewHandoffFolder\(source\)/);
-  assert.match(startShell, /source\.isTestTraining[\s\S]*skipped_test_training[\s\S]*upsertReportTrackerHandoffRow/);
-  assert.match(appsScript, /source_system: shellResult\.isTestTraining === true \? 'apps_script_start_shell_test_training'/);
-  assert.doesNotMatch(startShell, /return skipped/);
-});
-
-test('cloud pickup writes are complete and fail closed', () => {
-  const start = appsScript.indexOf('function syncToSupabase(data, driveResult)');
-  const end = appsScript.indexOf('function sendErrorAlert', start);
-  const syncFunction = appsScript.slice(start, end);
-  const shellStart = appsScript.indexOf('function writeStartInspectionAssessmentRecord(source, shellResult)');
-  const shellEnd = appsScript.indexOf('function startInspectionShell(data)', shellStart);
-  const shellWriter = appsScript.slice(shellStart, shellEnd);
-
-  assert.match(appsScript, /getProperty\('SUPABASE_KEY'\)[\s\S]*getProperty\('SUPABASE_SERVICE_KEY'\)/);
-  assert.match(appsScript, /function getExistingAssessmentNumber\(inspectionId\)/);
-  assert.match(syncFunction, /assessment_num:/);
-  assert.match(syncFunction, /postToSupabase\('ihl_assessments', assessment, 'inspection_id'\)/);
-  assert.match(syncFunction, /Supabase rejected the assessment record/);
-  assert.match(syncFunction, /throw e;/);
-  assert.match(shellWriter, /assessment_num:/);
-  assert.match(shellWriter, /postToSupabase\('ihl_assessments',[\s\S]*'inspection_id'\)/);
-  assert.match(shellWriter, /Supabase rejected the start-inspection assessment record/);
-});
-
-test('tracker writer matches Tanner Report Tracker columns', () => {
-  const start = appsScript.indexOf('function getTrackerColumns(sheet)');
-  const end = appsScript.indexOf('function findNextAvailableTrackerRow', start);
-  const trackerColumns = appsScript.slice(start, end);
-  assert.match(trackerColumns, /assessmentType:[\s\S]*Assessment Type/);
-  assert.match(trackerColumns, /client:[\s\S]*Name/);
-  assert.match(trackerColumns, /serviceLocation:[\s\S]*Service Location/);
-  assert.match(trackerColumns, /customerId:[\s\S]*Client ID/);
-  assert.match(trackerColumns, /inhId:[\s\S]*Inspector App ID/);
-  assert.doesNotMatch(trackerColumns, /inspector:/);
-  assert.match(appsScript, /function inferServiceLocationForTracker\(source\)/);
-  assert.match(appsScript, /writeTrackerCell\(sheet, row, columns\.serviceLocation, inferServiceLocationForTracker\(source\), false\)/);
-});
-
-test('real Apps Script POSTs carry the shared sync key', () => {
-  assert.match(portal, /'x-sync-secret': body\['x-sync-secret'\] \|\| SYNC_SECRET/);
-  assert.match(smokeScript, /action: 'submitSmoke'/);
-  assert.match(smokeScript, /'x-sync-secret': syncSecret/);
+test('submit smoke targets the non-mutating Worker route', () => {
+  assert.match(smokeScript, /\/submit-smoke/);
   assert.match(smokeScript, /INH-READINESS-PROBE/);
+  assert.match(smokeScript, /statusChanged !== false/);
+  assert.match(smokeScript, /emailSent !== false/);
+  assert.doesNotMatch(smokeScript, /Apps Script|APPS_SCRIPT_URL|x-sync-secret/);
 });
 
-test('QA protocol requires the submit smoke path before signoff', () => {
+test('QA protocol requires the production Worker smoke before signoff', () => {
   assert.match(readme, /Non-Negotiable QA Protocol/);
   assert.match(readme, /node scripts\/smoke-submit-path\.mjs/);
-  assert.match(readme, /not complete until the production submit path passes/);
+  assert.match(readme, /not complete until the production Worker submit path passes/);
 });

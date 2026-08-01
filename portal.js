@@ -2,18 +2,17 @@
  * InHaus Lab — Inspector Review Portal
  * portal.js — Vanilla JS, no frameworks
  *
- * Configuration: swap these two constants when Apps Script is deployed
+ * Production data is served by the InHaus Cloudflare Worker.
  */
 
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWzLVAIbUMDR11ryZiHft3ZTrzT9zrCQl5Gw4Tq6nIoNYhCepQYEC0dYz3r8b51LEXqQ/exec'; // v73 — updated July 20 2026
 const ACCESS_TOKEN    = 'InHaus2026';
 const VISION_PROXY_URL = 'https://inhaus-vision-proxy.mjordanjay.workers.dev';
+const VISION_PROXY_TOKEN = 'ihl-sync-2026';
 const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
-const ENABLE_WORKER_HANDOFF = false;
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V65';
+const REVIEW_PORTAL_VERSION = 'V66';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -21,11 +20,7 @@ const LEGACY_STATIC_FALLBACK_INSPECTION_IDS = new Set([
   'INH-20260727-86EZAT',
   'INH-20260722-VCMSTE'
 ]);
-// Frontend routing token already used by the inspector app for Apps Script posts.
-// This is not a private secret; it only selects the deployed authenticated route.
-const SYNC_SECRET = 'ihl-sync-2026';
-
-const IS_DEMO = (APPS_SCRIPT_URL === 'PLACEHOLDER_URL');
+const IS_DEMO = new URLSearchParams(window.location.search).get('demo') === '1';
 const IS_LOCAL_PREVIEW = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
 /* ============================================================
@@ -1287,18 +1282,17 @@ function setSaveIndicator(state, time = '') {
    API CALLS
    ============================================================ */
 
-async function apiFetch(params, method = 'GET', body = null, options = {}) {
+async function workerFetchJson(path, options = {}) {
   if (IS_DEMO) return null;
-  const url = new URL(APPS_SCRIPT_URL);
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const opts = { method };
-  if (body) {
-    const payload = body && typeof body === 'object' && !Array.isArray(body)
-      ? { ...body, 'x-sync-secret': body['x-sync-secret'] || SYNC_SECRET }
-      : body;
-    opts.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
-    opts.body = JSON.stringify(payload);
+  const url = new URL(PHOTO_WORKER_URL + path);
+  for (const [key, value] of Object.entries(options.params || {})) {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value);
   }
+  const opts = {
+    method: options.method || 'GET',
+    headers: workerAuthHeaders(options.body ? { 'Content-Type': 'application/json' } : {})
+  };
+  if (options.body) opts.body = JSON.stringify(options.body);
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs || API_FETCH_TIMEOUT_MS);
   opts.signal = controller.signal;
@@ -1313,10 +1307,10 @@ async function apiFetch(params, method = 'GET', body = null, options = {}) {
   } finally {
     window.clearTimeout(timeout);
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = await res.json();
-  if (json && json.status === 'error') throw new Error(json.message || 'API error');
-  return json;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.message || `Worker request failed: ${res.status}`);
+  if (data && data.status === 'error') throw new Error(data.message || data.error || 'Worker API error');
+  return data;
 }
 
 async function visionProxyFetch(payload, options = {}) {
@@ -1325,7 +1319,7 @@ async function visionProxyFetch(payload, options = {}) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       ...(payload || {}),
-      _syncSecret: SYNC_SECRET
+      _syncSecret: VISION_PROXY_TOKEN
     }),
     ...(options.signal ? { signal: options.signal } : {})
   });
@@ -1471,7 +1465,7 @@ function buildReviewStorageSourceSnapshot(insp = {}) {
 async function ensureReviewStorageSourceSnapshot(inspectionId, insp, health) {
   if (!inspectionId || !insp || !health) return false;
   if (health.reviewStorageRecoveryAvailable) return false;
-  if (health.sourcePath !== 'apps-script-detail') return false;
+  if (health.sourcePath !== 'worker-inspection-detail') return false;
   if (!hasRecoverableSourcePayload(insp)) return false;
 
   try {
@@ -1870,18 +1864,11 @@ async function repairTannerHandoffPackage() {
   showToast('Repairing Tanner package...', 'info', 7000);
 
   try {
-    const response = ENABLE_WORKER_HANDOFF
-      ? await requestWorkerHandoffPackage(id, {
-          requestedBy: 'review-portal-repair',
-          maxAttempts: getWorkerHandoffMaxAttempts(_inspection),
-          reviewedData: _inspection?.reviewedData || {}
-        })
-      : await apiFetch({}, 'POST', {
-          action: 'repairHandoff',
-          id,
-          token,
-          reviewedData: _inspection?.reviewedData || {}
-        }, { timeoutMs: API_HANDOFF_TIMEOUT_MS });
+    const response = await requestWorkerHandoffPackage(id, {
+      requestedBy: 'review-portal-repair',
+      maxAttempts: getWorkerHandoffMaxAttempts(_inspection),
+      reviewedData: _inspection?.reviewedData || {}
+    });
     const handoffResult = response?.reviewPortalData || null;
     const missing = getMissingHandoffReceiptFields(handoffResult || {}, {
       expectedPhotoCount: Number(_inspection?.photoCount || (_inspection?.photos || []).length || 0),
@@ -1986,14 +1973,8 @@ async function loadInspectionList() {
     if (bar) bar.classList.remove('hidden');
   } else {
     try {
-      try {
-        data = await apiFetch({ action: 'list', token: ACCESS_TOKEN });
-        if (!data || !Array.isArray(data.inspections)) throw new Error('Live list unavailable');
-      } catch (apiErr) {
-        const staticResp = await fetch('./api/list.json?t=' + Date.now());
-        if (!staticResp.ok) throw apiErr;
-        data = await staticResp.json();
-      }
+      data = await workerFetchJson('/inspections');
+      if (!data || !Array.isArray(data.inspections)) throw new Error('Live inspection list unavailable');
     } catch (err) {
       tableBody.innerHTML = `<tr><td colspan="9" class="empty-state">
         Failed to load inspections: ${err.message}
@@ -2210,19 +2191,16 @@ async function loadInspection() {
           aggregateMeta.usedLegacyStaticFallback = LEGACY_STATIC_FALLBACK_INSPECTION_IDS.has(id);
         }
         if (!insp) {
-          const liveData = await apiFetch(
-            { action: 'get', id, token },
-            'GET',
-            null,
-            { timeoutMs: IS_LOCAL_PREVIEW ? 4000 : API_FETCH_TIMEOUT_MS }
-          );
+          const liveData = await workerFetchJson(`/inspections/${encodeURIComponent(id)}`, {
+            timeoutMs: IS_LOCAL_PREVIEW ? 4000 : API_FETCH_TIMEOUT_MS
+          });
           insp = liveData.inspection || liveData;
           if (!insp || !insp.inspectionId) throw new Error('Live inspection unavailable');
-          aggregateMeta.sourcePath = 'apps-script-detail';
+          aggregateMeta.sourcePath = 'worker-inspection-detail';
         }
       } catch (apiErr) {
         try {
-          aggregateMeta.sourceError = apiErr?.message || 'Apps Script detail unavailable';
+          aggregateMeta.sourceError = apiErr?.message || 'Worker inspection detail unavailable';
           const recovery = getInspectionRecoveryFromReviewFields(cloudFields);
           if (recovery) {
             insp = clonePlainObject(recovery);
@@ -2256,8 +2234,8 @@ async function loadInspection() {
     await ensureReviewStorageSourceSnapshot(id, insp, _reviewDataHealth);
   }
 
-  // Reviewer edits are persisted independently of Apps Script so they survive
-  // device changes even when Google's web-app POST redirect drops the body.
+  // Reviewer edits are stored separately from the source inspection so they
+  // survive device changes and can be recovered independently.
   if (!IS_DEMO && id && cloudFields) {
     const inspectionRecovery = getInspectionRecoveryFromReviewFields(cloudFields);
     if (inspectionRecovery) {
@@ -2288,8 +2266,8 @@ async function loadInspection() {
     });
   }
 
-  // Apps Script inspection rows can lag behind successfully uploaded photo
-  // metadata. Merge the Worker/Supabase photo list so a ready inspection never
+  // Source inspection rows can lag behind successfully uploaded photo metadata.
+  // Merge the Worker/Supabase photo list so a ready inspection never
   // renders as an empty photo library.
   if (!IS_DEMO && id) {
     try {
@@ -3974,7 +3952,7 @@ function renderReviewDataHealthBanner(insp) {
   const health = _reviewDataHealth || {};
   const notes = [];
   if (health.usedReviewStorageSource) {
-    notes.push('Loaded the source inspection from review storage recovery because Apps Script detail was unavailable.');
+    notes.push('Loaded the source inspection from review storage recovery because the primary Worker detail was unavailable.');
   }
   if (health.usedLegacyStaticFallback) {
     notes.push(LEGACY_STATIC_FALLBACK_INSPECTION_IDS.has(insp.inspectionId || insp.id)
@@ -3994,7 +3972,7 @@ function renderReviewDataHealthBanner(insp) {
   if (!IS_DEMO && !health.reviewStorageRecoveryAvailable && !protectedLegacy) {
     notes.push('Source inspection snapshot is not saved in review storage; this handoff is not recoverable yet.');
   }
-  if (health.sourceError && health.sourcePath !== 'apps-script-detail') {
+  if (health.sourceError && health.sourcePath !== 'worker-inspection-detail') {
     notes.push(`Primary detail source unavailable: ${health.sourceError}.`);
   }
   const baseLookedThin = (health.baseRooms || 0) === 0 ||
@@ -8652,32 +8630,20 @@ async function submitToTanner() {
   try {
     await saveReviewSubmissionAttempt(id, submissionReceipt, reportBuilderNotes);
 
-    const submitResponse = ENABLE_WORKER_HANDOFF
-      ? await requestWorkerHandoffPackage(id, {
-          requestedBy: 'review-portal-submit',
-          maxAttempts: getWorkerHandoffMaxAttempts(_inspection),
-          submitAttempt: submissionReceipt,
-          submittedAt,
-          reviewReadiness,
-          readinessStatus: reviewReadiness.status,
-          readinessCompleted: reviewReadiness.passed,
-          readinessRequired: reviewReadiness.total,
-          blockerCount: reviewReadiness.blockerCount,
-          reviewedData: _inspection?.reviewedData || {},
-          reportBuilderNotes,
-          photos: _inspection?.photos || []
-        })
-      : await apiFetch({}, 'POST', { action: 'submit', id, token,
-          submittedAt,
-          reviewReadiness,
-          readinessStatus:  reviewReadiness.status,
-          readinessCompleted: reviewReadiness.passed,
-          readinessRequired: reviewReadiness.total,
-          blockerCount: reviewReadiness.blockerCount,
-          reviewedData:     _inspection?.reviewedData || {},
-          reportBuilderNotes,
-          photos:           _inspection?.photos || []
-        }, { timeoutMs: API_HANDOFF_TIMEOUT_MS });
+    const submitResponse = await requestWorkerHandoffPackage(id, {
+      requestedBy: 'review-portal-submit',
+      maxAttempts: getWorkerHandoffMaxAttempts(_inspection),
+      submitAttempt: submissionReceipt,
+      submittedAt,
+      reviewReadiness,
+      readinessStatus: reviewReadiness.status,
+      readinessCompleted: reviewReadiness.passed,
+      readinessRequired: reviewReadiness.total,
+      blockerCount: reviewReadiness.blockerCount,
+      reviewedData: _inspection?.reviewedData || {},
+      reportBuilderNotes,
+      photos: _inspection?.photos || []
+    });
     if (submitResponse?.handoffWarning) {
       throw new Error('Tanner handoff failed: ' + submitResponse.handoffWarning);
     }
@@ -8751,7 +8717,10 @@ async function adminUnlock() {
   const adminToken = prompt('Enter admin token to reopen this review:');
   if (!adminToken) return;
   try {
-    await apiFetch({}, 'POST', { action: 'adminUnlock', id, token, adminToken });
+    await workerFetchJson('/review-unlock', {
+      method: 'POST',
+      body: { inspectionId: id, token, adminToken }
+    });
     showToast('Inspection reopened for editing. Reload the page.', 'success', 5000);
   } catch (err) {
     showToast(`Unlock failed: ${err.message}`, 'error');
@@ -8994,12 +8963,11 @@ function compressFeedbackImage(file) {
 }
 
 async function sendPortalFeedback(feedback) {
-  const response = await fetch(APPS_SCRIPT_URL, {
+  const response = await fetch(PHOTO_WORKER_URL + '/app-feedback', {
     method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      action: 'appFeedback',
-      'x-sync-secret': SYNC_SECRET,
+      sharedSecret: PHOTO_UPLOAD_SHARED_SECRET,
       feedback
     })
   });

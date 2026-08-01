@@ -22,6 +22,8 @@ test('photo placement separates real rooms from inspection tasks', () => {
   assert.doesNotMatch(portal, /label: customLabel \|\| `Task —/);
 });
 
-test('Apps Script POST requests include the shared sync auth key', () => {
-  assert.match(portal, /'x-sync-secret': body\['x-sync-secret'\] \|\| SYNC_SECRET/);
+test('portal feedback uses the Worker and never Apps Script', () => {
+  assert.match(portal, /PHOTO_WORKER_URL \+ '\/app-feedback'/);
+  assert.match(portal, /sharedSecret: PHOTO_UPLOAD_SHARED_SECRET/);
+  assert.doesNotMatch(portal, /script\.google\.com/);
 });
