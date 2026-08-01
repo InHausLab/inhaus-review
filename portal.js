@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V67';
+const REVIEW_PORTAL_VERSION = 'V68';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -161,6 +161,7 @@ const MOCK_INSPECTION = {
    STATE
    ============================================================ */
 let _inspection = null;      // current full inspection object
+let _sourceInspection = null; // immutable app-source values for review audit labels
 const _saveTimers = new Map(); // debounce handles keyed by field
 let _saveChain = Promise.resolve(); // serialize backend writes to prevent lost updates
 let _pendingSaves = 0;       // count of in-flight saves
@@ -2316,6 +2317,8 @@ async function loadInspection() {
     } catch(e) {}
   }
 
+  _sourceInspection = clonePlainObject(insp);
+  if (_sourceInspection && typeof _sourceInspection === 'object') delete _sourceInspection.reviewedData;
   _inspection = normalizeInspectionForReview(insp);
   if (_reviewDataHealth) _reviewDataHealth.finalPhotos = countInspectionArray(_inspection.photos);
   renderReviewPage(insp);
@@ -3902,6 +3905,7 @@ function renderIntakeSummary(insp) {
       attachFieldSave(input, 'summary', item.key);
     }
     body.appendChild(node);
+    showOriginalIfChanged(input, 'summary', item.key);
   });
 }
 
@@ -4900,11 +4904,11 @@ function showOriginalIfChanged(element, stepId, fieldKey) {
 }
 
 function getOriginalValue(stepId, fieldKey) {
-  if (!_inspection) return '';
+  if (!_sourceInspection) return '';
   if (stepId === 'summary') {
-    return _inspection[fieldKey] ?? '';
+    return _sourceInspection[fieldKey] ?? '';
   }
-  const step = _inspection.stepData?.[stepId];
+  const step = _sourceInspection.stepData?.[stepId];
   return step?.[fieldKey] ?? '';
 }
 
@@ -5866,6 +5870,7 @@ function buildFieldEl(stepId, fieldKey, label, value, isTextarea = false, locked
   if (!locked) {
     attachFieldSave(input, stepId, fieldKey, true);
   }
+  showOriginalIfChanged(input, stepId, fieldKey);
 
   return wrap;
 }

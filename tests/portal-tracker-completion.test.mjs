@@ -6,10 +6,18 @@ const portal = readFileSync(new URL('../portal.js', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V67'/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V68'/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
+});
+
+test('editable fields preserve immutable app-source values for audit display', () => {
+  assert.match(portal, /let _sourceInspection = null/);
+  assert.match(portal, /_sourceInspection = clonePlainObject\(insp\)/);
+  assert.match(portal, /return _sourceInspection\[fieldKey\]/);
+  assert.match(portal, /const step = _sourceInspection\.stepData\?\.\[stepId\]/);
+  assert.match(portal, /showOriginalIfChanged\(input, 'summary', item\.key\)/);
 });
 
 test('submitted state must come from review-storage-confirmed package', () => {
