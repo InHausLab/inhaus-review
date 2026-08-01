@@ -21,6 +21,12 @@ test('portal uses the Worker as its only production backend', () => {
   assert.doesNotMatch(report, /script\.google\.com|REPORT_REVIEW_API_URL|REPORT_BRIDGE_API_URL/);
 });
 
+test('review field saves explicitly transition the assessment to In Review', () => {
+  assert.match(portal, /markInReview: options\.markInReview === true/);
+  assert.match(portal, /\{ markInReview: true \}/);
+  assert.match(portal, /_inspection\.status = remoteResult\.reviewStatus/);
+});
+
 test('submit smoke targets the non-mutating Worker route', () => {
   assert.match(smokeScript, /\/submit-smoke/);
   assert.match(smokeScript, /INH-READINESS-PROBE/);
