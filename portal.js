@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V70';
+const REVIEW_PORTAL_VERSION = 'V71';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -1589,7 +1589,8 @@ async function saveReviewSubmissionReceipt(inspectionId, receipt, reportBuilderN
     { stepId: 'summary', key: 'readinessRequired', value: receipt.readinessRequired || 0 },
     { stepId: 'summary', key: 'blockerCount', value: receipt.blockerCount || 0 },
     { stepId: 'summary', key: 'reportBuilderNotes', value: reportBuilderNotes || '' },
-    { stepId: 'summary', key: 'submission', value: receipt }
+    { stepId: 'summary', key: 'submission', value: receipt },
+    { stepId: 'summary', key: 'lastSubmissionFailure', value: null }
   ];
 
   for (const field of fields) {
@@ -3917,6 +3918,9 @@ function renderIntakeSummary(insp) {
 }
 
 function renderReviewPage(insp) {
+  const submittedReview = getServerSubmittedReviewState(insp);
+  const isSubmitted = submittedReview.submitted || submittedReview.statusSubmitted;
+
   // Nav title
   const navTitle = qs('#nav-title');
   if (navTitle) navTitle.textContent = `${insp.propertyAddress} — ${formatDate(insp.inspectionDate)}`;
@@ -3928,11 +3932,8 @@ function renderReviewPage(insp) {
   const stickyOwner   = qs('#sticky-owner');
   if (stickyAddress) stickyAddress.textContent = insp.propertyAddress;
   if (stickyDate)    stickyDate.textContent    = formatDate(insp.inspectionDate);
-  if (stickyStatus)  stickyStatus.innerHTML   = statusBadgeHTML(insp.status);
+  if (stickyStatus)  stickyStatus.innerHTML   = statusBadgeHTML(isSubmitted ? 'Submitted to Tanner' : insp.status);
   if (stickyOwner)   stickyOwner.textContent  = `Owner: ${insp.inspectorName}`;
-
-  const submittedReview = getServerSubmittedReviewState(insp);
-  const isSubmitted = submittedReview.submitted || submittedReview.statusSubmitted;
 
   // Submitted banner
   if (isSubmitted) {

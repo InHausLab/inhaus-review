@@ -6,7 +6,7 @@ const portal = readFileSync(new URL('../portal.js', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V70'/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V71'/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
@@ -77,6 +77,11 @@ test('captured app test records satisfy the test evidence gate', () => {
   assert.match(portal, /capturedSourceTestCount = collectTestSampleRecords\(insp\)/);
   assert.match(portal, /confirmedTestCount > 0 \|\| capturedSourceTestCount > 0/);
   assert.match(portal, /app captured/);
+});
+
+test('confirmed submission receipt controls the reloaded status badge', () => {
+  assert.match(portal, /statusBadgeHTML\(isSubmitted \? 'Submitted to Tanner' : insp\.status\)/);
+  assert.match(portal, /key: 'lastSubmissionFailure', value: null/);
 });
 
 test('room follow-ups fall back to the inspector app fields', () => {
