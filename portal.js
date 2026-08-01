@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V68';
+const REVIEW_PORTAL_VERSION = 'V69';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -824,6 +824,10 @@ function normalizePhotoUrl(photo) {
 }
 
 function photoKey(photo) {
+  if (photo.photoId) return `id:${photo.photoId}`;
+  const driveId = getDriveIdFromPhoto(photo);
+  if (driveId) return `drive:${driveId}`;
+  if (photo.storagePath || photo.storage_path) return `storage:${photo.storagePath || photo.storage_path}`;
   const timestamp = String(photo.timestamp || '').trim();
   const roomName = String(photo.roomName || '').trim();
   const stepName = String(photo.stepName || '').trim();
@@ -831,10 +835,6 @@ function photoKey(photo) {
   if (timestamp && (roomName || stepName || caption)) {
     return `meta:${roomName}|${stepName}|${caption}|${timestamp}`;
   }
-  if (photo.photoId) return `id:${photo.photoId}`;
-  const driveId = getDriveIdFromPhoto(photo);
-  if (driveId) return `drive:${driveId}`;
-  if (photo.storagePath || photo.storage_path) return `storage:${photo.storagePath || photo.storage_path}`;
   if (photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl || photo.highResUrl || photo.thumbnailUrl) {
     return `url:${photo.driveUrl || photo.localUrl || photo.url || photo.imageUrl || photo.highResUrl || photo.thumbnailUrl}`;
   }
@@ -871,6 +871,13 @@ function flattenInspectionPhotos(insp) {
   const deletedPhotoIds = new Set(Array.isArray(insp?.reviewedData?.deletedPhotoIds)
     ? insp.reviewedData.deletedPhotoIds.filter(Boolean)
     : []);
+  [insp?.photoTombstones, insp?.resumeData?.photoTombstones].forEach(store => {
+    if (!store || typeof store !== 'object' || Array.isArray(store)) return;
+    Object.entries(store).forEach(([photoId, tombstone]) => {
+      if (String(tombstone?.status || '').toLowerCase() === 'deleted') deletedPhotoIds.add(photoId);
+      if (String(tombstone?.status || '').toLowerCase() === 'restored') deletedPhotoIds.delete(photoId);
+    });
+  });
 
   function addPhoto(photo, context = {}) {
     if (!photo || typeof photo !== 'object') return;
