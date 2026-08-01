@@ -46,6 +46,25 @@ test('test training start shell creates pickup artifacts without a tracker row',
   assert.doesNotMatch(startShell, /return skipped/);
 });
 
+test('cloud pickup writes are complete and fail closed', () => {
+  const start = appsScript.indexOf('function syncToSupabase(data, driveResult)');
+  const end = appsScript.indexOf('function sendErrorAlert', start);
+  const syncFunction = appsScript.slice(start, end);
+  const shellStart = appsScript.indexOf('function writeStartInspectionAssessmentRecord(source, shellResult)');
+  const shellEnd = appsScript.indexOf('function startInspectionShell(data)', shellStart);
+  const shellWriter = appsScript.slice(shellStart, shellEnd);
+
+  assert.match(appsScript, /getProperty\('SUPABASE_KEY'\)[\s\S]*getProperty\('SUPABASE_SERVICE_KEY'\)/);
+  assert.match(appsScript, /function getExistingAssessmentNumber\(inspectionId\)/);
+  assert.match(syncFunction, /assessment_num:/);
+  assert.match(syncFunction, /postToSupabase\('ihl_assessments', assessment, 'inspection_id'\)/);
+  assert.match(syncFunction, /Supabase rejected the assessment record/);
+  assert.match(syncFunction, /throw e;/);
+  assert.match(shellWriter, /assessment_num:/);
+  assert.match(shellWriter, /postToSupabase\('ihl_assessments',[\s\S]*'inspection_id'\)/);
+  assert.match(shellWriter, /Supabase rejected the start-inspection assessment record/);
+});
+
 test('tracker writer matches Tanner Report Tracker columns', () => {
   const start = appsScript.indexOf('function getTrackerColumns(sheet)');
   const end = appsScript.indexOf('function findNextAvailableTrackerRow', start);

@@ -82,10 +82,27 @@ const SUPABASE_ENABLED = true; // set false to disable without removing code
 // SUPABASE_SERVICE_KEY is stored in Script Properties (not hardcoded)
 // To set it: Apps Script → Project Settings → Script Properties → add SUPABASE_SERVICE_KEY
 function getSupabaseKey() {
-  return PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
+  var properties = PropertiesService.getScriptProperties();
+  return properties.getProperty('SUPABASE_KEY') || properties.getProperty('SUPABASE_SERVICE_KEY');
 }
 
-function postToSupabase(table, payload) {
+function getExistingAssessmentNumber(inspectionId) {
+  if (!inspectionId || !SUPABASE_ENABLED || !SUPABASE_URL || !getSupabaseKey()) return '';
+  try {
+    var rows = getFromSupabase(
+      'ihl_assessments',
+      'select=assessment_num&inspection_id=eq.' + encodeURIComponent(inspectionId) + '&limit=1'
+    );
+    return rows && rows.length && rows[0].assessment_num
+      ? String(rows[0].assessment_num)
+      : '';
+  } catch (e) {
+    console.warn('Existing assessment number lookup failed:', e.message);
+    return '';
+  }
+}
+
+function postToSupabase(table, payload, conflictColumn) {
   if (!SUPABASE_ENABLED || !SUPABASE_URL || !getSupabaseKey()) return null;
   try {
     var options = {
@@ -100,6 +117,7 @@ function postToSupabase(table, payload) {
       muteHttpExceptions: true
     };
     var url = SUPABASE_URL + '/rest/v1/' + table;
+    if (conflictColumn) url += '?on_conflict=' + encodeURIComponent(conflictColumn);
     var response = UrlFetchApp.fetch(url, options);
     var code = response.getResponseCode();
     if (code >= 200 && code < 300) {
@@ -142,7 +160,15 @@ function syncToSupabase(data, driveResult) {
   if (!SUPABASE_ENABLED) return;
   try {
     // 1. Upsert assessment record
+    var existingAssessmentNum = getExistingAssessmentNumber(data.inspectionId);
     var assessment = {
+      assessment_num: existingAssessmentNum || String(
+        data.assessmentNumber ||
+        data.assessmentNum ||
+        (driveResult && (driveResult.assessmentNumber || driveResult.assessmentNum)) ||
+        data.inspectionId ||
+        ''
+      ),
       inspection_id: data.inspectionId,
       report_id: null,
       inspector_name: data.inspectorName || null,
@@ -172,7 +198,10 @@ function syncToSupabase(data, driveResult) {
       source_system: isTestTrainingInspection(data || {}) ? 'apps_script_test_training' : 'apps_script',
       source_id: data.inspectionId
     };
-    postToSupabase('ihl_assessments', assessment);
+    var assessmentRows = postToSupabase('ihl_assessments', assessment, 'inspection_id');
+    if (!assessmentRows || !assessmentRows.length) {
+      throw new Error('Supabase rejected the assessment record');
+    }
 
     // 2. Upsert room air quality records
     var rooms = data.rooms || [];
@@ -211,6 +240,7 @@ function syncToSupabase(data, driveResult) {
   } catch(e) {
     console.error('syncToSupabase error:', e.message);
     logSyncRun(data.inspectionId, 'partial', e.message, 0, 0, data.appVersion);
+    throw e;
   }
 }
 
@@ -1297,7 +1327,8 @@ function saveStartInspectionShellState(id, result) {
 function writeStartInspectionAssessmentRecord(source, shellResult) {
   requireAppsScriptDriveTrackerWriter('writeStartInspectionAssessmentRecord');
   if (!source || !source.inspectionId || !shellResult) return;
-  postToSupabase('ihl_assessments', {
+  var assessmentRows = postToSupabase('ihl_assessments', {
+    assessment_num: getExistingAssessmentNumber(source.inspectionId) || String(source.assessmentNumber || source.inspectionId),
     inspection_id: source.inspectionId,
     report_id: null,
     inspector_name: source.inspectorName || null,
@@ -1326,7 +1357,10 @@ function writeStartInspectionAssessmentRecord(source, shellResult) {
     raw_jsonb: source,
     source_system: shellResult.isTestTraining === true ? 'apps_script_start_shell_test_training' : 'apps_script_start_shell',
     source_id: source.inspectionId
-  });
+  }, 'inspection_id');
+  if (!assessmentRows || !assessmentRows.length) {
+    throw new Error('Supabase rejected the start-inspection assessment record');
+  }
 }
 
 function startInspectionShell(data) {
