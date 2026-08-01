@@ -15,6 +15,16 @@ test('backend has a non-mutating submit smoke action', () => {
   assert.match(appsScript, /emailSent: false/);
 });
 
+test('backend success wrapper keeps transport status separate from action status', () => {
+  assert.match(appsScript, /function successResponsePayload\(result\)/);
+  assert.match(appsScript, /payload\.actionStatus = payload\.status/);
+  assert.match(appsScript, /payload\.status = 'ok'/);
+  assert.match(appsScript, /JSON\.stringify\(successResponsePayload\(result\)\)/);
+  assert.match(appsScript, /JSON\.stringify\(successResponsePayload\(activeResult\)\)/);
+  assert.match(appsScript, /JSON\.stringify\(successResponsePayload\(listResult\)\)/);
+  assert.match(appsScript, /JSON\.stringify\(successResponsePayload\(inspectionResult\)\)/);
+});
+
 test('backend has a fast active-only cloud pickup list', () => {
   const start = appsScript.indexOf('function listActiveCloudInspections(token)');
   const end = appsScript.indexOf('function getInspectionForReview', start);

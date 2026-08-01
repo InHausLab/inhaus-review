@@ -408,6 +408,15 @@ function moveFileToSharedDriveFolder(fileId, destFolderId) {
 }
 // ── WEB APP ENTRY POINTS ─────────────────────────────────
 
+function successResponsePayload(result) {
+  var payload = Object.assign({}, result || {});
+  if (payload.status && payload.status !== 'ok' && !payload.actionStatus) {
+    payload.actionStatus = payload.status;
+  }
+  payload.status = 'ok';
+  return payload;
+}
+
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
@@ -430,7 +439,7 @@ function doPost(e) {
       result = processInspection(data);
     }
     return ContentService
-      .createTextOutput(JSON.stringify({ status: 'ok', ...result }))
+      .createTextOutput(JSON.stringify(successResponsePayload(result)))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     var payload = null;
@@ -448,7 +457,7 @@ function doGet(e) {
     try {
       var activeResult = listActiveCloudInspections(params.token);
       return ContentService
-        .createTextOutput(JSON.stringify({ status: 'ok', ...activeResult }))
+        .createTextOutput(JSON.stringify(successResponsePayload(activeResult)))
         .setMimeType(ContentService.MimeType.JSON);
     } catch (err) {
       return ContentService
@@ -460,7 +469,7 @@ function doGet(e) {
     try {
       var listResult = listReviewInspections(params.token);
       return ContentService
-        .createTextOutput(JSON.stringify({ status: 'ok', ...listResult }))
+        .createTextOutput(JSON.stringify(successResponsePayload(listResult)))
         .setMimeType(ContentService.MimeType.JSON);
     } catch (err) {
       return ContentService
@@ -472,7 +481,7 @@ function doGet(e) {
     try {
       var inspectionResult = getInspectionForReview(params.id, params.token);
       return ContentService
-        .createTextOutput(JSON.stringify({ status: 'ok', ...inspectionResult }))
+        .createTextOutput(JSON.stringify(successResponsePayload(inspectionResult)))
         .setMimeType(ContentService.MimeType.JSON);
     } catch (err) {
       return ContentService
@@ -484,7 +493,7 @@ function doGet(e) {
     try {
       var result = getReviewData(params.id, params.token);
       return ContentService
-        .createTextOutput(JSON.stringify({ status: 'ok', ...result }))
+        .createTextOutput(JSON.stringify(successResponsePayload(result)))
         .setMimeType(ContentService.MimeType.JSON);
     } catch (err) {
       return ContentService
