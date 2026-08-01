@@ -6,7 +6,7 @@ const portal = readFileSync(new URL('../portal.js', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V72'/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V73'/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
@@ -86,6 +86,11 @@ test('confirmed submission receipt controls the reloaded status badge', () => {
 
 test('Worker GET requests bypass stale browser caches', () => {
   assert.match(portal, /if \(opts\.method === 'GET'\) opts\.cache = 'no-store'/);
+});
+
+test('checkpoint recovery preserves the authoritative Worker status', () => {
+  assert.match(portal, /const authoritativeStatus = inspection\.status/);
+  assert.match(portal, /merged\.status = authoritativeStatus/);
 });
 
 test('room follow-ups fall back to the inspector app fields', () => {

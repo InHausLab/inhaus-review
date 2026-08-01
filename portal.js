@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V72';
+const REVIEW_PORTAL_VERSION = 'V73';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -1930,6 +1930,7 @@ function mergeCheckpointValue(base, incoming) {
 
 function mergeInspectionCheckpoints(inspection) {
   if (!inspection || typeof inspection !== 'object') return inspection;
+  const authoritativeStatus = inspection.status;
 
   const checkpoints = [];
   const seen = new Set();
@@ -1963,6 +1964,9 @@ function mergeInspectionCheckpoints(inspection) {
   checkpoints.forEach(checkpoint => {
     merged = mergeCheckpointValue(merged, checkpoint.data);
   });
+  if (authoritativeStatus !== undefined && authoritativeStatus !== null && authoritativeStatus !== '') {
+    merged.status = authoritativeStatus;
+  }
   return merged;
 }
 
