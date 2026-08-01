@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V69';
+const REVIEW_PORTAL_VERSION = 'V70';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -8213,7 +8213,10 @@ function evaluateGate(insp) {
 
   // 3. Tests conducted confirmation (at least one source or portal confirmation)
   const confirmedTestCount = TEST_DEFS.filter(test => isTestConfirmedForReview(insp, test.key)).length;
-  const anyTestConfirmed = confirmedTestCount > 0;
+  const capturedSourceTestCount = collectTestSampleRecords(insp)
+    .filter(record => !/not conducted|not requested|not recorded/i.test(String(record.status || '')))
+    .length;
+  const anyTestConfirmed = confirmedTestCount > 0 || capturedSourceTestCount > 0;
 
   // 4. All photos marked Include or Exclude (none in unreviewed state)
   const reviewedPhotoCount = photos.filter(photo => photo.included !== null).length;
@@ -8310,7 +8313,7 @@ function evaluateGate(insp) {
     },
     {
       key: 'tests',
-      label: `Tests conducted confirmation complete (${confirmedTestCount} confirmed)`,
+      label: `Tests conducted confirmation complete (${capturedSourceTestCount} app captured · ${confirmedTestCount} portal confirmed)`,
       pass: anyTestConfirmed,
       selector: '.tests-review-details',
       action: 'openDetails'
