@@ -59,9 +59,30 @@ function loadPortalContext() {
   vm.runInContext(`${portal}
 globalThis.__normalizeInspectionForReview = normalizeInspectionForReview;
 globalThis.__buildPhotoPlacementAudit = buildPhotoPlacementAudit;
-globalThis.__mergeInspectionCheckpoints = mergeInspectionCheckpoints;`, context);
+globalThis.__mergeInspectionCheckpoints = mergeInspectionCheckpoints;
+globalThis.__mergeMissingReviewData = mergeMissingReviewData;`, context);
   return context;
 }
+
+test('server review values are not replaced by stale local recovery values', () => {
+  const context = loadPortalContext();
+  const server = {
+    reportBuilderNotes: 'Confirmed server note',
+    'bedroom-0': { voiceReviewed: true, inspectorNotes: 'Server room note' }
+  };
+  const local = {
+    reportBuilderNotes: '',
+    'bedroom-0': { voiceReviewed: false, localOnlyDraft: 'Recovered draft' },
+    'photo-test-1': { included: true }
+  };
+
+  const merged = context.__mergeMissingReviewData(server, local);
+
+  assert.equal(merged.reportBuilderNotes, 'Confirmed server note');
+  assert.equal(merged['bedroom-0'].voiceReviewed, true);
+  assert.equal(merged['bedroom-0'].localOnlyDraft, 'Recovered draft');
+  assert.equal(merged['photo-test-1'].included, true);
+});
 
 test('current Worker room values override stale recovery checkpoints', () => {
   const context = loadPortalContext();

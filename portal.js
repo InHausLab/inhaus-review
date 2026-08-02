@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V78';
+const REVIEW_PORTAL_VERSION = 'V79';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -2380,7 +2380,13 @@ async function loadInspection() {
         }
       });
       if (Object.keys(saved).length > 0) {
-        insp.reviewedData = mergeReviewData(insp.reviewedData || {}, sanitizeReviewActivityFieldData(saved));
+        // Review storage is authoritative. Device-local recovery may restore a
+        // field the server does not have, but must never replace a confirmed
+        // server value with stale data from an older browser session.
+        insp.reviewedData = mergeMissingReviewData(
+          insp.reviewedData || {},
+          sanitizeReviewActivityFieldData(saved)
+        );
       }
     } catch(e) {}
   }
@@ -4765,7 +4771,14 @@ function renderSummarySection(insp, locked) {
   if (addressEl) { addressEl.value = insp.reviewedData?.propertyAddress ?? insp.propertyAddress; }
   if (dateEl)    { dateEl.value    = dateInputValue(insp.reviewedData?.inspectionDate ?? insp.inspectionDate); }
   if (inspEl)    { inspEl.value    = insp.inspectorName; inspEl.readOnly = true; }
-  if (notesEl)   { notesEl.value   = insp.reportBuilderNotes ?? ''; }
+  if (notesEl)   {
+    notesEl.value = getReviewedField(
+      insp,
+      'summary',
+      'reportBuilderNotes',
+      insp.reportBuilderNotes ?? ''
+    );
+  }
 
   if (locked) {
     [clientEl, addressEl, dateEl, notesEl].forEach(e => { if (e) e.readOnly = true; });
@@ -5052,6 +5065,21 @@ function mergeReviewData(target, source) {
       mergeReviewData(target[key], value);
     } else {
       target[key] = value;
+    }
+  }
+  return target;
+}
+
+function mergeMissingReviewData(target, source) {
+  for (const [key, value] of Object.entries(source || {})) {
+    const targetValue = target[key];
+    if (targetValue === undefined) {
+      target[key] = clonePlainObject(value);
+      continue;
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value) &&
+        targetValue && typeof targetValue === 'object' && !Array.isArray(targetValue)) {
+      mergeMissingReviewData(targetValue, value);
     }
   }
   return target;
@@ -7637,11 +7665,15 @@ function buildPhotoCard(photo, locked) {
         class: `toggle-btn ${photo.included === b.val ? b.cls : ''}`,
         type: 'button'
       }, b.label);
-      btn.addEventListener('click', () => {
-        setPhotoStatus(photo.photoId, b.val, card, toggleRow);
+      btn.addEventListener('click', async () => {
+        const buttons = Array.from(toggleRow.querySelectorAll('.toggle-btn'));
+        buttons.forEach(button => { button.disabled = true; });
+        const saved = await setPhotoStatus(photo.photoId, b.val, card, toggleRow);
         photo.included = b.val;
         checkGate();
         updatePhotoSummary(_inspection?.photos || []);
+        buttons.forEach(button => { button.disabled = false; });
+        if (!saved) showToast('Photo decision kept locally; cloud save needs a retry', 'error');
       });
       toggleRow.appendChild(btn);
     }
@@ -7682,7 +7714,7 @@ function buildPhotoCard(photo, locked) {
   return card;
 }
 
-function setPhotoStatus(photoId, status, card, toggleRow) {
+async function setPhotoStatus(photoId, status, card, toggleRow) {
   // status is true (include), false (exclude), null (unreviewed)
   const statusClass =
     status === true  ? 'included' :
@@ -7702,14 +7734,15 @@ function setPhotoStatus(photoId, status, card, toggleRow) {
     });
   }
 
-  // Persist
-  debouncedSave('photo_' + photoId, 'included', status);
-
   // Update _inspection photos array
   if (_inspection?.photos) {
     const p = _inspection.photos.find(ph => ph.photoId === photoId);
     if (p) p.included = status;
   }
+
+  // Binary checklist decisions must be server-confirmed before the reviewer
+  // can move on. A delayed timer allowed navigation/reload to lose the click.
+  return saveField('photo_' + photoId, 'included', status);
 }
 
 function updatePhotoSummary(photos) {

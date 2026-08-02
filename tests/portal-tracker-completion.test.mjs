@@ -6,7 +6,7 @@ const portal = readFileSync(new URL('../portal.js', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V78'/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V79'/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
@@ -99,6 +99,22 @@ test('Worker GET requests bypass stale browser caches', () => {
 test('checkpoint recovery preserves the authoritative Worker status', () => {
   assert.match(portal, /const authoritativeStatus = inspection\.status/);
   assert.match(portal, /merged\.status = authoritativeStatus/);
+});
+
+test('server-confirmed review fields win over stale local recovery values', () => {
+  assert.match(portal, /function mergeMissingReviewData\(target, source\)/);
+  assert.match(portal, /insp\.reviewedData = mergeMissingReviewData\(/);
+  assert.doesNotMatch(
+    portal,
+    /insp\.reviewedData = mergeReviewData\(insp\.reviewedData \|\| \{\}, sanitizeReviewActivityFieldData\(saved\)\)/
+  );
+  assert.match(portal, /notesEl\.value = getReviewedField\(/);
+});
+
+test('individual photo review decisions save immediately to review storage', () => {
+  assert.match(portal, /async function setPhotoStatus\(photoId, status, card, toggleRow\)/);
+  assert.match(portal, /return saveField\('photo_' \+ photoId, 'included', status\)/);
+  assert.doesNotMatch(portal, /debouncedSave\('photo_' \+ photoId, 'included', status\)/);
 });
 
 test('room follow-ups fall back to the inspector app fields', () => {
