@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V75';
+const REVIEW_PORTAL_VERSION = 'V76';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -1427,7 +1427,7 @@ function sleep(ms) {
 function getWorkerHandoffMaxAttempts(insp) {
   const photoCount = Number(insp?.photoCount || (Array.isArray(insp?.photos) ? insp.photos.length : 0) || 0);
   if (!photoCount) return 6;
-  return Math.min(24, Math.max(6, Math.ceil(photoCount / 10) + 3));
+  return Math.min(48, Math.max(8, Math.ceil(photoCount / 5) + 4));
 }
 
 async function loadCloudReview(inspectionId) {
