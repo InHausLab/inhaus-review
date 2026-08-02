@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V74';
+const REVIEW_PORTAL_VERSION = 'V75';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -1348,45 +1348,72 @@ async function requestWorkerHandoffPackage(inspectionId, payload = {}) {
     expectedPhotoCount: Number(_inspection?.photoCount || (_inspection?.photos || []).length || 0),
     expectedRoomCount: Array.isArray(_inspection?.rooms) ? _inspection.rooms.length : 0
   };
-  let lastData = null;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+  const fetchHandoffStep = async (path, options = {}) => {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), API_HANDOFF_TIMEOUT_MS);
     try {
-      const response = await fetch(PHOTO_WORKER_URL + '/handoff-jobs', {
-        method: 'POST',
-        headers: workerAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          inspectionId,
-          token: ACCESS_TOKEN,
-          ...payload
+      const response = await fetch(PHOTO_WORKER_URL + path, {
+        cache: 'no-store',
+        ...options,
+        headers: workerAuthHeaders({
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(options.headers || {})
         }),
         signal: controller.signal
       });
       const data = await response.json().catch(() => ({}));
-      lastData = data;
-      const receipt = data?.artifactReceipt || data?.reviewPortalData || null;
-      const missing = getMissingHandoffReceiptFields(receipt || {}, receiptContext);
-      if (response.ok && receipt && !missing.length) {
-        return {
-          ...data,
-          reviewPortalData: receipt,
-          tannerNotification: receipt.notification || data.tannerNotification || null
-        };
-      }
-      const pendingPhotos = Number(receipt?.photoFolderPendingCount || receipt?.counts?.photoFolderPendingCount || 0);
-      const failedPhotos = Number(receipt?.photoFolderFailedCount || receipt?.technicianPhotoFailedCount || receipt?.counts?.photoFolderFailedCount || 0);
-      const stillRunning = /running|queued|repairing|waiting/i.test(String(data?.status || receipt?.status || ''));
-      const duplicateStillRunning = data?.inFlight === true || (!receipt && stillRunning);
-      if (attempt < maxAttempts && failedPhotos === 0 && stillRunning && (pendingPhotos > 0 || duplicateStillRunning)) {
-        await sleep(1200);
-        continue;
-      }
-      const detail = data?.lastError || data?.error || receipt?.error || (missing.length ? `missing ${missing.join(', ')}` : `Worker handoff failed: ${response.status}`);
-      throw new Error(detail);
+      return { response, data };
     } finally {
       window.clearTimeout(timeout);
     }
+  };
+
+  let step = await fetchHandoffStep('/handoff-jobs', {
+    method: 'POST',
+    body: JSON.stringify({
+      inspectionId,
+      token: ACCESS_TOKEN,
+      ...payload
+    })
+  });
+  let lastData = step.data;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const data = step.data || {};
+    lastData = data;
+    const receipt = data?.artifactReceipt || data?.reviewPortalData || null;
+    const missing = getMissingHandoffReceiptFields(receipt || {}, receiptContext);
+    if (step.response.ok && receipt && !missing.length) {
+      return {
+        ...data,
+        reviewPortalData: receipt,
+        tannerNotification: receipt.notification || data.tannerNotification || null
+      };
+    }
+    const failedPhotos = Number(receipt?.photoFolderFailedCount || receipt?.technicianPhotoFailedCount || receipt?.counts?.photoFolderFailedCount || 0);
+    const stillRunning = /running|queued|repairing|waiting/i.test(String(data?.status || data?.job?.status || receipt?.status || ''));
+    if (!step.response.ok && step.response.status !== 202) {
+      const detail = data?.lastError || data?.error || receipt?.error || `Worker handoff failed: ${step.response.status}`;
+      throw new Error(detail);
+    }
+    if (failedPhotos > 0 || (!stillRunning && receipt?.status === 'failed')) {
+      throw new Error(data?.lastError || data?.error || receipt?.error || 'Worker handoff failed.');
+    }
+    if (attempt >= maxAttempts) break;
+
+    const run = await fetchHandoffStep('/handoff-jobs/run', {
+      method: 'POST',
+      body: JSON.stringify({
+        inspectionId,
+        requestedBy: 'review-portal-runner',
+        token: ACCESS_TOKEN
+      })
+    });
+    if (!run.response.ok && run.response.status !== 202) {
+      const runResult = Array.isArray(run.data?.results) ? run.data.results[0] : null;
+      throw new Error(runResult?.error || run.data?.error || `Worker handoff runner failed: ${run.response.status}`);
+    }
+    await sleep(1200);
+    step = await fetchHandoffStep(`/handoff-jobs/${encodeURIComponent(inspectionId)}?token=${encodeURIComponent(ACCESS_TOKEN)}&_=${Date.now()}`);
   }
   const receipt = lastData?.artifactReceipt || lastData?.reviewPortalData || null;
   const pendingPhotos = Number(receipt?.photoFolderPendingCount || receipt?.counts?.photoFolderPendingCount || 0);
