@@ -6,7 +6,7 @@ const portal = readFileSync(new URL('../portal.js', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V77'/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V78'/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
@@ -82,6 +82,14 @@ test('captured app test records satisfy the test evidence gate', () => {
 test('confirmed submission receipt controls the reloaded status badge', () => {
   assert.match(portal, /statusBadgeHTML\(isSubmitted \? 'Submitted to Tanner' : insp\.status\)/);
   assert.match(portal, /key: 'lastSubmissionFailure', value: null/);
+});
+
+test('Tanner package requires the InHaus inspection sheet and assessment context', () => {
+  assert.match(portal, /missing\.push\('InHaus inspection spreadsheet'\)/);
+  assert.match(portal, /missing\.push\('assessment context'\)/);
+  assert.match(portal, /label: 'InHaus inspection sheet'/);
+  assert.match(portal, /label: 'Assessment context'/);
+  assert.match(portal, /inspectionSpreadsheetUrl && contextFileUrl/);
 });
 
 test('Worker GET requests bypass stale browser caches', () => {

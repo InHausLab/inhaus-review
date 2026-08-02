@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V77';
+const REVIEW_PORTAL_VERSION = 'V78';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -1686,6 +1686,12 @@ async function saveReviewHandoffReceipt(inspectionId, handoffResult) {
     { stepId: 'summary', key: 'reviewPortalDataSpreadsheetId', value: handoffResult.spreadsheetId || '' },
     { stepId: 'summary', key: 'reviewPortalDataSpreadsheetUrl', value: handoffResult.spreadsheetUrl || '' },
     { stepId: 'summary', key: 'reviewPortalDataUrl', value: handoffResult.spreadsheetUrl || '' },
+    { stepId: 'summary', key: 'inspectionSpreadsheetId', value: handoffResult.inspectionSpreadsheetId || handoffResult.appInspectionSpreadsheetId || '' },
+    { stepId: 'summary', key: 'inspectionSpreadsheetUrl', value: handoffResult.inspectionSpreadsheetUrl || handoffResult.appInspectionSpreadsheetUrl || '' },
+    { stepId: 'summary', key: 'appInspectionSpreadsheetId', value: handoffResult.appInspectionSpreadsheetId || handoffResult.inspectionSpreadsheetId || '' },
+    { stepId: 'summary', key: 'appInspectionSpreadsheetUrl', value: handoffResult.appInspectionSpreadsheetUrl || handoffResult.inspectionSpreadsheetUrl || '' },
+    { stepId: 'summary', key: 'contextFileId', value: handoffResult.contextFileId || '' },
+    { stepId: 'summary', key: 'contextFileUrl', value: handoffResult.contextFileUrl || '' },
     { stepId: 'summary', key: 'rawReviewDataUrl', value: handoffResult.rawJsonUrl || handoffResult.rawReviewDataUrl || '' },
     { stepId: 'summary', key: 'rawReviewDataJsonUrl', value: handoffResult.rawJsonUrl || handoffResult.rawReviewDataUrl || '' },
     { stepId: 'summary', key: 'technicianPhotosFolderId', value: handoffResult.technicianPhotosFolderId || '' },
@@ -1725,6 +1731,12 @@ function applyHandoffReceiptToInspection(handoffResult) {
     reviewPortalDataSpreadsheetId: handoffResult.spreadsheetId || '',
     reviewPortalDataSpreadsheetUrl: handoffResult.spreadsheetUrl || '',
     reviewPortalDataUrl: handoffResult.spreadsheetUrl || '',
+    inspectionSpreadsheetId: handoffResult.inspectionSpreadsheetId || handoffResult.appInspectionSpreadsheetId || '',
+    inspectionSpreadsheetUrl: handoffResult.inspectionSpreadsheetUrl || handoffResult.appInspectionSpreadsheetUrl || '',
+    appInspectionSpreadsheetId: handoffResult.appInspectionSpreadsheetId || handoffResult.inspectionSpreadsheetId || '',
+    appInspectionSpreadsheetUrl: handoffResult.appInspectionSpreadsheetUrl || handoffResult.inspectionSpreadsheetUrl || '',
+    contextFileId: handoffResult.contextFileId || '',
+    contextFileUrl: handoffResult.contextFileUrl || '',
     rawReviewDataUrl: handoffResult.rawJsonUrl || handoffResult.rawReviewDataUrl || '',
     rawReviewDataJsonUrl: handoffResult.rawJsonUrl || handoffResult.rawReviewDataUrl || '',
     technicianPhotosFolderId: handoffResult.technicianPhotosFolderId || '',
@@ -1801,6 +1813,10 @@ function getMissingHandoffReceiptFields(handoff = {}, context = {}) {
   }
   if (!(handoff.folderUrl || handoff.folderId)) missing.push('assessment folder');
   if (!(handoff.spreadsheetUrl || handoff.spreadsheetId)) missing.push('review data spreadsheet');
+  if (!(handoff.inspectionSpreadsheetUrl || handoff.inspectionSpreadsheetId || handoff.appInspectionSpreadsheetUrl || handoff.appInspectionSpreadsheetId)) {
+    missing.push('InHaus inspection spreadsheet');
+  }
+  if (!(handoff.contextFileUrl || handoff.contextFileId)) missing.push('assessment context');
   if (!(handoff.rawJsonUrl || handoff.rawReviewDataUrl)) missing.push('raw backup');
   if (!isTestTraining && !(handoff.trackerUrl || handoff.trackerRow || handoff.trackerRowUrl)) missing.push('tracker row');
   if (!(handoff.photosFolderUrl || handoff.photosFolderId || handoff.technicianPhotosFolderUrl || handoff.technicianPhotosFolderId)) {
@@ -1822,17 +1838,25 @@ function getMissingHandoffReceiptFields(handoff = {}, context = {}) {
   const formattedReviewRowCount = handoffCountValue(handoff, ['formattedReviewRowCount']);
   const photoLogCount = handoffCountValue(handoff, ['photoLogCount']);
   const roomDetailCount = handoffCountValue(handoff, ['roomDetailCount']);
+  const appRoomDetailCount = handoffCountValue(handoff, ['appRoomDetailCount']);
+  const rawAppKeyCount = handoffCountValue(handoff, ['rawAppKeyCount']);
   if (rawReviewKeyCount !== null && rawReviewKeyCount <= 0) {
     missing.push('raw review data rows');
   }
   if (formattedReviewRowCount !== null && formattedReviewRowCount <= 0) {
     missing.push('formatted review rows');
   }
+  if (rawAppKeyCount !== null && rawAppKeyCount <= 0) {
+    missing.push('raw app data rows');
+  }
   if (expectedPhotoCount > 0 && photoLogCount !== null && photoLogCount < expectedPhotoCount) {
     missing.push(`photo log rows ${photoLogCount}/${expectedPhotoCount}`);
   }
   if (expectedRoomCount > 0 && roomDetailCount !== null && roomDetailCount < expectedRoomCount) {
     missing.push(`room detail rows ${roomDetailCount}/${expectedRoomCount}`);
+  }
+  if (expectedRoomCount > 0 && appRoomDetailCount !== null && appRoomDetailCount < expectedRoomCount) {
+    missing.push(`app room detail rows ${appRoomDetailCount}/${expectedRoomCount}`);
   }
   return missing;
 }
@@ -4309,6 +4333,59 @@ function buildTannerPackageState(insp = {}) {
       findFirstStringMatching(workerStatus, value => /docs\.google\.com\/spreadsheets\//i.test(value));
   }
 
+  const inspectionSpreadsheetId = firstNonEmptyValue(
+    insp.inspectionSpreadsheetId,
+    insp.appInspectionSpreadsheetId,
+    reviewed.inspectionSpreadsheetId,
+    reviewed.appInspectionSpreadsheetId,
+    handoffObj.inspectionSpreadsheetId,
+    handoffObj.appInspectionSpreadsheetId,
+    firstObjectPathValue(workerStatus, [
+      'inspectionSpreadsheetId',
+      'appInspectionSpreadsheetId',
+      'handoff.inspectionSpreadsheetId',
+      'handoff.appInspectionSpreadsheetId',
+      'tannerHandoff.inspectionSpreadsheetId'
+    ])
+  );
+  const inspectionSpreadsheetUrl = firstNonEmptyValue(
+    insp.inspectionSpreadsheetUrl,
+    insp.appInspectionSpreadsheetUrl,
+    reviewed.inspectionSpreadsheetUrl,
+    reviewed.appInspectionSpreadsheetUrl,
+    handoffObj.inspectionSpreadsheetUrl,
+    handoffObj.appInspectionSpreadsheetUrl,
+    firstObjectPathValue(workerStatus, [
+      'inspectionSpreadsheetUrl',
+      'appInspectionSpreadsheetUrl',
+      'handoff.inspectionSpreadsheetUrl',
+      'handoff.appInspectionSpreadsheetUrl',
+      'tannerHandoff.inspectionSpreadsheetUrl'
+    ]),
+    inspectionSpreadsheetId ? spreadsheetUrlFromId(inspectionSpreadsheetId) : ''
+  );
+  const contextFileId = firstNonEmptyValue(
+    insp.contextFileId,
+    reviewed.contextFileId,
+    handoffObj.contextFileId,
+    firstObjectPathValue(workerStatus, [
+      'contextFileId',
+      'handoff.contextFileId',
+      'tannerHandoff.contextFileId'
+    ])
+  );
+  const contextFileUrl = firstNonEmptyValue(
+    insp.contextFileUrl,
+    reviewed.contextFileUrl,
+    handoffObj.contextFileUrl,
+    firstObjectPathValue(workerStatus, [
+      'contextFileUrl',
+      'handoff.contextFileUrl',
+      'tannerHandoff.contextFileUrl'
+    ]),
+    contextFileId ? `https://drive.google.com/file/d/${encodeURIComponent(contextFileId)}/view` : ''
+  );
+
   const rawBackupUrl = firstNonEmptyValue(
     insp.rawReviewDataUrl,
     reviewed.rawReviewDataUrl,
@@ -4419,7 +4496,7 @@ function buildTannerPackageState(insp = {}) {
     ? false
     : (handoffStatus
       ? isReadyHandoffStatus(handoffStatus)
-      : Boolean(folderUrl && spreadsheetUrl && rawBackupUrl && (trackerValue || trackerSkipped)));
+      : Boolean(folderUrl && spreadsheetUrl && inspectionSpreadsheetUrl && contextFileUrl && rawBackupUrl && (trackerValue || trackerSkipped)));
   const handoffError = firstNonEmptyValue(
     insp.lastHandoffError,
     reviewed.lastHandoffError,
@@ -4554,6 +4631,18 @@ function buildTannerPackageState(insp = {}) {
         ok: Boolean(spreadsheetUrl || spreadsheetId),
         detail: spreadsheetUrl || spreadsheetId ? 'Spreadsheet linked' : 'Needs spreadsheet link',
         href: spreadsheetUrl
+      },
+      {
+        label: 'InHaus inspection sheet',
+        ok: Boolean(inspectionSpreadsheetUrl || inspectionSpreadsheetId),
+        detail: inspectionSpreadsheetUrl || inspectionSpreadsheetId ? 'App inspection spreadsheet linked' : 'Needs app inspection spreadsheet link',
+        href: inspectionSpreadsheetUrl
+      },
+      {
+        label: 'Assessment context',
+        ok: Boolean(contextFileUrl || contextFileId),
+        detail: contextFileUrl || contextFileId ? '_context.md linked' : 'Needs assessment context link',
+        href: contextFileUrl
       },
       {
         label: 'Photos folder',
