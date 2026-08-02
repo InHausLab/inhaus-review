@@ -58,9 +58,38 @@ function loadPortalContext() {
   vm.createContext(context);
   vm.runInContext(`${portal}
 globalThis.__normalizeInspectionForReview = normalizeInspectionForReview;
-globalThis.__buildPhotoPlacementAudit = buildPhotoPlacementAudit;`, context);
+globalThis.__buildPhotoPlacementAudit = buildPhotoPlacementAudit;
+globalThis.__mergeInspectionCheckpoints = mergeInspectionCheckpoints;`, context);
   return context;
 }
+
+test('current Worker room values override stale recovery checkpoints', () => {
+  const context = loadPortalContext();
+  const merged = context.__mergeInspectionCheckpoints({
+    status: 'Synced',
+    rooms: [
+      { stepId: 'bedroom-0', roomName: 'Renamed Bedroom', notes: 'Final inspector note.' }
+    ],
+    stepData: {
+      'bedroom-0': { roomName: 'Renamed Bedroom', notes: 'Final inspector note.' }
+    },
+    resumeData: {
+      status: 'Prepared',
+      rooms: [
+        { stepId: 'bedroom-0', roomName: 'Bedroom One' }
+      ],
+      stepData: {
+        'bedroom-0': { roomName: 'Bedroom One' },
+        utility: { notes: 'Recovered utility note.' }
+      }
+    }
+  });
+
+  assert.equal(merged.status, 'Synced');
+  assert.equal(merged.rooms[0].roomName, 'Renamed Bedroom');
+  assert.equal(merged.stepData['bedroom-0'].notes, 'Final inspector note.');
+  assert.equal(merged.stepData.utility.notes, 'Recovered utility note.');
+});
 
 test('real source room labels count as valid photo destinations', () => {
   const context = loadPortalContext();
