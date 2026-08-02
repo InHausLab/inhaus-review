@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V73';
+const REVIEW_PORTAL_VERSION = 'V74';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -1377,7 +1377,8 @@ async function requestWorkerHandoffPackage(inspectionId, payload = {}) {
       const pendingPhotos = Number(receipt?.photoFolderPendingCount || receipt?.counts?.photoFolderPendingCount || 0);
       const failedPhotos = Number(receipt?.photoFolderFailedCount || receipt?.technicianPhotoFailedCount || receipt?.counts?.photoFolderFailedCount || 0);
       const stillRunning = /running|queued|repairing|waiting/i.test(String(data?.status || receipt?.status || ''));
-      if (attempt < maxAttempts && pendingPhotos > 0 && failedPhotos === 0 && stillRunning) {
+      const duplicateStillRunning = data?.inFlight === true || (!receipt && stillRunning);
+      if (attempt < maxAttempts && failedPhotos === 0 && stillRunning && (pendingPhotos > 0 || duplicateStillRunning)) {
         await sleep(1200);
         continue;
       }

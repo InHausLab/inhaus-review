@@ -11,6 +11,7 @@ test('portal uses the Worker as its only production backend', () => {
   assert.match(portal, /workerFetchJson\('\/inspections'\)/);
   assert.match(portal, /workerFetchJson\(`\/inspections\/\$\{encodeURIComponent\(id\)\}`/);
   assert.match(portal, /requestWorkerHandoffPackage\(id/);
+  assert.match(portal, /data\?\.inFlight === true/);
   assert.match(portal, /workerFetchJson\('\/review-unlock'/);
   assert.doesNotMatch(portal, /APPS_SCRIPT_URL/);
   assert.doesNotMatch(portal, /script\.google\.com/);
