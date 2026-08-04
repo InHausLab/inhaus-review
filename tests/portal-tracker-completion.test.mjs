@@ -6,10 +6,18 @@ const portal = readFileSync(new URL('../portal.js', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V79'/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V80'/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
+});
+
+test('cloud-confirmed saves immediately refresh the Tanner package check', () => {
+  assert.match(portal, /if \(stepId === 'summary'\) _inspection\[fieldKey\] = value/);
+  assert.match(
+    portal,
+    /const remoteResult = await remoteSave;[\s\S]*renderTannerPackageCheck\(_inspection\);[\s\S]*recordReviewFieldSaveActivity/
+  );
 });
 
 test('editable fields preserve immutable app-source values for audit display', () => {

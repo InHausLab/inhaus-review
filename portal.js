@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V79';
+const REVIEW_PORTAL_VERSION = 'V80';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -5124,6 +5124,7 @@ async function saveField(stepId, fieldKey, value) {
     if (!_inspection.reviewedData) _inspection.reviewedData = {};
     if (isTopLevelField) {
       _inspection.reviewedData[fieldKey] = value;
+      if (stepId === 'summary') _inspection[fieldKey] = value;
     } else {
       if (!_inspection.reviewedData[stepId]) _inspection.reviewedData[stepId] = {};
       _inspection.reviewedData[stepId][fieldKey] = value;
@@ -5143,6 +5144,10 @@ async function saveField(stepId, fieldKey, value) {
       const stickyStatus = qs('#sticky-status');
       if (stickyStatus) stickyStatus.innerHTML = statusBadgeHTML(remoteResult.reviewStatus);
     }
+    // Keep Tanner's package status aligned with the cloud-confirmed edit.
+    // Without this refresh, saved notes and test details still appeared missing
+    // until the reviewer reloaded the entire portal.
+    renderTannerPackageCheck(_inspection);
     recordReviewFieldSaveActivity(stepId, fieldKey, value);
   } catch (err) {
     showToast('Cloud save failed — local recovery copy kept', 'error');
