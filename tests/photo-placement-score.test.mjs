@@ -59,6 +59,7 @@ function loadPortalContext() {
   vm.runInContext(`${portal}
 globalThis.__normalizeInspectionForReview = normalizeInspectionForReview;
 globalThis.__buildPhotoPlacementAudit = buildPhotoPlacementAudit;
+globalThis.__normalizeAppPhotoPlacement = normalizeAppPhotoPlacement;
 globalThis.__mergeInspectionCheckpoints = mergeInspectionCheckpoints;
 globalThis.__mergeMissingReviewData = mergeMissingReviewData;`, context);
   return context;
@@ -123,8 +124,8 @@ test('real source room labels count as valid photo destinations', () => {
       'bedroom-7': { roomName: 'Bedroom 7', type: 'bedroom', notes: 'Inspector notes present.', voiceReviewed: true }
     },
     photos: [
-      { photoId: 'room-1', roomName: 'Bedroom 7', stepName: 'Photos', driveUrl: 'https://drive.google.com/file/d/roomPhotoOne/view' },
-      { photoId: 'room-2', roomName: 'Bedroom 7', stepName: 'FLIR Thermal Scan', driveUrl: 'https://drive.google.com/file/d/roomPhotoTwo/view' }
+      { photoId: 'room-1', roomName: 'Bedroom 7', stepName: 'Photos', driveUrl: 'https://drive.google.com/file/d/roomPhotoOne/view', included: true },
+      { photoId: 'room-2', roomName: 'Bedroom 7', stepName: 'FLIR Thermal Scan', driveUrl: 'https://drive.google.com/file/d/roomPhotoTwo/view', included: true }
     ],
     reviewedData: {},
     testsConfirmed: {}
@@ -148,8 +149,8 @@ test('portal-saved placement counts as a valid photo destination', () => {
       'bedroom-7': { roomName: 'Bedroom 7', type: 'bedroom', notes: 'Inspector notes present.', voiceReviewed: true }
     },
     photos: [
-      { photoId: 'room-1', roomName: 'Bedroom 7', stepName: 'Photos', driveUrl: 'https://drive.google.com/file/d/roomPhotoOne/view' },
-      { photoId: 'room-2', roomName: 'Bedroom 7', stepName: 'FLIR Thermal Scan', driveUrl: 'https://drive.google.com/file/d/roomPhotoTwo/view' }
+      { photoId: 'room-1', roomName: 'Bedroom 7', stepName: 'Photos', driveUrl: 'https://drive.google.com/file/d/roomPhotoOne/view', included: true },
+      { photoId: 'room-2', roomName: 'Bedroom 7', stepName: 'FLIR Thermal Scan', driveUrl: 'https://drive.google.com/file/d/roomPhotoTwo/view', included: true }
     ],
     reviewedData: {
       'photo_room-1': {
@@ -172,8 +173,8 @@ test('generic photo buckets without a room are not treated as placed', () => {
   const inspection = context.__normalizeInspectionForReview({
     inspectionId: 'INH-PHOTO-GENERIC-BUCKET',
     photos: [
-      { roomName: 'Photos', stepName: 'Before', driveUrl: 'https://drive.google.com/file/d/genericPhotoOne/view' },
-      { roomName: 'Before and After', stepName: 'ATP Before', driveUrl: 'https://drive.google.com/file/d/genericPhotoTwo/view' }
+      { roomName: 'Photos', stepName: 'Before', driveUrl: 'https://drive.google.com/file/d/genericPhotoOne/view', included: true },
+      { roomName: 'Before and After', stepName: 'ATP Before', driveUrl: 'https://drive.google.com/file/d/genericPhotoTwo/view', included: true }
     ],
     reviewedData: {},
     testsConfirmed: {}
@@ -183,4 +184,45 @@ test('generic photo buckets without a room are not treated as placed', () => {
 
   assert.equal(audit.needsAttention.length, 2);
   assert.equal(audit.placedCount, 0);
+});
+
+test('app task buckets normalize to a dropdown destination instead of appearing blank', () => {
+  const context = loadPortalContext();
+
+  assert.deepEqual(
+    { ...context.__normalizeAppPhotoPlacement('Exterior Assessment', 'Exterior Assessment') },
+    { roomName: '', stepName: 'Exterior Assessment' }
+  );
+  assert.deepEqual(
+    { ...context.__normalizeAppPhotoPlacement('Device Setup', 'PFAS Kit Registration Card') },
+    { roomName: '', stepName: 'PFAS Kit Registration Card' }
+  );
+});
+
+test('kitchen before and after photos retain the deterministic Kitchen room', () => {
+  const context = loadPortalContext();
+  const inspection = context.__normalizeInspectionForReview({
+    inspectionId: 'INH-PHOTO-KITCHEN-SOURCE',
+    photos: [
+      {
+        photoId: 'kitchen-before',
+        roomName: 'Kitchen Inspection',
+        stepName: 'Under Dishwasher — Before',
+        driveUrl: 'https://drive.google.com/file/d/kitchenBefore/view',
+        included: true
+      }
+    ],
+    reviewedData: {
+      'photo_kitchen-before': {
+        included: true,
+        placement: { roomName: '', stepName: 'Under Dishwasher — Before' }
+      }
+    },
+    testsConfirmed: {}
+  });
+
+  assert.equal(inspection.photos[0].roomName, 'Kitchen');
+  assert.equal(inspection.photos[0].stepName, 'Under Dishwasher — Before');
+  const audit = context.__buildPhotoPlacementAudit(inspection, inspection.photos);
+  assert.equal(audit.needsAttention.length, 0);
 });

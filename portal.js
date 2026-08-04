@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V80';
+const REVIEW_PORTAL_VERSION = 'V81';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -991,6 +991,19 @@ function applyReviewedData(insp) {
         photo.roomName = String(placement.roomName || '');
         photo.stepName = String(placement.stepName || '');
       }
+    }
+    const sourcePlacement = normalizeAppPhotoPlacement(photo.originalRoomName, photo.originalStepName);
+    if (nested.placement === undefined) {
+      photo.roomName = sourcePlacement.roomName;
+      photo.stepName = sourcePlacement.stepName;
+    } else if (
+      !String(photo.roomName || '').trim() &&
+      sourcePlacement.roomName &&
+      placementNameKey(photo.stepName) === placementNameKey(sourcePlacement.stepName)
+    ) {
+      // Early portal versions saved the task but dropped the app's deterministic
+      // room. Restore it for review without changing the preserved source values.
+      photo.roomName = sourcePlacement.roomName;
     }
     const legacyCaption = reviewed[`caption_${photo.photoId}`];
     const legacyIncluded = reviewed[`included_${photo.photoId}`];
@@ -6966,6 +6979,35 @@ function placementNameKey(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+const PHOTO_TASK_BUCKET_NAMES = new Set([
+  'device setup',
+  'exterior assessment',
+  'kitchen inspection',
+  'kitchen air testing',
+  'radon monitor setup',
+  'water samples',
+  'atp testing'
+]);
+
+function normalizeAppPhotoPlacement(roomName, stepName) {
+  const room = String(roomName || '').trim();
+  const step = String(stepName || '').trim();
+  const roomKey = placementNameKey(room);
+  const mappedRoom = {
+    'kitchen inspection': 'Kitchen',
+    'kitchen air testing': 'Kitchen'
+  }[roomKey];
+  if (mappedRoom) return { roomName: mappedRoom, stepName: step };
+
+  if (PHOTO_TASK_BUCKET_NAMES.has(roomKey)) {
+    return { roomName: '', stepName: step || room };
+  }
+  if (room && placementNameKey(room) === placementNameKey(step)) {
+    return { roomName: '', stepName: step };
+  }
+  return { roomName: room, stepName: step };
+}
+
 function placementRecordIsRoom(record) {
   const stepId = placementNameKey(record?.stepId);
   const type = placementNameKey(record?.room?.type || record?.step?.type);
@@ -6978,7 +7020,7 @@ function placementRecordIsRoom(record) {
 function buildPhotoPlacementDestinations(insp) {
   const rooms = new Map();
   const tasks = new Map();
-  const taskNames = new Set();
+  const taskNames = new Set(PHOTO_TASK_BUCKET_NAMES);
   const addRoom = roomName => {
     const room = String(roomName || '').trim();
     if (!room) return;
@@ -7032,6 +7074,18 @@ function buildPhotoPlacementDestinations(insp) {
     addTask('Utility Room', 'Water Treatment System', 'Water Treatment System — Utility Room');
   }
 
+  for (const [key, destination] of rooms.entries()) {
+    if (taskNames.has(placementNameKey(destination.roomName))) rooms.delete(key);
+  }
+  const roomSpecificTasks = new Set(Array.from(tasks.values())
+    .filter(destination => destination.roomName)
+    .map(destination => placementNameKey(destination.stepName)));
+  for (const [key, destination] of tasks.entries()) {
+    if (!destination.roomName && roomSpecificTasks.has(placementNameKey(destination.stepName))) {
+      tasks.delete(key);
+    }
+  }
+
   const byLabel = (a, b) => a.label.localeCompare(b.label);
   return {
     rooms: Array.from(rooms.values()).sort(byLabel),
@@ -7039,7 +7093,7 @@ function buildPhotoPlacementDestinations(insp) {
   };
 }
 
-function appendPhotoPlacementOptions(select, insp, placeholder) {
+function appendPhotoPlacementOptions(select, insp, placeholder, currentPlacement = null) {
   select.innerHTML = '';
   select.appendChild(el('option', { value: '' }, placeholder || '— Not assigned —'));
   const destinations = buildPhotoPlacementDestinations(insp);
@@ -7056,6 +7110,16 @@ function appendPhotoPlacementOptions(select, insp, placeholder) {
       taskGroup.appendChild(el('option', { value: destination.key }, destination.label));
     });
     select.appendChild(taskGroup);
+  }
+  if (currentPlacement && (currentPlacement.roomName || currentPlacement.stepName)) {
+    const currentKey = photoPlacementKey(currentPlacement.roomName, currentPlacement.stepName);
+    const hasCurrentOption = Array.from(select.querySelectorAll('option'))
+      .some(option => option.value === currentKey);
+    if (!hasCurrentOption) {
+      select.appendChild(el('option', { value: currentKey },
+        [currentPlacement.stepName, currentPlacement.roomName].filter(Boolean).join(' — ')
+      ));
+    }
   }
 }
 
@@ -7178,7 +7242,7 @@ function buildPhotoPlacementAudit(insp, photos) {
   const evidence = [];
 
   (photos || [])
-    .filter(photo => photo.included !== false)
+    .filter(photo => photo.included === true)
     .forEach(photo => {
       const roles = classifyPhotoEvidenceRoles(photo);
       if (!roles.length) return;
@@ -7237,24 +7301,24 @@ function renderPhotoPlacementAudit(insp, photos) {
 
   mount.appendChild(el('div', { class: 'photo-placement-audit-header' },
     el('div', {},
-      el('div', { class: 'photo-placement-audit-title' }, 'Photo Placement Audit'),
-      el('div', { class: 'photo-placement-audit-subtitle' }, 'Checks important evidence photos before Tanner gets the package.')
+      el('div', { class: 'photo-placement-audit-title' }, 'Photos Still Needing a Destination'),
+      el('div', { class: 'photo-placement-audit-subtitle' }, 'Assign each included photo below to the correct room or task.')
     ),
     el('div', { class: 'photo-placement-audit-count' },
-      `${audit.placedCount}/${audit.evidence.length || 0} placed`
+      `${audit.needsAttention.length} remaining`
     )
   ));
 
   if (!audit.evidence.length) {
     mount.appendChild(el('div', { class: 'photo-placement-audit-empty' },
-      'No key evidence photos were detected in the current photo set.'
+      'No included photos require a room or task assignment.'
     ));
     return;
   }
 
   if (!audit.needsAttention.length) {
     mount.appendChild(el('div', { class: 'photo-placement-audit-empty' },
-      'All detected key evidence photos have a usable destination.'
+      'Every included evidence photo has a room or task.'
     ));
     return;
   }
@@ -7272,8 +7336,8 @@ function renderPhotoPlacementAudit(insp, photos) {
       ),
       el('span', { class: 'photo-placement-audit-destination' },
         item.suggested
-          ? `${item.destination} - suggested: ${item.suggested}`
-          : item.destination
+          ? `Choose a room/task. Suggested room: ${item.suggested}`
+          : 'Choose the room or task where this photo belongs.'
       )
     );
     button.addEventListener('click', () => focusPhotoForPlacement(item.photo.photoId));
@@ -7402,11 +7466,15 @@ function setupBulkPhotoReview(insp, locked) {
     unreviewed.forEach(photo => { photo.included = true; });
     const saved = await saveField('summary', 'bulkIncludedPhotoIds', bulkIncludedPhotoIds);
     renderPhotoGrid(insp.photos || [], false);
+    renderPhotoPlacementAudit(insp, insp.photos || []);
     checkGate();
     updateButton();
+    const placementAudit = buildPhotoPlacementAudit(insp, insp.photos || []);
     showToast(
       saved
-        ? `${unreviewed.length} photos included`
+        ? `${unreviewed.length} photos included${placementAudit.needsAttention.length
+          ? `. ${placementAudit.needsAttention.length} still need a room/task`
+          : ''}`
         : 'Photo decisions kept in local recovery; cloud save needs a retry',
       saved ? 'success' : 'info'
     );
@@ -7442,6 +7510,29 @@ function renderPhotoGrid(photos, locked) {
 
   // Update photo count summary for submit section
   updatePhotoSummary(photos);
+}
+
+function refreshPhotoPlacementCard(card, photo) {
+  if (!card || !photo) return;
+  const room = card.querySelector('.photo-room');
+  const step = card.querySelector('.photo-step');
+  if (room) room.textContent = photo.roomName || '';
+  if (step) step.textContent = photo.stepName || '';
+
+  const status = card.querySelector('.photo-evidence-status');
+  if (status) {
+    const audit = buildPhotoPlacementAudit(_inspection || {}, [photo]);
+    const needsPlacement = audit.needsAttention.length > 0;
+    const destination = [photo.roomName, photo.stepName].filter(Boolean).join(' / ') || 'Not assigned';
+    status.className = `photo-evidence-status ${needsPlacement ? 'needs-work' : 'ready'}`;
+    const copy = status.querySelector('.photo-evidence-copy');
+    if (copy) copy.textContent = needsPlacement
+      ? 'Needs a room or task'
+      : `Placed - ${destination}`;
+  }
+
+  const select = card.querySelector('.photo-placement-select');
+  if (select) select.value = photoPlacementKey(photo.roomName, photo.stepName);
 }
 
 function buildPhotoCard(photo, locked) {
@@ -7500,7 +7591,7 @@ function buildPhotoCard(photo, locked) {
     },
       el('span', { class: 'photo-evidence-role' }, evidenceRoles.join(', ')),
       el('span', { class: 'photo-evidence-copy' },
-        needsPlacement ? `Needs placement - ${destination}` : `Placed - ${destination}`
+        needsPlacement ? 'Needs a room or task' : `Placed - ${destination}`
       )
     ));
   }
@@ -7512,16 +7603,21 @@ function buildPhotoCard(photo, locked) {
       class: 'photo-placement-select',
       'aria-label': `Place ${photo.caption || photo.photoId} in room or task`
     });
-    appendPhotoPlacementOptions(placementSelect, _inspection, '— Not assigned —');
+    appendPhotoPlacementOptions(placementSelect, _inspection, '— Not assigned —', {
+      roomName: photo.roomName,
+      stepName: photo.stepName
+    });
     placementSelect.value = photoPlacementKey(photo.roomName, photo.stepName);
     placementSelect.addEventListener('change', async () => {
       const placement = parsePhotoPlacement(placementSelect.value);
       placementSelect.disabled = true;
       try {
         await savePhotoPlacement(photo, placement);
-        showToast(`Photo placed in ${placement.stepName || placement.roomName || 'Unassigned'}`, 'success');
+        placementSelect.disabled = false;
+        refreshPhotoPlacementCard(card, photo);
+        renderPhotoPlacementAudit(_inspection, _inspection.photos || []);
         renderRoomsSection(_inspection, false);
-        renderPhotosSection(_inspection, false);
+        checkGate();
       } catch (err) {
         placementSelect.disabled = false;
         showToast('Photo placement failed — local recovery copy kept', 'error');
@@ -8491,7 +8587,9 @@ function evaluateGate(insp) {
     },
     {
       key: 'photoPlacement',
-      label: `Key evidence photos placed (${placementAudit.placedCount}/${placementAudit.evidence.length})`,
+      label: placementAudit.needsAttention.length
+        ? `Place ${placementAudit.needsAttention.length} included photo${placementAudit.needsAttention.length === 1 ? '' : 's'} in the correct room/task`
+        : `Included photo destinations complete (${placementAudit.placedCount}/${placementAudit.evidence.length})`,
       pass: keyEvidencePlaced,
       selector: '#photos-card',
       action: 'reportPhotos'
@@ -8628,12 +8726,15 @@ function goToFinishItem(item) {
     target.open = true;
   }
 
+  let placementFocusTarget = null;
   if (item.action === 'reportPhotos') {
-    const unassignedBadge = qs('.photo-assign-badge.not-assigned');
-    target = unassignedBadge?.closest('.photo-card') || target;
+    const placementStatus = qs('.photo-evidence-status.needs-work');
+    const placementCard = placementStatus?.closest('.photo-card');
+    target = placementCard || target;
+    placementFocusTarget = placementCard?.querySelector('.photo-placement-select') || null;
   }
 
-  const focusTarget = item.focusSelector ? qs(item.focusSelector) : null;
+  const focusTarget = placementFocusTarget || (item.focusSelector ? qs(item.focusSelector) : null);
   if (focusTarget) {
     expandFinishTarget(focusTarget);
     target = focusTarget;
