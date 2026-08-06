@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V82';
+const REVIEW_PORTAL_VERSION = 'V83';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -719,6 +719,17 @@ function buildReviewRoomRecords(insp) {
   }
 
   return ensurePhotoBackedRoomRecords(insp, records);
+}
+
+function hiddenReviewRoomIds(insp) {
+  const value = getReviewedJSONField(insp, 'roomData', 'hiddenRoomIds', []);
+  const ids = Array.isArray(value) ? value : [];
+  return new Set(ids.map(id => String(id || '').trim()).filter(Boolean));
+}
+
+function visibleReviewRoomRecords(insp) {
+  const hiddenIds = hiddenReviewRoomIds(insp);
+  return buildReviewRoomRecords(insp).filter(record => !hiddenIds.has(record.stepId));
 }
 
 function getReviewedField(insp, group, key, fallback = '') {
@@ -4594,7 +4605,7 @@ function buildTannerPackageState(insp = {}) {
     Number(health.basePhotos) || 0,
     workerStatusExpectedPhotos
   );
-  const roomCount = buildReviewRoomRecords(insp).length;
+  const roomCount = visibleReviewRoomRecords(insp).length;
   const reportNotes = firstNonEmptyValue(
     insp.reportBuilderNotes,
     reviewed.reportBuilderNotes,
@@ -4818,7 +4829,7 @@ function sourceFollowUpPlan(insp) {
 }
 
 function followUpPlanPrompt(insp, inspectorDraft = '') {
-  const records = buildReviewRoomRecords(insp);
+  const records = visibleReviewRoomRecords(insp);
   const reviewedItems = roomFollowUpItems(insp);
   const roomDetails = [];
 
@@ -4867,7 +4878,7 @@ function setFollowUpPlanStatus(message, state = '') {
 }
 
 function buildFollowUpPlanSuggestions(insp) {
-  const records = buildReviewRoomRecords(insp);
+  const records = visibleReviewRoomRecords(insp);
   const reviewedItems = roomFollowUpItems(insp);
   const suggestions = [];
   const seen = new Set();
@@ -5844,10 +5855,55 @@ function renderRoomsSection(insp, locked) {
     openPhotoModal(url, thumb.dataset.photoCaption || '', thumb.dataset.photoId || '');
   };
 
-  const roomRecords = buildReviewRoomRecords(insp);
+  const allRoomRecords = buildReviewRoomRecords(insp);
+  const hiddenIds = hiddenReviewRoomIds(insp);
+  const roomRecords = allRoomRecords.filter(record => !hiddenIds.has(record.stepId));
+
+  const hiddenRecords = allRoomRecords.filter(record => hiddenIds.has(record.stepId));
+  if (hiddenRecords.length) {
+    const hiddenList = el('div', { class: 'hidden-room-list' });
+    hiddenRecords.forEach(record => {
+      const roomName = displayReviewRoomName(
+        record.room?.roomName || record.step?.roomName || record.stepId,
+        record.room?.type || record.step?.type || '',
+        record.room?.level || record.step?.level || '',
+        record.stepId
+      );
+      const row = el('div', { class: 'hidden-room-row' },
+        el('div', {},
+          el('strong', {}, roomName),
+          el('small', {}, 'Hidden from this review. Original inspector data is preserved.')
+        )
+      );
+      if (!locked) {
+        const restoreButton = el('button', {
+          type: 'button',
+          class: 'room-restore-button'
+        }, 'Restore');
+        restoreButton.addEventListener('click', async () => {
+          restoreButton.disabled = true;
+          restoreButton.textContent = 'Restoring...';
+          const restored = await saveReviewRoomVisibility(insp, record.stepId, false);
+          if (restored) refreshRoomsAfterVisibilityChange(insp, locked, `${roomName} restored.`);
+          else {
+            restoreButton.disabled = false;
+            restoreButton.textContent = 'Restore';
+          }
+        });
+        row.appendChild(restoreButton);
+      }
+      hiddenList.appendChild(row);
+    });
+    container.appendChild(el('div', { class: 'hidden-room-notice' },
+      el('div', { class: 'hidden-room-notice-title' },
+        `${hiddenRecords.length} room${hiddenRecords.length === 1 ? '' : 's'} hidden from review`
+      ),
+      hiddenList
+    ));
+  }
 
   if (!roomRecords.length) {
-    container.innerHTML = '<p class="text-muted">No room data found.</p>';
+    container.appendChild(el('p', { class: 'text-muted' }, 'No rooms are currently included in this review.'));
     return;
   }
 
@@ -5866,6 +5922,61 @@ function renderRoomsSection(insp, locked) {
   for (const record of roomRecords) {
     container.appendChild(buildRoomCard(record, insp, locked, aliasIndex));
   }
+}
+
+function localReviewFieldSnapshot(inspectionId, stepId, fieldKey) {
+  const storageKey = 'inhaus_review_' + inspectionId;
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch(e) {}
+  const group = saved[stepId] && typeof saved[stepId] === 'object' ? saved[stepId] : {};
+  return {
+    storageKey,
+    saved,
+    hadValue: Object.prototype.hasOwnProperty.call(group, fieldKey),
+    value: group[fieldKey]
+  };
+}
+
+function restoreLocalReviewField(snapshot, stepId, fieldKey) {
+  if (!snapshot) return;
+  const saved = snapshot.saved || {};
+  if (snapshot.hadValue) {
+    if (!saved[stepId] || typeof saved[stepId] !== 'object') saved[stepId] = {};
+    saved[stepId][fieldKey] = snapshot.value;
+  } else if (saved[stepId] && typeof saved[stepId] === 'object') {
+    delete saved[stepId][fieldKey];
+    if (Object.keys(saved[stepId]).length === 0) delete saved[stepId];
+  }
+  try { localStorage.setItem(snapshot.storageKey, JSON.stringify(saved)); } catch(e) {}
+}
+
+async function saveReviewRoomVisibility(insp, stepId, hidden) {
+  const target = _inspection || insp;
+  const previousIds = Array.from(hiddenReviewRoomIds(target));
+  const nextIds = new Set(previousIds);
+  if (hidden) nextIds.add(stepId);
+  else nextIds.delete(stepId);
+
+  const previousGroup = target.reviewedData?.roomData;
+  const hadPreviousValue = Boolean(previousGroup && Object.prototype.hasOwnProperty.call(previousGroup, 'hiddenRoomIds'));
+  const previousValue = previousGroup?.hiddenRoomIds;
+  const { id } = getURLParams();
+  const localSnapshot = localReviewFieldSnapshot(id, 'roomData', 'hiddenRoomIds');
+  const saved = await saveField('roomData', 'hiddenRoomIds', JSON.stringify(Array.from(nextIds)));
+  if (saved) return true;
+
+  if (hadPreviousValue) setReviewedField('roomData', 'hiddenRoomIds', previousValue);
+  else if (target.reviewedData?.roomData) delete target.reviewedData.roomData.hiddenRoomIds;
+  restoreLocalReviewField(localSnapshot, 'roomData', 'hiddenRoomIds');
+  return false;
+}
+
+function refreshRoomsAfterVisibilityChange(insp, locked, message) {
+  const target = _inspection || insp;
+  renderRoomsSection(target, locked);
+  updatePhotoSummary(target.photos || []);
+  checkGate();
+  showToast(message, 'success');
 }
 
 function buildRoomCard(record, insp, locked, aliasIndex) {
@@ -5896,12 +6007,40 @@ function buildRoomCard(record, insp, locked, aliasIndex) {
   titleMeta.appendChild(el('span', { class: 'room-meta-chip muted' }, `${roomPhotos.length} photo${roomPhotos.length !== 1 ? 's' : ''}`));
   if (hasConcern) titleMeta.appendChild(el('span', { class: 'room-warning-chip' }, 'FLIR concern'));
 
+  const headerActions = el('div', { class: 'room-header-actions' });
+  if (!locked) {
+    const hideButton = el('button', {
+      type: 'button',
+      class: 'room-hide-button',
+      title: 'Exclude this room from the review while preserving the inspector data'
+    }, 'Hide from review');
+    hideButton.addEventListener('click', async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (roomPhotos.length) {
+        showToast(`Move or remove the ${roomPhotos.length} photo${roomPhotos.length === 1 ? '' : 's'} assigned to ${roomName} before hiding it.`, 'error', 5000);
+        return;
+      }
+      if (!window.confirm(`Hide ${roomName} from this review? The original inspector data will remain preserved.`)) return;
+      hideButton.disabled = true;
+      hideButton.textContent = 'Hiding...';
+      const hidden = await saveReviewRoomVisibility(insp, stepId, true);
+      if (hidden) refreshRoomsAfterVisibilityChange(insp, locked, `${roomName} hidden from review.`);
+      else {
+        hideButton.disabled = false;
+        hideButton.textContent = 'Hide from review';
+      }
+    });
+    headerActions.appendChild(hideButton);
+  }
+  headerActions.appendChild(collapseIcon);
+
   const header = el('div', { class: 'room-header' },
     el('div', { class: 'room-title-wrap' },
       el('div', { class: 'room-name' }, roomName, reviewedChip),
       titleMeta
     ),
-    collapseIcon
+    headerActions
   );
 
   // Room review controls
@@ -7117,7 +7256,7 @@ function buildPhotoPlacementDestinations(insp) {
     }
   };
 
-  buildReviewRoomRecords(insp).forEach(record => {
+  visibleReviewRoomRecords(insp).forEach(record => {
     const name = record.room?.roomName || record.step?.roomName || record.stepId;
     if (placementRecordIsRoom(record)) addRoom(name);
     else {
@@ -7932,7 +8071,7 @@ function updatePhotoSummary(photos) {
   if (elInc) elInc.textContent = included;
 
   if (elRev) {
-    const roomRecords = _inspection ? buildReviewRoomRecords(_inspection) : [];
+    const roomRecords = _inspection ? visibleReviewRoomRecords(_inspection) : [];
     const rooms = roomRecords.length;
     const reviewedRooms = roomRecords.filter(record => roomReviewStatus(record, _inspection).complete).length;
     elRev.textContent = reviewedRooms;
@@ -8512,7 +8651,7 @@ function evaluateGate(insp) {
   const photos  = insp.photos  || [];
   const tests   = insp.testsConfirmed || {};
   const reviewed = insp.reviewedData || {};
-  const roomRecords = buildReviewRoomRecords(insp);
+  const roomRecords = visibleReviewRoomRecords(insp);
   const placementAudit = buildPhotoPlacementAudit(insp, photos);
 
   // 1. Every room needs an explicit review outcome:

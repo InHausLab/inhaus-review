@@ -104,6 +104,16 @@ test('routine no-issue room notes do not inflate assessment observations', () =>
   assert.match(text, /staining was documented below it/);
 });
 
+test('rooms hidden in the review portal are excluded from Section 8 compilation', () => {
+  const inspection = fixture();
+  inspection.reviewedData = {
+    roomData: { hiddenRoomIds: JSON.stringify(['room-1']) }
+  };
+  const result = compileSection8(inspection);
+  assert.equal(result.metrics.roomCount, inspection.rooms.length - 1);
+  assert.doesNotMatch(result.sections.observations.map(item => item.text).join('\n'), /Source observation 1/);
+});
+
 test('source readiness blocks partial photo sync', () => {
   const inspection = fixture();
   const result = evaluateCompilationReadiness({

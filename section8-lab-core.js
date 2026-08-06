@@ -117,11 +117,19 @@ function normalizeRoomRecords(inspection) {
     ? inspection.stepData
     : {};
   const rooms = Array.isArray(inspection?.rooms) ? inspection.rooms : [];
+  const hiddenValue = inspection?.reviewedData?.roomData?.hiddenRoomIds;
+  let hiddenIds = [];
+  if (Array.isArray(hiddenValue)) hiddenIds = hiddenValue;
+  else if (typeof hiddenValue === 'string') {
+    try { hiddenIds = JSON.parse(hiddenValue); } catch(e) { hiddenIds = []; }
+  }
+  const hidden = new Set((Array.isArray(hiddenIds) ? hiddenIds : []).map(id => cleanText(id)).filter(Boolean));
   const used = new Set();
   const records = [];
 
   rooms.forEach((room, index) => {
     const stepId = room.stepId || `room-${index + 1}`;
+    if (hidden.has(stepId)) return;
     const step = { ...room, ...(steps[stepId] || {}) };
     records.push({
       stepId,
@@ -132,7 +140,7 @@ function normalizeRoomRecords(inspection) {
   });
 
   Object.entries(steps).forEach(([stepId, step]) => {
-    if (used.has(stepId)) return;
+    if (used.has(stepId) || hidden.has(stepId)) return;
     records.push({
       stepId,
       roomName: cleanText(step.roomName || step.name || stepId),

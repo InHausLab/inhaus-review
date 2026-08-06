@@ -1847,6 +1847,75 @@ mark.report-search-match.active {
   min-width: 0;
 }
 
+.room-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.room-hide-button,
+.room-restore-button {
+  border: 1px solid #b91c1c;
+  border-radius: 6px;
+  background: #fff;
+  color: #991b1b;
+  min-height: 34px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: .75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.room-hide-button:hover,
+.room-restore-button:hover {
+  background: #fef2f2;
+}
+
+.room-hide-button:disabled,
+.room-restore-button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
+.hidden-room-notice {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  background: var(--gray-50);
+  margin-bottom: 12px;
+  padding: 12px 16px;
+}
+
+.hidden-room-notice-title {
+  color: var(--gray-700);
+  font-size: .82rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.hidden-room-list {
+  display: grid;
+  gap: 8px;
+}
+
+.hidden-room-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hidden-room-row strong,
+.hidden-room-row small {
+  display: block;
+}
+
+.hidden-room-row small {
+  color: var(--gray-500);
+  margin-top: 2px;
+}
+
 .room-name {
   font-size: 1.05rem;
   font-weight: 600;
@@ -4531,6 +4600,21 @@ mark.report-search-match.active {
 
   .room-header {
     align-items: flex-start;
+  }
+
+  .room-header-actions {
+    align-items: flex-end;
+    flex-direction: column-reverse;
+  }
+
+  .room-hide-button {
+    max-width: 108px;
+    white-space: normal;
+  }
+
+  .hidden-room-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .room-checklist-grid {
