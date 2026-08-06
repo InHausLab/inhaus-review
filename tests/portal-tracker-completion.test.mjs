@@ -7,9 +7,9 @@ const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V83'/);
-  assert.match(index, /portal\.js\?v=20260806-83-1/);
-  assert.match(review, /portal\.js\?v=20260806-83-1/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V84'/);
+  assert.match(index, /portal\.js\?v=20260806-84-1/);
+  assert.match(review, /portal\.js\?v=20260806-84-1/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
@@ -20,6 +20,8 @@ test('rooms can be hidden from review without deleting inspector source data', (
   assert.match(portal, /function visibleReviewRoomRecords\(/);
   assert.match(portal, /saveField\('roomData', 'hiddenRoomIds'/);
   assert.match(portal, /Hide from review/);
+  assert.match(portal, /Confirm hide/);
+  assert.doesNotMatch(portal, /window\.confirm\(`Hide/);
   assert.match(portal, /Original inspector data is preserved/);
   assert.match(portal, /Move or remove the .* assigned to .* before hiding it/);
   assert.match(portal, /const roomRecords = visibleReviewRoomRecords\(insp\)/);

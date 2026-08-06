@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V83';
+const REVIEW_PORTAL_VERSION = 'V84';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -6021,7 +6021,20 @@ function buildRoomCard(record, insp, locked, aliasIndex) {
         showToast(`Move or remove the ${roomPhotos.length} photo${roomPhotos.length === 1 ? '' : 's'} assigned to ${roomName} before hiding it.`, 'error', 5000);
         return;
       }
-      if (!window.confirm(`Hide ${roomName} from this review? The original inspector data will remain preserved.`)) return;
+      if (hideButton.dataset.confirmHide !== 'true') {
+        hideButton.dataset.confirmHide = 'true';
+        hideButton.classList.add('confirming');
+        hideButton.textContent = 'Confirm hide';
+        hideButton.title = `Confirm hiding ${roomName}; original inspector data will remain preserved`;
+        window.setTimeout(() => {
+          if (!hideButton.isConnected || hideButton.disabled) return;
+          hideButton.dataset.confirmHide = 'false';
+          hideButton.classList.remove('confirming');
+          hideButton.textContent = 'Hide from review';
+          hideButton.title = 'Exclude this room from the review while preserving the inspector data';
+        }, 6000);
+        return;
+      }
       hideButton.disabled = true;
       hideButton.textContent = 'Hiding...';
       const hidden = await saveReviewRoomVisibility(insp, stepId, true);

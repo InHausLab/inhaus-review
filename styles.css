@@ -1873,6 +1873,11 @@ mark.report-search-match.active {
   background: #fef2f2;
 }
 
+.room-hide-button.confirming {
+  background: #991b1b;
+  color: #fff;
+}
+
 .room-hide-button:disabled,
 .room-restore-button:disabled {
   cursor: wait;
