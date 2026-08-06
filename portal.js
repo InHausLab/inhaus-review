@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V81';
+const REVIEW_PORTAL_VERSION = 'V82';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -6431,6 +6431,80 @@ const TEST_DEFS = [
   { key: 'testMoldSwabs',    label: 'Mold Swabs',        sampleKey: 'moldSwabSampleId' }
 ];
 
+const TEST_REVIEW_STATUS_OPTIONS = [
+  'Not recorded',
+  'Conducted',
+  'Not requested',
+  'Not tested',
+  'N/A'
+];
+
+function normalizeTestReviewStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (/^n\/?a$|not applicable/.test(normalized)) return 'N/A';
+  if (/not requested|not ordered/.test(normalized)) return 'Not requested';
+  if (/not tested|not conducted|not performed|^no$/.test(normalized)) return 'Not tested';
+  if (/conducted|collected|completed|recorded|captured|prepared for shipping|monitor placed|set up|^yes$/.test(normalized)) return 'Conducted';
+  return '';
+}
+
+function sourceTestReviewStatus(insp, test, records) {
+  const matcher = {
+    testBreeze: /Breeze/i,
+    testBoulderBlue: /Boulder Blue/i,
+    testWaterPanel: /Water Panel/i,
+    testPFAS: /^PFAS$/i,
+    testMicroplastics: /Microplastics/i,
+    testRadon: /^Radon$/i,
+    testATP: /^ATP$/i,
+    testMoldSwabs: /Mold Swab/i
+  }[test.key];
+  const record = (records || []).find(item => matcher?.test(item.type));
+  const recordStatus = normalizeTestReviewStatus(record?.status);
+  if (recordStatus) return recordStatus;
+
+  const steps = insp.stepData || {};
+  const water = steps['water-sample'] || {};
+  const radon = steps.radon || {};
+  const candidates = {
+    testWaterPanel: [water.waterPanelCollected, water.waterPanelPlanned],
+    testPFAS: [water.pfasStatus, steps['device-setup']?.pfasSetup],
+    testMicroplastics: [water.microplasticsStatus],
+    testRadon: [radon.radonLocation, insp.radonMonitorLocation],
+    testATP: [steps['atp-kitchen']?._completedAt],
+    testBoulderBlue: [steps.arrival?.boulderBlueSampleId, steps.arrival?.boulderBlueStartTime]
+  }[test.key] || [];
+  for (const candidate of candidates) {
+    const status = normalizeTestReviewStatus(candidate);
+    if (status) return status;
+  }
+
+  if (test.key === 'testBreeze') {
+    const breezeValues = Object.values(steps)
+      .map(step => step && typeof step === 'object' ? step.breezeDone : undefined)
+      .filter(value => value !== undefined && value !== '');
+    if (breezeValues.some(isConductedValue)) return 'Conducted';
+    if (breezeValues.length) return 'Not tested';
+  }
+  return 'Not recorded';
+}
+
+function getTestReviewStatus(insp, test, records) {
+  const reviewed = insp.reviewedData || {};
+  const saved = reviewed.tests?.[`${test.key}_status`] ?? reviewed[`${test.key}_status`];
+  if (TEST_REVIEW_STATUS_OPTIONS.includes(saved)) return saved;
+  if (isTestConfirmedForReview(insp, test.key)) return 'Conducted';
+  return sourceTestReviewStatus(insp, test, records);
+}
+
+function testStatusSelectMarkup(test, status, locked) {
+  const options = TEST_REVIEW_STATUS_OPTIONS.map(option =>
+    `<option value="${escapeHTML(option)}" ${option === status ? 'selected' : ''}>${escapeHTML(option)}</option>`
+  ).join('');
+  return `<select class="inline-input test-status-select" data-step="tests" data-test-key="${test.key}" data-field="${test.key}_status" ${locked ? 'disabled' : ''}>${options}</select>`;
+}
+
 const BEFORE_LEAVING_ITEMS = [
   { key: 'breezeCollected', label: 'All Breeze ET tests collected and spore traps packed' },
   { key: 'boulderBlueDone', label: 'Boulder Blue fan run 2+ hours — filter collected and packed' },
@@ -6881,13 +6955,15 @@ function renderTestsSection(insp, locked) {
   tbody.innerHTML = '';
 
   const reviewedTests = insp.reviewedData?.tests || {};
+  const sourceRecords = collectTestSampleRecords(insp);
 
   for (const test of TEST_DEFS) {
     const tr = document.createElement('tr');
     const sampleVal    = reviewedTests[test.sampleKey] ?? insp.reviewedData?.[test.sampleKey] ?? insp[test.sampleKey] ?? '';
     const locationVal  = reviewedTests[test.key + '_location'] ?? insp.reviewedData?.[test.key + '_location'] ?? '';
     const notesVal     = reviewedTests[test.key + '_notes'] ?? insp.reviewedData?.[test.key + '_notes'] ?? '';
-    const isConfirmed  = isTestConfirmedForReview(insp, test.key);
+    const testStatus = getTestReviewStatus(insp, test, sourceRecords);
+    const statusSelect = testStatusSelectMarkup(test, testStatus, locked);
 
     const qtyVal = reviewedTests[test.key + '_qty'] ?? insp.reviewedData?.[test.key + '_qty'] ?? insp[test.key + '_qty'] ?? '';
     if (test.key === 'testATP') {
@@ -6911,7 +6987,7 @@ function renderTestsSection(insp, locked) {
             <label><span>Post-test RLU</span><input type="number" class="inline-input" data-step="tests" data-field="testATP_postRLU" value="${escapeHTML(post)}" ${locked ? 'readonly' : ''}></label>
             <label><span>Post-test status</span><input type="text" class="inline-input" data-step="tests" data-field="testATP_postStatus" value="${escapeHTML(postStatus)}" ${locked ? 'readonly' : ''}></label>
             <label class="atp-review-notes"><span>Notes</span><input type="text" class="inline-input" data-step="tests" data-field="testATP_notes" value="${escapeHTML(atpNotes)}" ${locked ? 'readonly' : ''}></label>
-            <label class="atp-review-confirm"><input type="checkbox" data-step="tests" data-field="testATP_confirmed" ${isConfirmed ? 'checked' : ''} ${locked ? 'disabled' : ''}> Confirmed</label>
+            <label class="atp-review-confirm"><span>Status</span>${statusSelect}</label>
           </div>
         </td>`;
     } else {
@@ -6926,11 +7002,7 @@ function renderTestsSection(insp, locked) {
       <td><input type="number" class="inline-input" data-step="tests" data-field="${test.key}_qty"
           value="${escapeHTML(qtyVal)}" placeholder="#" min="0" style="width:50px;text-align:center"
           ${locked ? 'readonly' : ''}></td>
-      <td class="confirmed-check">
-        <input type="checkbox" data-step="tests" data-field="${test.key}_confirmed"
-            ${isConfirmed ? 'checked' : ''}
-            ${locked ? 'disabled' : ''}>
-      </td>
+      <td class="test-status-cell">${statusSelect}</td>
       <td><input type="text" class="inline-input" data-step="tests" data-field="${test.key}_notes"
           value="${escapeHTML(notesVal)}" placeholder="Notes…"
           ${locked ? 'readonly' : ''}></td>
@@ -6950,10 +7022,12 @@ function renderTestsSection(insp, locked) {
         });
       });
 
-      const cb = tr.querySelector('input[type="checkbox"]');
-      if (cb) {
-        cb.addEventListener('change', () => {
-          saveField(cb.dataset.step, cb.dataset.field, cb.checked);
+      const statusInput = tr.querySelector('.test-status-select');
+      if (statusInput) {
+        statusInput.addEventListener('change', async () => {
+          const conducted = statusInput.value === 'Conducted';
+          await saveField(statusInput.dataset.step, statusInput.dataset.field, statusInput.value);
+          await saveField(statusInput.dataset.step, `${statusInput.dataset.testKey}_confirmed`, conducted);
           checkGate();
         });
       }
@@ -8420,6 +8494,8 @@ function checkGate() {
 }
 
 function isTestConfirmedForReview(insp, testKey) {
+  const reviewedStatus = insp.reviewedData?.tests?.[`${testKey}_status`] ?? insp.reviewedData?.[`${testKey}_status`];
+  if (reviewedStatus !== undefined) return reviewedStatus === 'Conducted';
   const reviewedValue = insp.reviewedData?.tests?.[`${testKey}_confirmed`];
   if (reviewedValue !== undefined) return reviewedValue === true;
   const legacyValue = insp.reviewedData?.[`${testKey}_confirmed`];
