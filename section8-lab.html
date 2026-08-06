@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>Section 8 Lab — InHaus</title>
+  <link rel="stylesheet" href="section8-lab.css?v=20260805-1">
+</head>
+<body>
+  <header class="lab-header">
+    <div class="lab-brand">InHaus Lab</div>
+    <span>Section 8 Experiment</span>
+  </header>
+
+  <main>
+    <section class="lab-warning" aria-label="Experiment warning">
+      <div class="lab-warning-label">EXPERIMENT · READ ONLY</div>
+      <h1>Tanner Summary Lab</h1>
+      <p>This is separate from the Review Portal. It cannot save changes, submit an inspection, alter scoring, notify Tanner, or modify the official report package.</p>
+    </section>
+
+    <section class="lab-loader">
+      <div>
+        <h2>Load a completed inspection</h2>
+        <p>This unlisted page is intended only for Matt and Tanner’s evaluation. It is not linked from the Review Portal.</p>
+      </div>
+      <form id="lab-load-form">
+        <label for="inspection-id">Inspection ID</label>
+        <input id="inspection-id" name="id" autocomplete="off" placeholder="INH-20260805-…" required>
+        <label for="portal-token">Portal access token</label>
+        <input id="portal-token" name="token" type="password" autocomplete="off" required>
+        <button type="submit">Generate Read-Only Preview</button>
+      </form>
+      <div id="lab-status" class="lab-status" aria-live="polite">Enter an inspection ID and the existing portal access token.</div>
+    </section>
+
+    <div id="lab-results" hidden></div>
+  </main>
+
+  <footer>
+    Section 8 Lab v1 · Rule-based baseline · No production writes
+  </footer>
+  <script type="module" src="section8-lab.js?v=20260805-5"></script>
+</body>
+</html>
