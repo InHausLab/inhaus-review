@@ -2,7 +2,7 @@ import {
   compileSection8,
   evaluateCompilationReadiness,
   mergeInspectionSources
-} from './section8-lab-core.js?v=20260805-3';
+} from './section8-lab-core.js?v=20260807-1';
 
 const WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 const params = new URLSearchParams(window.location.search);

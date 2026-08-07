@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V84';
+const REVIEW_PORTAL_VERSION = 'V85';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -3916,6 +3916,15 @@ function renderIntakeSummary(insp) {
   body.innerHTML = '';
 
   const utility = insp.stepData?.utility || insp.utilityRoom || {};
+  const property = insp.stepData?.['property-details'] || {};
+  const kitchen = insp.stepData?.['kitchen-appliance'] || {};
+  const systemSummary = (present, detail) => {
+    const presence = sourceDisplayValue(present);
+    const description = sourceDisplayValue(detail);
+    const cleanPresence = presence === 'Not recorded' ? '' : presence;
+    const cleanDescription = description === 'Not recorded' ? '' : description;
+    return [cleanPresence, cleanDescription].filter(Boolean).join(' — ');
+  };
   const ventilation = utility.ventilationType || {};
   const ventilationLabels = {
     bathExhaust: 'Bathroom Exhaust Fan(s)',
@@ -3946,13 +3955,19 @@ function renderIntakeSummary(insp) {
     { label: 'Levels', key: 'numberOfLevels', value: insp.numberOfLevels },
     { label: 'Basement', key: 'basement', value: insp.basement },
     { label: 'Water Source', key: 'waterSource', value: insp.waterSource },
-    { label: 'Filtration', key: 'waterFiltration', value: insp.waterFiltration },
-    { label: 'Softener', key: 'waterSoftener', value: insp.waterSoftener },
+    { label: 'Water Filtration', key: 'waterFiltration', value: insp.waterFiltration || systemSummary(utility.waterFiltrationPresent, utility.waterFiltType) },
+    { label: 'Water Softener', key: 'waterSoftener', value: insp.waterSoftener || systemSummary(utility.waterSofteningPresent, utility.waterSoftType) },
     { label: 'Carpeted Rooms', key: 'carpetedRooms', value: insp.carpetedRooms },
     { label: 'Windows Open', key: 'windowsOpen', value: insp.windowsOpen },
     { label: 'Heating', key: 'heating', value: utility.heatingType || insp.heating },
     { label: 'AC', key: 'ac', value: utility.acType || insp.ac },
     { label: 'Ventilation', key: 'ventilationReadable', value: ventilationValue },
+    { label: 'Air Filtration / Cleansing', key: 'airFiltration', value: insp.airFiltration || systemSummary(utility.airFiltrationPresent, utility.airFiltType) },
+    { label: 'Other Air Cleaning Devices', key: 'otherAirCleaning', value: insp.otherAirCleaning || systemSummary(utility.otherAirPurifierPresent, utility.otherAirPurifierType) },
+    { label: 'Radon Mitigation', key: 'radonMitigation', value: insp.radonMitigation || systemSummary(utility.radonMitigationPresent, utility.radonMitType || utility.radonMitigationOther) },
+    { label: 'Fireplace(s)', key: 'fireplaceSummary', value: insp.fireplaceSummary || [property.fireplacePresent, sourceDisplayValue(property.fireplace), property.fireplaceCount ? `${property.fireplaceCount} total` : ''].filter(value => value && value !== 'Not recorded').join(' — ') },
+    { label: 'Stove / Range', key: 'stoveSummary', value: insp.stoveSummary || sourceDisplayValue(kitchen.stoveType) },
+    { label: 'Stove Ventilation', key: 'stoveVentilation', value: insp.stoveVentilation || kitchen.exhaustVented },
     { label: 'Weather', key: 'weatherConditions', value: insp.weatherConditions },
     { label: 'Particulate Matter', key: 'particulateMatter', value: getParticulateMatter(insp), wide: true },
     { label: 'Occupancy', key: 'occupancyDuringInspection', value: insp.occupancyDuringInspection },
@@ -4613,6 +4628,17 @@ function buildTannerPackageState(insp = {}) {
   );
   const sampleRecords = collectTestSampleRecords(insp);
   const activeSamples = sampleRecords.filter(record => !/not conducted|not requested|not recorded/i.test(record.status || ''));
+  const photosFolderReady = Boolean(photosFolderUrl) && (
+    expectedPhotoCount === 0 ||
+    handoffReady ||
+    (
+      health.workerStatusLoaded &&
+      workerMissingPhotoCount === 0 &&
+      workerMissingMirrorCount === 0 &&
+      workerStatusStoredPhotos >= expectedPhotoCount &&
+      workerStatusMirroredPhotos >= expectedPhotoCount
+    )
+  );
 
   return {
     readyCount: 0,
@@ -4676,10 +4702,12 @@ function buildTannerPackageState(insp = {}) {
       },
       {
         label: 'Photos folder',
-        ok: Boolean(photosFolderUrl) || photoCount > 0,
-        detail: photosFolderUrl
-          ? 'Photos folder linked'
-          : `${photoCount} photo${photoCount === 1 ? '' : 's'} loaded`,
+        ok: photosFolderReady,
+        detail: !photosFolderUrl
+          ? 'Needs Photos folder link'
+          : (photosFolderReady
+            ? `${expectedPhotoCount || workerStatusMirroredPhotos} high-resolution photo${(expectedPhotoCount || workerStatusMirroredPhotos) === 1 ? '' : 's'} packaged`
+            : `${workerStatusMirroredPhotos}/${expectedPhotoCount} high-resolution photos packaged`),
         href: photosFolderUrl || folderUrl
       },
       {

@@ -114,6 +114,51 @@ test('rooms hidden in the review portal are excluded from Section 8 compilation'
   assert.doesNotMatch(result.sections.observations.map(item => item.text).join('\n'), /Source observation 1/);
 });
 
+test('legacy exterior photos without an issue decision produce a visible exception', () => {
+  const inspection = fixture();
+  inspection.rooms.push({ stepId: 'exterior', roomName: 'Exterior' });
+  inspection.stepData.exterior = {
+    _exteriorAssessmentPhotos: [{
+      photoId: 'exterior-legacy-photo',
+      caption: 'Area of concern',
+      photoPurpose: 'fault'
+    }]
+  };
+  const result = compileSection8(inspection);
+  assert(result.exceptions.some(item => item.type === 'missing-exterior-decision'));
+  assert.doesNotMatch(result.sections.observations.map(item => item.text).join('\n'), /Area of concern/);
+});
+
+test('specific exterior fault captions become traceable observations', () => {
+  const inspection = fixture();
+  inspection.rooms.push({ stepId: 'exterior', roomName: 'Exterior' });
+  inspection.stepData.exterior = {
+    exteriorIssuesFound: 'Yes',
+    exteriorNotes: 'Water staining was observed below the east window.',
+    _exteriorAssessmentPhotos: [{
+      photoId: 'exterior-fault-photo',
+      caption: 'Failed caulking below the east window',
+      photoPurposeLabel: 'Fault / Issue'
+    }]
+  };
+  const result = compileSection8(inspection);
+  const captionItem = result.sections.observations.find(item => /Failed caulking/.test(item.text));
+  assert.deepEqual(captionItem.photoIds, ['exterior-fault-photo']);
+  assert(captionItem.evidenceIds.length > 0);
+  assert.equal(result.exceptions.some(item => item.type === 'missing-exterior-detail'), false);
+});
+
+test('exterior issue decision without detail remains blocking evidence work', () => {
+  const inspection = fixture();
+  inspection.rooms.push({ stepId: 'exterior', roomName: 'Exterior' });
+  inspection.stepData.exterior = {
+    exteriorIssuesFound: 'Yes',
+    _exteriorAssessmentPhotos: [{ photoId: 'exterior-photo' }]
+  };
+  const result = compileSection8(inspection);
+  assert(result.exceptions.some(item => item.type === 'missing-exterior-detail'));
+});
+
 test('source readiness blocks partial photo sync', () => {
   const inspection = fixture();
   const result = evaluateCompilationReadiness({

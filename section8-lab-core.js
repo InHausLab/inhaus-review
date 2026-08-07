@@ -112,6 +112,27 @@ function parsePhotoIds(value) {
   return photos.map(photo => cleanText(photo?.photoId || photo?.id)).filter(Boolean);
 }
 
+function stepPhotos(step) {
+  const photos = [];
+  Object.values(step || {}).forEach(value => {
+    if (!Array.isArray(value)) return;
+    value.forEach(photo => {
+      if (photo && typeof photo === 'object' && cleanText(photo.photoId || photo.id)) photos.push(photo);
+    });
+  });
+  return photos;
+}
+
+function isGenericPhotoCaption(value) {
+  return /^(?:area of concern|fault|location(?: \/ context)?|other|close-up detail|zoomed-out overview|exterior assessment photo|photo)$/i
+    .test(cleanText(value));
+}
+
+function isFaultEvidencePhoto(photo) {
+  const purpose = cleanText(photo?.photoPurposeLabel || photo?.photoPurpose || photo?.photoRole);
+  return /fault|issue|concern|damage|leak|stain|mold/i.test(purpose);
+}
+
 function normalizeRoomRecords(inspection) {
   const steps = inspection?.stepData && typeof inspection.stepData === 'object'
     ? inspection.stepData
@@ -268,6 +289,42 @@ export function compileSection8(inspection) {
         photoIds: parsePhotoIds(sourceValue(step, reviewedStep, '_photos'))
       });
     });
+
+    const photos = stepPhotos(step);
+    const exteriorRecord = record.stepId === 'exterior' || /exterior/i.test(record.roomName);
+    if (exteriorRecord) {
+      const issueDecision = cleanText(sourceValue(step, reviewedStep, 'exteriorIssuesFound'));
+      const exteriorNote = cleanText(sourceValue(step, reviewedStep, 'exteriorNotes'));
+      if (isYes(issueDecision) && !exteriorNote) {
+        exceptions.push({
+          type: 'missing-exterior-detail',
+          roomName: record.roomName,
+          stepId: record.stepId,
+          message: 'Exterior issues are marked Yes, but no inspector description was recorded.'
+        });
+      }
+      if (!issueDecision && !exteriorNote && photos.length) {
+        exceptions.push({
+          type: 'missing-exterior-decision',
+          roomName: record.roomName,
+          stepId: record.stepId,
+          message: `${photos.length} exterior photo${photos.length === 1 ? '' : 's'} were captured, but the inspector did not record whether issues were found.`
+        });
+      }
+      photos.filter(isFaultEvidencePhoto).forEach(photo => {
+        const caption = cleanText(photo.caption);
+        if (!caption || isGenericPhotoCaption(caption)) return;
+        addEvidence(items, {
+          category: 'observation',
+          roomName: record.roomName,
+          stepId: record.stepId,
+          text: caption,
+          evidenceIds: [evidenceId([inspectionId, record.stepId, photo.photoId || photo.id, 'caption'])],
+          sourceFields: ['photoCaption'],
+          photoIds: [cleanText(photo.photoId || photo.id)]
+        });
+      });
+    }
 
     const hasRoomDetail = NOTE_FIELDS.some(key => cleanText(sourceValue(step, reviewedStep, key))) ||
       (Array.isArray(observationTags) && observationTags.length);
