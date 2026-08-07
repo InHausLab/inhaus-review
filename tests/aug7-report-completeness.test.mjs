@@ -22,3 +22,10 @@ test('Photos folder is ready only when the folder and complete high-resolution p
   assert.match(portal, /ok: photosFolderReady/);
   assert.doesNotMatch(portal, /ok: Boolean\(photosFolderUrl\) \|\| photoCount > 0/);
 });
+
+test('manual package repair bypasses a stale ready receipt', () => {
+  assert.match(
+    portal,
+    /requestedBy: 'review-portal-repair',[\s\S]*?forceFullRepair: true/
+  );
+});
