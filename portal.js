@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V87';
+const REVIEW_PORTAL_VERSION = 'V88';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -1040,7 +1040,7 @@ function syncPhotoRotationViews(photoId, rotation) {
   const escapedId = window.CSS?.escape ? window.CSS.escape(photoId) : String(photoId).replace(/["\\]/g, '\\$&');
   document.querySelectorAll(`[data-photo-id="${escapedId}"]`).forEach(node => {
     node.dataset.photoRotation = String(normalized);
-    node.querySelectorAll('img').forEach(img => {
+    node.querySelectorAll('img, svg.photo-annotation-overlay').forEach(img => {
       img.dataset.photoRotation = String(normalized);
       const applyRotation = () => {
         const width = img.clientWidth;
@@ -2742,6 +2742,7 @@ function buildPhotoPalette(allPhotos, assignedSet) {
     });
     if (photo.driveUrl) {
       thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || '', loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" }));
+      appendPhotoAnnotationOverlay(thumb, photo);
     } else {
       thumb.appendChild(el('div', { class: 'palette-thumb-placeholder' }, (photo.photoId || '').slice(-4)));
     }
@@ -2802,6 +2803,7 @@ function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) 
         });
         if (photo.driveUrl) {
           thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy', style: `width:${sz};height:${sz}`, referrerpolicy: "no-referrer-when-downgrade" }));
+          appendPhotoAnnotationOverlay(thumb, photo);
         } else {
           thumb.appendChild(el('div', { class: 'picker-thumb-placeholder', style: `width:${sz};height:${sz}` }, (pid || '').slice(-4)));
         }
@@ -2835,6 +2837,7 @@ function buildPhotoPickerField(slotKey, stepId, assignedIds, allPhotos, locked) 
         const thumb = el('div', { class: 'picker-thumb', 'data-photo-id': photo.photoId });
         if (photo.driveUrl) {
           thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || pid, loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" }));
+          appendPhotoAnnotationOverlay(thumb, photo);
         } else {
           thumb.appendChild(el('div', { class: 'picker-thumb-placeholder' }, (pid || '').slice(-4)));
         }
@@ -2912,6 +2915,7 @@ function openPhotoPickerModal(slotKey, stepId, currentIds, allPhotos) {
     });
     if (photo.driveUrl) {
       item.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" }));
+      appendPhotoAnnotationOverlay(item, photo);
     } else {
       item.appendChild(el('div', { class: 'picker-grid-placeholder' }, (photo.photoId || '').slice(-4)));
     }
@@ -3287,6 +3291,7 @@ function renderPhotoLibrary(body, allPhotos, rd, insp) {
     const imgWrap = el('div', { class: 'lib-img-wrap' });
     if (photo.driveUrl) {
       imgWrap.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" }));
+      appendPhotoAnnotationOverlay(imgWrap, photo);
       imgWrap.addEventListener('click', () => openPhotoModal(photo.driveUrl, photo.caption, photo.photoId));
     } else {
       imgWrap.appendChild(el('div', { class: 'lib-img-placeholder' }, (photo.photoId || '').slice(-4)));
@@ -3415,6 +3420,7 @@ function openFABModal(allPhotos, slots, rd) {
       });
       if (photo.driveUrl) {
         item.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId, loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" }));
+        appendPhotoAnnotationOverlay(item, photo);
       } else {
         item.appendChild(el('div', { class: 'picker-grid-placeholder' }, (photo.photoId || '').slice(-4)));
       }
@@ -5848,6 +5854,7 @@ function buildRoomPhotoStrip(roomPhotos) {
         onclick: openInlinePhoto
       });
       thumb.appendChild(el('img', { src: photo.driveUrl, alt: photo.caption || photo.photoId || '', loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" }));
+      appendPhotoAnnotationOverlay(thumb, photo);
       thumb.addEventListener('click', openInlinePhoto);
       if (photo.caption) {
         thumb.appendChild(el('span', { class: 'room-photo-caption' }, photo.caption));
@@ -6379,6 +6386,7 @@ function buildKitchenPhotoThumb(photo, fallbackLabel) {
       loading: 'lazy',
       referrerpolicy: 'no-referrer-when-downgrade'
     }));
+    appendPhotoAnnotationOverlay(button, photo);
     button.addEventListener('click', () => openPhotoModal(photo.driveUrl, photo.caption || fallbackLabel || '', photo.photoId || ''));
   } else {
     button.appendChild(el('div', { class: 'kitchen-photo-placeholder' }, 'Photo unavailable'));
@@ -7836,6 +7844,7 @@ function buildPhotoCard(photo, locked) {
   if (photo.driveUrl) {
     const img = el('img', { src: photo.driveUrl, alt: photo.caption || '', loading: 'lazy', referrerpolicy: "no-referrer-when-downgrade" });
     thumbWrap.appendChild(img);
+    appendPhotoAnnotationOverlay(thumbWrap, photo);
     thumbWrap.addEventListener('click', () => openPhotoModal(photo.driveUrl, photo.caption, photo.photoId));
   } else {
     const placeholder = el('div', { class: 'photo-thumb-placeholder' });
@@ -8209,6 +8218,94 @@ function setPhotoAnnotations(photoId, annotations) {
   if (!_inspection.reviewedData) _inspection.reviewedData = {};
   if (!_inspection.reviewedData.photoAnnotations) _inspection.reviewedData.photoAnnotations = {};
   _inspection.reviewedData.photoAnnotations[photoId] = normalizePhotoAnnotations(annotations);
+  syncPhotoAnnotationViews(photoId);
+}
+
+function renderPhotoAnnotationOverlay(svg, image, annotations) {
+  if (!svg || !image || !annotations.length) return;
+  const width = image.naturalWidth || 1600;
+  const height = image.naturalHeight || 1200;
+  const lineWidth = Math.max(4, Math.min(width, height) * 0.006);
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.innerHTML = '';
+
+  annotations.forEach(annotation => {
+    const [start, end] = annotation.points;
+    const x1 = start.x * width;
+    const y1 = start.y * height;
+    const x2 = end.x * width;
+    const y2 = end.y * height;
+    const stroke = annotation.color || PHOTO_ANNOTATION_COLOR;
+    let shape;
+
+    if (annotation.type === 'circle') {
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+      shape.setAttribute('cx', String((x1 + x2) / 2));
+      shape.setAttribute('cy', String((y1 + y2) / 2));
+      shape.setAttribute('rx', String(Math.max(Math.abs(x2 - x1) / 2, lineWidth * 2)));
+      shape.setAttribute('ry', String(Math.max(Math.abs(y2 - y1) / 2, lineWidth * 2)));
+      shape.setAttribute('fill', 'none');
+    } else {
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const headLength = Math.max(18, Math.min(width, height) * 0.035);
+      const headAngle = Math.PI / 7;
+      const hx1 = x2 - headLength * Math.cos(angle - headAngle);
+      const hy1 = y2 - headLength * Math.sin(angle - headAngle);
+      const hx2 = x2 - headLength * Math.cos(angle + headAngle);
+      const hy2 = y2 - headLength * Math.sin(angle + headAngle);
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      shape.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y2} M ${x2} ${y2} L ${hx1} ${hy1} M ${x2} ${y2} L ${hx2} ${hy2}`);
+      shape.setAttribute('fill', 'none');
+    }
+
+    shape.setAttribute('stroke', stroke);
+    shape.setAttribute('stroke-width', String(lineWidth));
+    shape.setAttribute('stroke-linecap', 'round');
+    shape.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(shape);
+  });
+}
+
+function appendPhotoAnnotationOverlay(host, photo) {
+  if (!host || !photo?.photoId) return;
+  host.classList.add('photo-annotation-host');
+  host.dataset.photoId = photo.photoId;
+  host.querySelectorAll(':scope > .photo-annotation-overlay').forEach(node => node.remove());
+
+  const annotations = getPhotoAnnotations(photo.photoId);
+  const image = host.querySelector(':scope > img');
+  if (!image || !annotations.length) return;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'photo-annotation-overlay');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+  host.appendChild(svg);
+
+  const render = () => {
+    renderPhotoAnnotationOverlay(svg, image, annotations);
+    const rotation = normalizePhotoRotation(photo.rotation || 0);
+    svg.dataset.photoRotation = String(rotation);
+    syncPhotoRotationViews(photo.photoId, rotation);
+  };
+  if (image.complete && image.naturalWidth) render();
+  else {
+    image.addEventListener('load', render, { once: true });
+    // Lazy thumbnails can finish between the synchronous `complete` check and
+    // insertion into the document. decode() closes that cached-image race and
+    // also gives the overlay the image's exact aspect ratio.
+    if (typeof image.decode === 'function') image.decode().then(render).catch(() => {});
+  }
+}
+
+function syncPhotoAnnotationViews(photoId) {
+  if (!photoId) return;
+  const photo = (_inspection?.photos || []).find(item => item.photoId === photoId);
+  if (!photo) return;
+  const escapedId = window.CSS?.escape ? window.CSS.escape(photoId) : String(photoId).replace(/["\\]/g, '\\$&');
+  document.querySelectorAll(`.photo-annotation-host[data-photo-id="${escapedId}"]`).forEach(host => {
+    appendPhotoAnnotationOverlay(host, photo);
+  });
 }
 
 function photoAnnotationButton(label, title, attrs = {}) {

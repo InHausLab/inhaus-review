@@ -475,6 +475,7 @@ function renderPhotoAppendix(photos) {
 function renderPhotoFigure(photo, className = 'photo-card') {
   const fig = document.createElement('figure');
   fig.className = className;
+  const visual = div('report-photo-visual');
   const img = document.createElement('img');
   const candidates = photoUrls(photo);
   img.src = candidates[0];
@@ -489,12 +490,80 @@ function renderPhotoFigure(photo, className = 'photo-card') {
     } else {
       const placeholder = div('photo-placeholder');
       placeholder.textContent = 'Photo unavailable';
-      img.replaceWith(placeholder);
+      visual.replaceChildren(placeholder);
     }
   };
-  fig.appendChild(img);
+  visual.appendChild(img);
+  appendReportPhotoAnnotations(visual, img, photo);
+  fig.appendChild(visual);
   fig.appendChild(textEl('figcaption', '', [photo.roomName, photo.caption || photo.stepName].filter(Boolean).join(' - ') || photo.photoId || 'Photo'));
   return fig;
+}
+
+function reportPhotoAnnotations(photo) {
+  const raw = currentInspection?.reviewedData?.photoAnnotations?.[photo?.photoId];
+  const parsed = parseMaybeJson(raw, raw);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(annotation =>
+    (annotation?.type === 'arrow' || annotation?.type === 'circle') &&
+    Array.isArray(annotation.points) && annotation.points.length >= 2
+  );
+}
+
+function appendReportPhotoAnnotations(host, image, photo) {
+  const annotations = reportPhotoAnnotations(photo);
+  if (!annotations.length) return;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'report-photo-annotation-overlay');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+  host.appendChild(svg);
+
+  const render = () => {
+    const width = image.naturalWidth || 1600;
+    const height = image.naturalHeight || 1200;
+    const lineWidth = Math.max(4, Math.min(width, height) * 0.006);
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.innerHTML = '';
+    annotations.forEach(annotation => {
+      const start = annotation.points[0] || {};
+      const end = annotation.points[1] || {};
+      const x1 = Math.max(0, Math.min(1, Number(start.x) || 0)) * width;
+      const y1 = Math.max(0, Math.min(1, Number(start.y) || 0)) * height;
+      const x2 = Math.max(0, Math.min(1, Number(end.x) || 0)) * width;
+      const y2 = Math.max(0, Math.min(1, Number(end.y) || 0)) * height;
+      const stroke = annotation.color || '#ef4444';
+      let shape;
+      if (annotation.type === 'circle') {
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+        shape.setAttribute('cx', String((x1 + x2) / 2));
+        shape.setAttribute('cy', String((y1 + y2) / 2));
+        shape.setAttribute('rx', String(Math.max(Math.abs(x2 - x1) / 2, lineWidth * 2)));
+        shape.setAttribute('ry', String(Math.max(Math.abs(y2 - y1) / 2, lineWidth * 2)));
+      } else {
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const headLength = Math.max(18, Math.min(width, height) * 0.035);
+        const headAngle = Math.PI / 7;
+        const hx1 = x2 - headLength * Math.cos(angle - headAngle);
+        const hy1 = y2 - headLength * Math.sin(angle - headAngle);
+        const hx2 = x2 - headLength * Math.cos(angle + headAngle);
+        const hy2 = y2 - headLength * Math.sin(angle + headAngle);
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        shape.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y2} M ${x2} ${y2} L ${hx1} ${hy1} M ${x2} ${y2} L ${hx2} ${hy2}`);
+      }
+      shape.setAttribute('fill', 'none');
+      shape.setAttribute('stroke', stroke);
+      shape.setAttribute('stroke-width', String(lineWidth));
+      shape.setAttribute('stroke-linecap', 'round');
+      shape.setAttribute('stroke-linejoin', 'round');
+      svg.appendChild(shape);
+    });
+  };
+  if (image.complete && image.naturalWidth) render();
+  else {
+    image.addEventListener('load', render, { once: true });
+    if (typeof image.decode === 'function') image.decode().then(render).catch(() => {});
+  }
 }
 
 function reportSection(title, number) {

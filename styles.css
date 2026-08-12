@@ -3533,6 +3533,33 @@ mark.report-search-match.active {
   transition: transform .18s ease;
 }
 
+.photo-annotation-host {
+  position: relative;
+}
+
+.photo-annotation-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  transform-origin: center center;
+  transition: transform .18s ease;
+}
+
+.room-photo-caption,
+.photo-thumb-overlay,
+.lib-slot-badge,
+.lib-unplaced-badge,
+.picker-thumb-caption,
+.picker-grid-caption,
+.kitchen-photo-caption,
+.photo-select-checkbox {
+  z-index: 2;
+}
+
 .lib-img-wrap,
 .palette-thumb,
 .picker-thumb,
