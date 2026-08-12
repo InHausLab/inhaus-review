@@ -6,6 +6,7 @@ const portal = fs.readFileSync(new URL('../portal.js', import.meta.url), 'utf8')
 const styles = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 const report = fs.readFileSync(new URL('../report.js', import.meta.url), 'utf8');
 const reportStyles = fs.readFileSync(new URL('../report.css', import.meta.url), 'utf8');
+const reportPage = fs.readFileSync(new URL('../report.html', import.meta.url), 'utf8');
 
 test('saved photo annotations are rendered outside the modal', () => {
   assert.match(portal, /function appendPhotoAnnotationOverlay\(host, photo\)/);
@@ -33,4 +34,6 @@ test('printable report photos retain saved arrows and circles', () => {
   assert.match(report, /reviewedData\?\.photoAnnotations/);
   assert.match(report, /appendReportPhotoAnnotations\(visual, img, photo\)/);
   assert.match(reportStyles, /\.report-photo-annotation-overlay\s*\{/);
+  assert.match(reportPage, /report\.css\?v=20260812-88-1/);
+  assert.match(reportPage, /report\.js\?v=20260812-88-1/);
 });
