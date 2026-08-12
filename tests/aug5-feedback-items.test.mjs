@@ -11,8 +11,8 @@ test('testing rows use an explicit status instead of an ambiguous conducted chec
   assert.match(portal, /TEST_REVIEW_STATUS_OPTIONS/);
   assert.match(portal, /'Not recorded'/);
   assert.match(portal, /'Conducted'/);
-  assert.match(portal, /'Not requested'/);
-  assert.match(portal, /'Not tested'/);
+  assert.match(portal, /'Not Requested'/);
+  assert.match(portal, /'Not Tested'/);
   assert.match(portal, /'N\/A'/);
 });
 
@@ -26,6 +26,6 @@ test('known app values populate a useful testing status', () => {
   assert.match(portal, /water\.waterPanelPlanned/);
   assert.match(portal, /water\.pfasStatus/);
   assert.match(portal, /water\.microplasticsStatus/);
-  assert.match(portal, /return 'Not tested'/);
+  assert.match(portal, /return 'Not Tested'/);
   assert.match(portal, /return 'Not recorded'/);
 });

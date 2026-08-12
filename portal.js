@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V86';
+const REVIEW_PORTAL_VERSION = 'V87';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -6615,18 +6615,44 @@ const TEST_DEFS = [
 const TEST_REVIEW_STATUS_OPTIONS = [
   'Not recorded',
   'Conducted',
-  'Not requested',
-  'Not tested',
+  'Not Requested',
+  'Not Tested',
   'N/A'
 ];
 
 function normalizeTestReviewStatus(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return '';
+  if (/not recorded|unknown/.test(normalized)) return 'Not recorded';
   if (/^n\/?a$|not applicable/.test(normalized)) return 'N/A';
-  if (/not requested|not ordered/.test(normalized)) return 'Not requested';
-  if (/not tested|not conducted|not performed|^no$/.test(normalized)) return 'Not tested';
+  if (/not requested|not ordered|declined/.test(normalized)) return 'Not Requested';
+  if (/not tested|not conducted|not performed|^no$/.test(normalized)) return 'Not Tested';
   if (/conducted|collected|completed|recorded|captured|prepared for shipping|monitor placed|set up|^yes$/.test(normalized)) return 'Conducted';
+  return '';
+}
+
+function testsNotConductedReviewStatus(insp, test) {
+  const notes = [
+    insp.testsNotConducted,
+    insp.reviewedData?.testsNotConducted,
+    insp.reviewedData?.summary?.testsNotConducted
+  ].filter(Boolean).join(' ');
+  if (!notes) return '';
+
+  const matcher = {
+    testBreeze: /Breeze/i,
+    testBoulderBlue: /Boulder Blue/i,
+    testWaterPanel: /Water Panel|water test/i,
+    testPFAS: /PFAS/i,
+    testMicroplastics: /Microplastics/i,
+    testRadon: /Radon/i,
+    testATP: /ATP/i,
+    testMoldSwabs: /Mold Swab/i
+  }[test.key];
+  if (!matcher?.test(notes)) return '';
+  if (/not requested|not ordered|declined/i.test(notes)) return 'Not Requested';
+  if (/\bn\/?a\b|not applicable/i.test(notes)) return 'N/A';
+  if (/not tested|not conducted|not performed/i.test(notes)) return 'Not Tested';
   return '';
 }
 
@@ -6666,7 +6692,7 @@ function sourceTestReviewStatus(insp, test, records) {
       .map(step => step && typeof step === 'object' ? step.breezeDone : undefined)
       .filter(value => value !== undefined && value !== '');
     if (breezeValues.some(isConductedValue)) return 'Conducted';
-    if (breezeValues.length) return 'Not tested';
+    if (breezeValues.length) return 'Not Tested';
   }
   return 'Not recorded';
 }
@@ -6674,9 +6700,16 @@ function sourceTestReviewStatus(insp, test, records) {
 function getTestReviewStatus(insp, test, records) {
   const reviewed = insp.reviewedData || {};
   const saved = reviewed.tests?.[`${test.key}_status`] ?? reviewed[`${test.key}_status`];
-  if (TEST_REVIEW_STATUS_OPTIONS.includes(saved)) return saved;
+  const savedStatus = normalizeTestReviewStatus(saved);
+  if (savedStatus) return savedStatus;
+
+  const sourceStatus = sourceTestReviewStatus(insp, test, records);
+  if (sourceStatus && sourceStatus !== 'Not recorded') return sourceStatus;
+
+  const notConductedStatus = testsNotConductedReviewStatus(insp, test);
+  if (notConductedStatus) return notConductedStatus;
   if (isTestConfirmedForReview(insp, test.key)) return 'Conducted';
-  return sourceTestReviewStatus(insp, test, records);
+  return sourceStatus || 'Not recorded';
 }
 
 function testStatusSelectMarkup(test, status, locked) {
