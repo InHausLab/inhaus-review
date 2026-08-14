@@ -76,7 +76,7 @@
 
   <!-- Stats row (populated by JS) -->
   <div class="stats-row" id="stats-row">
-    <div class="stat-pill"><div class="num" id="stat-total">3</div><div class="lbl">Total</div></div>
+    <div class="stat-pill"><div class="num" id="stat-total">0</div><div class="lbl">Total</div></div>
     <div class="stat-pill"><div class="num" id="stat-in-review">0</div><div class="lbl">In Review</div></div>
     <div class="stat-pill"><div class="num" id="stat-submitted">0</div><div class="lbl">Submitted</div></div>
     <div class="stat-pill"><div class="num" id="stat-complete">0</div><div class="lbl">Complete</div></div>
@@ -85,7 +85,12 @@
   <!-- Table card -->
   <div class="card">
     <div class="list-toolbar" style="padding: 14px 20px 0; border-bottom: 1px solid var(--gray-100);">
-      <span class="count-label" id="inspection-count">3 inspections</span>
+      <span class="count-label" id="inspection-count">Loading inspections…</span>
+      <span id="history-filter-note" style="font-size:0.78rem;color:#6b7280;margin-left:auto;"></span>
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.78rem;color:#4b5563;cursor:pointer;">
+        <input type="checkbox" id="history-show-all" onchange="setPortalHistoryShowAll(this.checked)">
+        Show test/incomplete records
+      </label>
       <button class="btn btn-secondary btn-sm" onclick="loadInspectionList()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.73-7.44"/></svg>
         Refresh
@@ -107,48 +112,7 @@
           </tr>
         </thead>
         <tbody id="inspection-tbody">
-          <tr>
-            <td>
-              <div class="td-address">301 Cemetery Rd, Basalt</div>
-              <div class="td-id">INH-20260422-C7KYGW</div>
-            </td>
-            <td>Ryan Marshall</td>
-            <td>Apr 22, 2026</td>
-            <td>Dave</td>
-            <td><span class="badge badge-synced">Needs Review</span></td>
-            <td>14</td>
-            <td><span class="missing-badge no-missing">✓</span></td>
-            <td class="text-muted">Apr 22, 2026</td>
-            <td><a href="review.html?id=INH-20260422-C7KYGW&token=MARSHALL" class="btn btn-open btn-sm">Open Review →</a></td>
-          </tr>
-          <tr>
-            <td>
-              <div class="td-address">Sunshine Ranch</div>
-              <div class="td-id">INH-20260506-DV4MDG</div>
-            </td>
-            <td>Sunshine Ranch</td>
-            <td>May 6, 2026</td>
-            <td>David Kline</td>
-            <td><span class="badge badge-synced">Needs Review</span></td>
-            <td>7</td>
-            <td><span class="missing-badge no-missing">✓</span></td>
-            <td class="text-muted">May 6, 2026</td>
-            <td><a href="review.html?id=INH-20260506-DV4MDG&token=SUNSHINE" class="btn btn-open btn-sm">Open Review →</a></td>
-          </tr>
-          <tr>
-            <td>
-              <div class="td-address">369 Hillcrest Dr</div>
-              <div class="td-id">INH-20260520-EAYNCM</div>
-            </td>
-            <td>David Kline</td>
-            <td>May 20, 2026</td>
-            <td>David Kline</td>
-            <td><span class="badge badge-synced">Needs Review</span></td>
-            <td>0</td>
-            <td><span class="missing-badge no-missing">✓</span></td>
-            <td class="text-muted">May 28, 2026</td>
-            <td><a href="review.html?id=INH-20260520-EAYNCM&token=UVJJ57VL" class="btn btn-open btn-sm">Open Review →</a></td>
-          </tr>
+          <tr><td colspan="9" class="loading-state">Loading inspections…</td></tr>
         </tbody>
       </table>
     </div>
@@ -158,7 +122,7 @@
 
 <div class="toast-container" id="toast-container"></div>
 
-<script src="portal.js?v=20260812-88-1"></script>
+<script src="portal.js?v=20260813-89-2"></script>
 <script>
   // Clock
   function updateClock() {

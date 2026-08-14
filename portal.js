@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V88';
+const REVIEW_PORTAL_VERSION = 'V89';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -2082,8 +2082,65 @@ async function loadInspectionList() {
     }
   }
 
-  renderInspectionList(data.inspections, tableBody, countLabel);
-  if (!IS_DEMO) enrichInspectionListPhotoCounts(data.inspections, tableBody);
+  _portalHistoryRecords = data.inspections;
+  renderPortalHistoryRecords();
+}
+
+let _portalHistoryRecords = [];
+let _showPortalHistoryNoise = false;
+
+function portalHistoryNoiseReason(insp = {}) {
+  if (isTestTrainingInspectionRecord(insp)) return 'test/training';
+
+  const id = String(insp.id || insp.inspectionId || '').trim();
+  const identityText = [
+    id,
+    insp.clientName,
+    insp.propertyAddress,
+    insp.inspectorName
+  ].filter(Boolean).join(' ');
+  const syntheticId = /(?:^|[-_])(test|training|smoke|e2e|probe|phonefix)(?:[-_]|$)/i.test(id);
+  const syntheticIdentity = /\b(test|codex|automated smoke|worker smoke test|e2e|test pickup|test validation|validation client|reliability way|phone backup regression|readiness probe|do not report)\b/i.test(identityText);
+  const legacyGarbage = /\basdf(?:asd|as)?\b/i.test(identityText);
+  if (syntheticId || syntheticIdentity || legacyGarbage) return 'test/training';
+
+  const hasUsefulIdentity = [insp.clientName, insp.propertyAddress, insp.inspectorName]
+    .some(value => String(value || '').trim());
+  if (!hasUsefulIdentity) return 'incomplete';
+  return '';
+}
+
+function portalHistoryPartition(inspections = []) {
+  const visible = [];
+  const hidden = [];
+  for (const inspection of inspections) {
+    const reason = portalHistoryNoiseReason(inspection);
+    if (reason) hidden.push({ inspection, reason });
+    else visible.push(inspection);
+  }
+  return { visible, hidden };
+}
+
+function renderPortalHistoryRecords() {
+  const tableBody = qs('#inspection-tbody');
+  const countLabel = qs('#inspection-count');
+  if (!tableBody) return;
+  const partition = portalHistoryPartition(_portalHistoryRecords);
+  const inspections = _showPortalHistoryNoise ? _portalHistoryRecords : partition.visible;
+  renderInspectionList(inspections, tableBody, countLabel);
+
+  const note = qs('#history-filter-note');
+  if (note) {
+    note.textContent = _showPortalHistoryNoise
+      ? `Showing all ${_portalHistoryRecords.length} records`
+      : `${partition.hidden.length} test/incomplete record${partition.hidden.length === 1 ? '' : 's'} hidden`;
+  }
+  if (!IS_DEMO) enrichInspectionListPhotoCounts(inspections, tableBody);
+}
+
+function setPortalHistoryShowAll(checked) {
+  _showPortalHistoryNoise = checked === true;
+  renderPortalHistoryRecords();
 }
 
 function renderInspectionList(inspections, tableBody, countLabel) {
