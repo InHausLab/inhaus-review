@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V89';
+const REVIEW_PORTAL_VERSION = 'V90';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -1441,7 +1441,10 @@ async function requestWorkerHandoffPackage(inspectionId, payload = {}) {
   }
   const receipt = lastData?.artifactReceipt || lastData?.reviewPortalData || null;
   const pendingPhotos = Number(receipt?.photoFolderPendingCount || receipt?.counts?.photoFolderPendingCount || 0);
-  throw new Error(pendingPhotos > 0 ? `Photo package still copying: ${pendingPhotos} remaining` : 'Worker handoff did not complete.');
+  const error = new Error(pendingPhotos > 0 ? `Photo package still copying: ${pendingPhotos} remaining` : 'Worker handoff did not complete.');
+  error.code = pendingPhotos > 0 ? 'PHOTO_COPY_PENDING' : 'HANDOFF_INCOMPLETE';
+  error.handoffReceipt = receipt;
+  throw error;
 }
 
 function sleep(ms) {
@@ -4916,21 +4919,23 @@ function sourceFollowUpPlan(insp) {
     insp,
     'summary',
     'aiFollowUpPlan',
-    insp.stepData?.debrief?.aiFollowUpPlan || insp.aiFollowUpPlan || ''
+    insp.reviewedData?.clientFollowUpPlan ||
+      insp.stepData?.debrief?.aiFollowUpPlan ||
+      insp.aiFollowUpPlan ||
+      ''
   );
 }
 
 function followUpPlanPrompt(insp, inspectorDraft = '') {
   const records = visibleReviewRoomRecords(insp);
-  const reviewedItems = roomFollowUpItems(insp);
+  const authoritativeItems = buildAuthoritativeFollowUpItems(insp);
   const roomDetails = [];
 
   records.forEach(record => {
     const roomName = record.room?.roomName || record.step?.roomName || record.stepId;
     const summary = String(getRoomAISummary(record, insp) || '').trim();
     const notes = String(getRoomInspectorNotes(record, insp) || '').trim();
-    const followUp = findRoomFollowUpItem(reviewedItems, record, roomName) ||
-      sourceRoomFollowUpItem(record, roomName);
+    const followUp = findRoomFollowUpItem(authoritativeItems, record, roomName);
     const details = [];
     if (summary && summary !== 'No concerns identified.') details.push('Summary: ' + summary);
     if (notes && notes !== summary) details.push('Inspector notes: ' + notes);
@@ -4970,47 +4975,15 @@ function setFollowUpPlanStatus(message, state = '') {
 }
 
 function buildFollowUpPlanSuggestions(insp) {
-  const records = visibleReviewRoomRecords(insp);
-  const reviewedItems = roomFollowUpItems(insp);
-  const suggestions = [];
-  const seen = new Set();
-  const add = (room, text, detail = '') => {
-    const cleanRoom = String(room || '').trim();
-    const cleanText = String(text || '').trim();
-    const cleanDetail = String(detail || '').trim();
-    if (!cleanText) return;
-    const key = `${slugifyRoomPart(cleanRoom)}|${cleanText.toLowerCase()}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    suggestions.push({ room: cleanRoom, text: cleanText, detail: cleanDetail });
-  };
-
-  records.forEach(record => {
-    const roomName = displayReviewRoomName(
-      record.room?.roomName || record.step?.roomName || record.stepId,
-      record.room?.type || record.step?.type || '',
-      record.room?.level || record.step?.level || '',
-      record.stepId
-    );
-    const followUp = findRoomFollowUpItem(reviewedItems, record, roomName) ||
-      sourceRoomFollowUpItem(record, roomName);
-    if (followUp && (followUp.recheckIn || followUp.watchFor)) {
-      add(
-        roomName,
-        [followUp.recheckIn ? `Recheck in ${followUp.recheckIn}` : '', followUp.watchFor || '']
-          .filter(Boolean)
-          .join(': '),
-        'From room follow-up fields'
-      );
-      return;
-    }
-    const notes = getRoomInspectorNotes(record, insp);
-    if (notes && !roomNoIssuesFound(record, insp)) {
-      add(roomName, notes.length > 180 ? notes.slice(0, 177).trim() + '...' : notes, 'From inspector room notes');
-    }
-  });
-
-  return suggestions.slice(0, 8);
+  return buildAuthoritativeFollowUpItems(insp).map(item => ({
+    room: item.room,
+    text: [item.recheckIn ? `Recheck in ${item.recheckIn}` : '', item.watchFor || '']
+      .filter(Boolean)
+      .join(': ') || 'Follow-up recommended.',
+    detail: item.reviewerAdded && item.inspectorFlagged
+      ? 'Merged inspector flag and reviewer update'
+      : (item.reviewerAdded ? 'Added in Review Portal' : 'Flagged by inspector')
+  }));
 }
 
 function renderFollowUpSuggestions(insp, textarea, locked) {
@@ -5742,6 +5715,71 @@ function roomFollowUpItems(insp) {
   return normalizeFollowUpItems(
     getReviewedJSONField(insp, 'roomData', 'followUpItems', insp.followUpItems || [])
   );
+}
+
+function buildAuthoritativeFollowUpItems(insp) {
+  const items = [];
+  const indexByStepId = new Map();
+  const indexByRoom = new Map();
+  const remember = item => {
+    const index = items.length;
+    items.push(item);
+    if (item.stepId) indexByStepId.set(String(item.stepId), index);
+    const roomKey = slugifyRoomPart(item.room);
+    if (roomKey) indexByRoom.set(roomKey, index);
+    return index;
+  };
+
+  buildReviewRoomRecords(insp).forEach(record => {
+    const roomName = displayReviewRoomName(
+      record.room?.roomName || record.step?.roomName || record.stepId,
+      record.room?.type || record.step?.type || '',
+      record.room?.level || record.step?.level || '',
+      record.stepId
+    );
+    const source = sourceRoomFollowUpItem(record, roomName);
+    if (!source) return;
+    remember({
+      ...source,
+      room: roomName,
+      photoIds: [],
+      inspectorFlagged: true,
+      reviewerAdded: false
+    });
+  });
+
+  roomFollowUpItems(insp).forEach(reviewed => {
+    const stepId = String(reviewed.stepId || '');
+    const roomKey = slugifyRoomPart(reviewed.room);
+    let index = stepId && indexByStepId.has(stepId) ? indexByStepId.get(stepId) : undefined;
+    if (index === undefined && roomKey && indexByRoom.has(roomKey)) index = indexByRoom.get(roomKey);
+    if (index === undefined) {
+      if (!reviewed.room && !reviewed.stepId) return;
+      remember({ ...reviewed, photoIds: [], inspectorFlagged: false, reviewerAdded: true });
+      return;
+    }
+    const existing = items[index];
+    items[index] = {
+      ...existing,
+      stepId: reviewed.stepId || existing.stepId,
+      room: reviewed.room || existing.room,
+      recheckIn: reviewed.recheckIn || existing.recheckIn,
+      watchFor: reviewed.watchFor || existing.watchFor,
+      reviewerAdded: true
+    };
+  });
+
+  return items;
+}
+
+function formatAuthoritativeFollowUpPlan(items) {
+  return (items || []).map(item => {
+    const detail = [
+      item.recheckIn ? `Recheck in ${item.recheckIn}` : '',
+      item.watchFor || ''
+    ].filter(Boolean).join(': ');
+    return `${item.room || item.stepId || 'Inspection'}: ${detail || 'Follow-up recommended.'}`;
+  }).join('\n');
 }
 
 function findRoomFollowUpItem(items, record, roomName) {
@@ -8251,15 +8289,18 @@ function normalizePhotoAnnotations(value) {
   }
   if (!Array.isArray(raw)) return [];
   return raw.map(item => {
-    if (!item || (item.type !== 'arrow' && item.type !== 'circle')) return null;
+    if (!item || !['arrow', 'circle', 'text'].includes(item.type)) return null;
     const points = Array.isArray(item.points)
       ? item.points.map(normalizePhotoAnnotationPoint).filter(Boolean)
       : [];
-    if (points.length < 2) return null;
+    if (item.type === 'text' ? points.length < 1 : points.length < 2) return null;
+    const text = String(item.text || item.label || item.value || '').trim();
+    if (item.type === 'text' && !text) return null;
     return {
       type: item.type,
       points: points.slice(0, 2),
-      color: item.color || PHOTO_ANNOTATION_COLOR
+      color: item.color || PHOTO_ANNOTATION_COLOR,
+      ...(text ? { text } : {})
     };
   }).filter(Boolean);
 }
@@ -8287,7 +8328,8 @@ function renderPhotoAnnotationOverlay(svg, image, annotations) {
   svg.innerHTML = '';
 
   annotations.forEach(annotation => {
-    const [start, end] = annotation.points;
+    const [start, rawEnd] = annotation.points;
+    const end = rawEnd || start;
     const x1 = start.x * width;
     const y1 = start.y * height;
     const x2 = end.x * width;
@@ -8295,7 +8337,19 @@ function renderPhotoAnnotationOverlay(svg, image, annotations) {
     const stroke = annotation.color || PHOTO_ANNOTATION_COLOR;
     let shape;
 
-    if (annotation.type === 'circle') {
+    if (annotation.type === 'text') {
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      shape.setAttribute('x', String(x1));
+      shape.setAttribute('y', String(y1));
+      shape.setAttribute('fill', stroke);
+      shape.setAttribute('stroke', '#000000');
+      shape.setAttribute('stroke-width', String(Math.max(2, lineWidth / 2)));
+      shape.setAttribute('paint-order', 'stroke');
+      shape.setAttribute('font-family', 'Arial, sans-serif');
+      shape.setAttribute('font-size', String(Math.max(18, Math.min(width, height) * 0.035)));
+      shape.setAttribute('font-weight', '700');
+      shape.textContent = annotation.text || '';
+    } else if (annotation.type === 'circle') {
       shape = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
       shape.setAttribute('cx', String((x1 + x2) / 2));
       shape.setAttribute('cy', String((y1 + y2) / 2));
@@ -8315,10 +8369,12 @@ function renderPhotoAnnotationOverlay(svg, image, annotations) {
       shape.setAttribute('fill', 'none');
     }
 
-    shape.setAttribute('stroke', stroke);
-    shape.setAttribute('stroke-width', String(lineWidth));
-    shape.setAttribute('stroke-linecap', 'round');
-    shape.setAttribute('stroke-linejoin', 'round');
+    if (annotation.type !== 'text') {
+      shape.setAttribute('stroke', stroke);
+      shape.setAttribute('stroke-width', String(lineWidth));
+      shape.setAttribute('stroke-linecap', 'round');
+      shape.setAttribute('stroke-linejoin', 'round');
+    }
     svg.appendChild(shape);
   });
 }
@@ -8381,6 +8437,7 @@ function buildPhotoAnnotationToolbar() {
     photoAnnotationButton('Rotate ↷', 'Rotate photo 90 degrees right', { 'data-action': 'rotate-right' }),
     photoAnnotationButton('Arrow', 'Arrow tool', { 'data-tool': 'arrow' }),
     photoAnnotationButton('Circle', 'Circle tool', { 'data-tool': 'circle' }),
+    photoAnnotationButton('Text', 'Text annotation tool', { 'data-tool': 'text' }),
     el('span', { class: 'photo-annotation-color-label' }, 'Color'),
     ...PHOTO_ANNOTATION_COLORS.map(color => photoAnnotationButton('', `${color.name} annotation color`, {
       class: 'photo-annotation-color',
@@ -8496,10 +8553,11 @@ function pointFromCanvasEvent(event, canvas) {
 }
 
 function drawPhotoAnnotation(ctx, annotation, draft = false, logicalWidth = ctx.canvas.width, logicalHeight = ctx.canvas.height) {
-  if (!annotation?.points?.length || annotation.points.length < 2) return;
+  if (!annotation?.points?.length || (annotation.type !== 'text' && annotation.points.length < 2)) return;
   const width = logicalWidth;
   const height = logicalHeight;
-  const [start, end] = annotation.points;
+  const [start, rawEnd] = annotation.points;
+  const end = rawEnd || start;
   const x1 = start.x * width;
   const y1 = start.y * height;
   const x2 = end.x * width;
@@ -8515,7 +8573,15 @@ function drawPhotoAnnotation(ctx, annotation, draft = false, logicalWidth = ctx.
   ctx.lineJoin = 'round';
   if (draft) ctx.setLineDash([lineWidth * 2.4, lineWidth * 1.8]);
 
-  if (annotation.type === 'circle') {
+  if (annotation.type === 'text') {
+    const fontSize = Math.max(18, Math.min(width, height) * 0.035);
+    ctx.font = `700 ${fontSize}px Arial, sans-serif`;
+    ctx.lineWidth = Math.max(2, lineWidth / 2);
+    ctx.strokeStyle = '#000000';
+    ctx.strokeText(annotation.text || '', x1, y1);
+    ctx.fillStyle = stroke;
+    ctx.fillText(annotation.text || '', x1, y1);
+  } else if (annotation.type === 'circle') {
     const cx = (x1 + x2) / 2;
     const cy = (y1 + y2) / 2;
     const rx = Math.max(Math.abs(x2 - x1) / 2, lineWidth * 2);
@@ -8576,8 +8642,22 @@ function bindPhotoAnnotationCanvas(canvas) {
     const state = _photoModalState;
     if (!state?.imageLoaded || !state.photoId) return;
     e.preventDefault();
-    canvas.setPointerCapture?.(e.pointerId);
     const start = pointFromCanvasEvent(e, canvas);
+    if (state.tool === 'text') {
+      const text = window.prompt('Annotation text');
+      if (!String(text || '').trim()) return;
+      state.annotations.push({
+        type: 'text',
+        color: state.color || PHOTO_ANNOTATION_COLOR,
+        points: [start],
+        text: String(text).trim()
+      });
+      state.dirty = true;
+      redrawPhotoAnnotationCanvas();
+      updatePhotoAnnotationToolbar();
+      return;
+    }
+    canvas.setPointerCapture?.(e.pointerId);
     state.drawing = true;
     state.startPoint = start;
     state.draft = {
@@ -9361,6 +9441,21 @@ async function submitToTanner() {
 
   let handoffResult = null;
   try {
+    await _saveChain;
+    const authoritativeFollowUpItems = buildAuthoritativeFollowUpItems(_inspection || {});
+    const reviewerFollowUpPlan = String(sourceFollowUpPlan(_inspection || {}) || '').trim();
+    const clientFollowUpPlan = reviewerFollowUpPlan || formatAuthoritativeFollowUpPlan(authoritativeFollowUpItems);
+    const authoritativeSaved = await saveField('roomData', 'authoritativeFollowUpItems', authoritativeFollowUpItems);
+    const clientPlanSaved = await saveField('summary', 'clientFollowUpPlan', clientFollowUpPlan);
+    const reviewerPlanSaved = reviewerFollowUpPlan
+      ? true
+      : await saveField('summary', 'aiFollowUpPlan', clientFollowUpPlan);
+    if (!authoritativeSaved || !clientPlanSaved || !reviewerPlanSaved) {
+      throw new Error('The authoritative follow-up plan could not be confirmed in review storage.');
+    }
+    const planField = qs('#field-follow-up-plan');
+    if (planField && !reviewerFollowUpPlan) planField.value = clientFollowUpPlan;
+
     await saveReviewSubmissionAttempt(id, submissionReceipt, reportBuilderNotes);
 
     const submitResponse = await requestWorkerHandoffPackage(id, {
@@ -9374,6 +9469,8 @@ async function submitToTanner() {
       readinessRequired: reviewReadiness.total,
       blockerCount: reviewReadiness.blockerCount,
       reviewedData: _inspection?.reviewedData || {},
+      authoritativeFollowUpItems,
+      clientFollowUpPlan,
       reportBuilderNotes,
       photos: _inspection?.photos || []
     });
@@ -9401,6 +9498,13 @@ async function submitToTanner() {
       showToast('Tanner package confirmed, but notification email needs attention: ' + notificationWarning, 'info', 10000);
     }
   } catch (err) {
+    if (err?.handoffReceipt && _inspection) {
+      _inspection.reviewedData = _inspection.reviewedData || {};
+      _inspection.reviewedData.system = _inspection.reviewedData.system || {};
+      _inspection.reviewedData.system.tannerHandoff = err.handoffReceipt;
+      _inspection.reviewedData.lastHandoffError = err.message || 'Tanner handoff failed';
+      renderTannerPackageCheck(_inspection);
+    }
     await saveReviewSubmissionFailure(id, err.message || String(err || 'Submission failed'));
     showToast(`Submission failed: ${err.message}`, 'error');
     submitButtons.forEach(btn => {

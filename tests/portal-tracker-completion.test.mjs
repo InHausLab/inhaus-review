@@ -7,9 +7,9 @@ const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V89'/);
-  assert.match(index, /portal\.js\?v=20260813-89-2/);
-  assert.match(review, /portal\.js\?v=20260813-89-2/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V90'/);
+  assert.match(index, /portal\.js\?v=20260831-90-1/);
+  assert.match(review, /portal\.js\?v=20260831-90-1/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);

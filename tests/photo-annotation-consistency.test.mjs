@@ -16,11 +16,14 @@ test('saved photo annotations are rendered outside the modal', () => {
   assert.match(portal, /appendPhotoAnnotationOverlay\(thumbWrap, photo\)/);
 });
 
-test('arrows and circles use the same saved annotation data in thumbnail overlays', () => {
+test('arrows, circles, and text use the same saved annotation data in thumbnail overlays', () => {
   assert.match(portal, /const annotations = getPhotoAnnotations\(photo\.photoId\)/);
   assert.match(portal, /annotation\.type === 'circle'/);
   assert.match(portal, /createElementNS\('http:\/\/www\.w3\.org\/2000\/svg', 'ellipse'\)/);
   assert.match(portal, /createElementNS\('http:\/\/www\.w3\.org\/2000\/svg', 'path'\)/);
+  assert.match(portal, /annotation\.type === 'text'/);
+  assert.match(portal, /createElementNS\('http:\/\/www\.w3\.org\/2000\/svg', 'text'\)/);
+  assert.match(portal, /photoAnnotationButton\('Text', 'Text annotation tool'/);
   assert.match(portal, /syncPhotoAnnotationViews\(photoId\);/);
 });
 
@@ -29,11 +32,12 @@ test('annotation overlay remains visible but never blocks photo controls', () =>
   assert.match(styles, /\.photo-annotation-overlay\s*\{[^}]*position:\s*absolute;/s);
 });
 
-test('printable report photos retain saved arrows and circles', () => {
+test('printable report photos retain saved arrows, circles, and text', () => {
   assert.match(report, /function appendReportPhotoAnnotations\(host, image, photo\)/);
   assert.match(report, /reviewedData\?\.photoAnnotations/);
   assert.match(report, /appendReportPhotoAnnotations\(visual, img, photo\)/);
+  assert.match(report, /annotation\.type === 'text'/);
   assert.match(reportStyles, /\.report-photo-annotation-overlay\s*\{/);
-  assert.match(reportPage, /report\.css\?v=20260812-88-1/);
-  assert.match(reportPage, /report\.js\?v=20260812-88-1/);
+  assert.match(reportPage, /report\.css\?v=20260831-90-1/);
+  assert.match(reportPage, /report\.js\?v=20260831-90-1/);
 });

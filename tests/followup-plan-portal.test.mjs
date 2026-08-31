@@ -34,3 +34,19 @@ test('the plan uses reviewed room findings and explicit inspector follow-ups', (
   assert.match(portal, /Preserve the same meaning, priorities, and timeframes/);
   assert.match(portal, /Do not add new concerns, test results, recommendations, room names, or follow-up items/);
 });
+
+test('one room-deduplicated follow-up list drives suggestions and final submission', () => {
+  assert.match(portal, /function buildAuthoritativeFollowUpItems\(insp\)/);
+  assert.match(portal, /buildFollowUpPlanSuggestions\(insp\)[\s\S]*buildAuthoritativeFollowUpItems\(insp\)/);
+  assert.doesNotMatch(portal, /buildFollowUpPlanSuggestions\(insp\)[\s\S]{0,600}\.slice\(0,\s*8\)/);
+  assert.match(portal, /saveField\('roomData', 'authoritativeFollowUpItems', authoritativeFollowUpItems\)/);
+  assert.match(portal, /saveField\('summary', 'clientFollowUpPlan', clientFollowUpPlan\)/);
+  assert.match(portal, /reviewerFollowUpPlan \|\| formatAuthoritativeFollowUpPlan\(authoritativeFollowUpItems\)/);
+});
+
+test('unfinished photo packaging leaves a visible retryable receipt', () => {
+  assert.match(portal, /error\.code = pendingPhotos > 0 \? 'PHOTO_COPY_PENDING' : 'HANDOFF_INCOMPLETE'/);
+  assert.match(portal, /error\.handoffReceipt = receipt/);
+  assert.match(portal, /_inspection\.reviewedData\.system\.tannerHandoff = err\.handoffReceipt/);
+  assert.match(portal, /renderTannerPackageCheck\(_inspection\)/);
+});

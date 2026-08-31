@@ -272,7 +272,7 @@ function renderReport(insp) {
   const findings = buildFindings(insp);
   const actions = buildSlotItems(insp, 'actionTaken', 6, 'desc');
   const observations = buildSlotItems(insp, 'obs', 6, 'note');
-  const followUps = buildSlotItems(insp, 'followUp', 5, 'note');
+  const followUps = buildReportFollowUps(insp);
   const photos = getReportPhotos(insp);
 
   els.output.innerHTML = '';
@@ -505,8 +505,8 @@ function reportPhotoAnnotations(photo) {
   const parsed = parseMaybeJson(raw, raw);
   if (!Array.isArray(parsed)) return [];
   return parsed.filter(annotation =>
-    (annotation?.type === 'arrow' || annotation?.type === 'circle') &&
-    Array.isArray(annotation.points) && annotation.points.length >= 2
+    (annotation?.type === 'arrow' || annotation?.type === 'circle' || annotation?.type === 'text') &&
+    Array.isArray(annotation.points) && annotation.points.length >= (annotation.type === 'text' ? 1 : 2)
   );
 }
 
@@ -527,14 +527,26 @@ function appendReportPhotoAnnotations(host, image, photo) {
     svg.innerHTML = '';
     annotations.forEach(annotation => {
       const start = annotation.points[0] || {};
-      const end = annotation.points[1] || {};
+      const end = annotation.points[1] || start;
       const x1 = Math.max(0, Math.min(1, Number(start.x) || 0)) * width;
       const y1 = Math.max(0, Math.min(1, Number(start.y) || 0)) * height;
       const x2 = Math.max(0, Math.min(1, Number(end.x) || 0)) * width;
       const y2 = Math.max(0, Math.min(1, Number(end.y) || 0)) * height;
       const stroke = annotation.color || '#ef4444';
       let shape;
-      if (annotation.type === 'circle') {
+      if (annotation.type === 'text') {
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        shape.setAttribute('x', String(x1));
+        shape.setAttribute('y', String(y1));
+        shape.setAttribute('fill', stroke);
+        shape.setAttribute('stroke', '#000000');
+        shape.setAttribute('stroke-width', String(Math.max(2, lineWidth / 2)));
+        shape.setAttribute('paint-order', 'stroke');
+        shape.setAttribute('font-family', 'Arial, sans-serif');
+        shape.setAttribute('font-size', String(Math.max(18, Math.min(width, height) * 0.035)));
+        shape.setAttribute('font-weight', '700');
+        shape.textContent = annotation.text || annotation.label || '';
+      } else if (annotation.type === 'circle') {
         shape = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
         shape.setAttribute('cx', String((x1 + x2) / 2));
         shape.setAttribute('cy', String((y1 + y2) / 2));
@@ -551,11 +563,13 @@ function appendReportPhotoAnnotations(host, image, photo) {
         shape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         shape.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y2} M ${x2} ${y2} L ${hx1} ${hy1} M ${x2} ${y2} L ${hx2} ${hy2}`);
       }
-      shape.setAttribute('fill', 'none');
-      shape.setAttribute('stroke', stroke);
-      shape.setAttribute('stroke-width', String(lineWidth));
-      shape.setAttribute('stroke-linecap', 'round');
-      shape.setAttribute('stroke-linejoin', 'round');
+      if (annotation.type !== 'text') {
+        shape.setAttribute('fill', 'none');
+        shape.setAttribute('stroke', stroke);
+        shape.setAttribute('stroke-width', String(lineWidth));
+        shape.setAttribute('stroke-linecap', 'round');
+        shape.setAttribute('stroke-linejoin', 'round');
+      }
       svg.appendChild(shape);
     });
   };
@@ -689,6 +703,70 @@ function buildSlotItems(insp, prefix, count, copyKey) {
     }
   }
   return items;
+}
+
+function parseReviewArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function reportFollowUpRoomKey(value) {
+  return String(value || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function buildReportFollowUps(insp) {
+  const rd = insp.reviewedData || {};
+  const roomData = rd.roomData && typeof rd.roomData === 'object' ? rd.roomData : {};
+  let authoritative = parseReviewArray(roomData.authoritativeFollowUpItems);
+  if (!authoritative.length) {
+    const items = [];
+    const byStep = new Map();
+    const byRoom = new Map();
+    const remember = item => {
+      const index = items.length;
+      items.push(item);
+      if (item.stepId) byStep.set(String(item.stepId), index);
+      const key = reportFollowUpRoomKey(item.room);
+      if (key) byRoom.set(key, index);
+    };
+    (insp.rooms || []).forEach(room => {
+      const stepId = String(room.stepId || room.id || '');
+      const step = insp.stepData?.[stepId] || {};
+      const reviewedRoom = rd[stepId] && typeof rd[stepId] === 'object' ? rd[stepId] : {};
+      const needed = reviewedRoom.followUpNeeded ?? step.followUpNeeded ?? room.followUpNeeded;
+      const recheckIn = reviewedRoom.followUpTimeframe || reviewedRoom.recheckIn || step.followUpTimeframe || room.followUpTimeframe || '';
+      const watchFor = reviewedRoom.followUpNote || reviewedRoom.watchFor || step.followUpNote || room.followUpNote || '';
+      if (!/^(yes|true|recommended|required)$/i.test(String(needed || '')) && !recheckIn && !watchFor) return;
+      remember({ stepId, room: room.roomName || room.name || step.roomName || stepId, recheckIn, watchFor });
+    });
+    parseReviewArray(roomData.followUpItems).forEach(item => {
+      const stepId = String(item.stepId || '');
+      const roomKey = reportFollowUpRoomKey(item.room);
+      let index = stepId && byStep.has(stepId) ? byStep.get(stepId) : undefined;
+      if (index === undefined && roomKey && byRoom.has(roomKey)) index = byRoom.get(roomKey);
+      if (index === undefined) remember({ ...item });
+      else items[index] = {
+        ...items[index],
+        stepId: item.stepId || items[index].stepId,
+        room: item.room || items[index].room,
+        recheckIn: item.recheckIn || items[index].recheckIn,
+        watchFor: item.watchFor || items[index].watchFor
+      };
+    });
+    authoritative = items;
+  }
+  if (!authoritative.length) return buildSlotItems(insp, 'followUp', 5, 'note');
+  return authoritative.map(item => ({
+    title: item.room || item.stepId || 'Follow-up',
+    meta: item.recheckIn ? `Recheck in ${item.recheckIn}` : '',
+    copy: item.watchFor || 'Follow-up recommended.'
+  }));
 }
 
 function labelFromPrefix(prefix, index) {
