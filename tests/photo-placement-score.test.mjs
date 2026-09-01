@@ -186,6 +186,34 @@ test('generic photo buckets without a room are not treated as placed', () => {
   assert.equal(audit.placedCount, 0);
 });
 
+test('explicit ATP task destinations satisfy the room or task gate', () => {
+  const context = loadPortalContext();
+  const inspection = context.__normalizeInspectionForReview({
+    inspectionId: 'INH-PHOTO-ATP-TASK',
+    rooms: [
+      { roomName: 'ATP Testing', type: 'atp-kitchen', stepId: 'atp-kitchen' }
+    ],
+    stepData: {
+      'atp-kitchen': { roomName: 'ATP Testing', type: 'atp-kitchen' }
+    },
+    photos: [
+      { photoId: 'atp-before', roomName: 'ATP Testing', stepName: 'ATP Testing', caption: 'ATP meter before cleaning', driveUrl: 'https://drive.google.com/file/d/atpBefore/view', included: true },
+      { photoId: 'atp-after', roomName: 'ATP Testing', stepName: 'ATP Testing', caption: 'ATP device reading after cleaning', driveUrl: 'https://drive.google.com/file/d/atpAfter/view', included: true }
+    ],
+    reviewedData: {
+      'photo_atp-before': { placement: { roomName: '', stepName: 'ATP Before' } },
+      'photo_atp-after': { placement: { roomName: '', stepName: 'ATP Testing' } }
+    },
+    testsConfirmed: { testATP: true }
+  });
+
+  const audit = context.__buildPhotoPlacementAudit(inspection, inspection.photos);
+
+  assert.equal(audit.needsAttention.length, 0);
+  assert.equal(audit.evidence.length, 2);
+  assert.equal(audit.placedCount, 2);
+});
+
 test('app task buckets normalize to a dropdown destination instead of appearing blank', () => {
   const context = loadPortalContext();
 
