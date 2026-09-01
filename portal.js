@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V92';
+const REVIEW_PORTAL_VERSION = 'V93';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -4168,8 +4168,8 @@ function renderReviewDataHealthBanner(insp) {
   if (health.recoveryApplied && baseLookedThin) {
     notes.push(`Review cloud restored ${health.recoveryRooms || countInspectionArray(insp.rooms)} rooms and ${health.recoveryFindings || countInspectionArray(insp.findings)} findings.`);
   }
-  if ((health.workerPhotos || 0) > (health.basePhotos || 0)) {
-    notes.push(`Photo service loaded ${health.workerPhotos} photos; base row listed ${health.basePhotos || 0}.`);
+  if ((health.workerPhotos || 0) > 0 && (health.basePhotos || 0) === 0) {
+    notes.push(`Photo service confirmed ${health.workerPhotos} photos for this inspection.`);
   }
   if (health.workerPhotoError) {
     notes.push(`Photo service check unavailable: ${health.workerPhotoError}.`);
@@ -6403,8 +6403,8 @@ function renderWaterFindingsSection(insp, locked) {
     [
       ['Water panel planned', waterSample.waterPanelPlanned || insp.waterPanelPlanned],
       ['Water panel collected', waterSample.waterPanelCollected],
-      ['Sample ID', insp.waterSampleId],
-      ['Collection location', insp.postTestLocWater],
+      ['Sample ID', waterSample.waterSampleId || insp.waterSampleId],
+      ['Collection location', waterSample.waterFaucetLocation || insp.postTestLocWater],
       ['Water source', insp.waterSource],
       ['Inspector notes', waterSample.notes]
     ].forEach(([label, value]) => {
@@ -7281,8 +7281,8 @@ function renderFieldTestRecords(insp) {
   wrap.appendChild(buildRecord('Water Samples', water._visited ? 'Captured in app' : 'Not visited', [
     ['Water panel planned', water.waterPanelPlanned || insp.waterPanelPlanned],
     ['Water panel collected', water.waterPanelCollected],
-    ['Sample ID', insp.waterSampleId],
-    ['Collection location', insp.postTestLocWater],
+    ['Sample ID', water.waterSampleId || insp.waterSampleId],
+    ['Collection location', water.waterFaucetLocation || insp.postTestLocWater],
     ['Water source', insp.waterSource],
     ['Inspector notes', water.notes]
   ]));
@@ -7297,11 +7297,18 @@ function renderTestsSection(insp, locked) {
 
   const reviewedTests = insp.reviewedData?.tests || {};
   const sourceRecords = collectTestSampleRecords(insp);
+  const waterSample = insp.stepData?.['water-sample'] || {};
 
   for (const test of TEST_DEFS) {
     const tr = document.createElement('tr');
-    const sampleVal    = reviewedTests[test.sampleKey] ?? insp.reviewedData?.[test.sampleKey] ?? insp[test.sampleKey] ?? '';
-    const locationVal  = reviewedTests[test.key + '_location'] ?? insp.reviewedData?.[test.key + '_location'] ?? '';
+    const sourceSample = test.key === 'testWaterPanel'
+      ? (waterSample.waterSampleId || insp.waterSampleId || '')
+      : (insp[test.sampleKey] ?? '');
+    const sourceLocation = test.key === 'testWaterPanel'
+      ? (waterSample.waterFaucetLocation || insp.postTestLocWater || '')
+      : '';
+    const sampleVal    = reviewedTests[test.sampleKey] ?? insp.reviewedData?.[test.sampleKey] ?? sourceSample;
+    const locationVal  = reviewedTests[test.key + '_location'] ?? insp.reviewedData?.[test.key + '_location'] ?? sourceLocation;
     const notesVal     = reviewedTests[test.key + '_notes'] ?? insp.reviewedData?.[test.key + '_notes'] ?? '';
     const testStatus = getTestReviewStatus(insp, test, sourceRecords);
     const statusSelect = testStatusSelectMarkup(test, testStatus, locked);

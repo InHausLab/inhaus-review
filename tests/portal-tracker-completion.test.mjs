@@ -7,9 +7,9 @@ const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V92'/);
-  assert.match(index, /portal\.js\?v=20260901-92-1/);
-  assert.match(review, /portal\.js\?v=20260901-92-1/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V93'/);
+  assert.match(index, /portal\.js\?v=20260901-93-1/);
+  assert.match(review, /portal\.js\?v=20260901-93-1/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
@@ -68,6 +68,10 @@ test('real findings require at least one Assessment Observation before submissio
   assert.match(portal, /key: 'assessmentObservations'/);
   assert.match(portal, /!observationGate\.required \|\| observationGate\.observationCount > 0/);
   assert.match(portal, /Assessment observations recorded/);
+  assert.doesNotMatch(portal, /base row listed/);
+  assert.match(portal, /Photo service confirmed/);
+  assert.match(portal, /waterSample\.waterSampleId \|\| insp\.waterSampleId/);
+  assert.match(portal, /waterSample\.waterFaucetLocation \|\| insp\.postTestLocWater/);
 });
 
 test('review readiness is consolidated into one persistent finish tool', () => {
