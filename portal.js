@@ -12,7 +12,7 @@ const PHOTO_WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 // Frontend-visible Worker routing token used by the inspector app for
 // app-facing photo/status routes. This is not a private service credential.
 const PHOTO_UPLOAD_SHARED_SECRET = '42be53ef7bf9c07b52bb56c30ebd457a5ed227343a6d5313df98cbd525006b7c';
-const REVIEW_PORTAL_VERSION = 'V91';
+const REVIEW_PORTAL_VERSION = 'V92';
 const STANDARD_ROOM_CHOICES = ['Attic', 'Crawl Space'];
 const API_FETCH_TIMEOUT_MS = 12000;
 const API_HANDOFF_TIMEOUT_MS = 180000;
@@ -5415,6 +5415,30 @@ function roomHasReviewableNotes(record, insp) {
   return getRoomInspectorNotes(record, insp) !== '';
 }
 
+function isRoutineNoIssueObservationText(value) {
+  return /^(?:no issues?(?: found)?|no concerns?(?: noted)?|nothing (?:noted|observed)|normal|good condition)[.!\s]*$/i
+    .test(String(value || '').trim());
+}
+
+function assessmentObservationGateState(insp) {
+  const reviewed = insp.reviewedData || {};
+  const postData = insp.stepData?.['post-assessment'] || insp.postAssessment || {};
+  const observationCount = Array.from({ length: 6 }, (_, index) => index + 1)
+    .filter(index => String(reviewed[`obs_${index}_note`] ?? postData[`obs_${index}_note`] ?? '').trim())
+    .length;
+  const approvedFindingCount = (insp.findings || [])
+    .filter(finding => finding?.status === 'approved' && String(finding.cleanedComment || '').trim())
+    .length;
+  const roomConcernCount = visibleReviewRoomRecords(insp)
+    .filter(record => {
+      const note = getRoomInspectorNotes(record, insp);
+      return !roomNoIssuesFound(record, insp) && note && !isRoutineNoIssueObservationText(note);
+    })
+    .length;
+  const required = approvedFindingCount > 0 || roomConcernCount > 0;
+  return { required, observationCount, approvedFindingCount, roomConcernCount };
+}
+
 function buildEditableRoomTextBlock({
   label,
   value,
@@ -8963,6 +8987,7 @@ function evaluateGate(insp) {
   const reviewed = insp.reviewedData || {};
   const roomRecords = visibleReviewRoomRecords(insp);
   const placementAudit = buildPhotoPlacementAudit(insp, photos);
+  const observationGate = assessmentObservationGateState(insp);
 
   // 1. Every room needs an explicit review outcome:
   // either the inspector notes were reviewed or "No issues found" was checked.
@@ -9125,6 +9150,15 @@ function evaluateGate(insp) {
       pass: notesNotEmpty,
       selector: '#field-report-notes',
       focusSelector: '#field-report-notes'
+    },
+    {
+      key: 'assessmentObservations',
+      label: observationGate.required
+        ? `Assessment observations recorded (${observationGate.observationCount}/1 required for findings)`
+        : 'Assessment observations not required — no findings recorded',
+      pass: !observationGate.required || observationGate.observationCount > 0,
+      selector: '#finish-observations',
+      focusSelector: '[data-step="post"][data-field="obs_1_note"]'
     },
     {
       key: 'samples',

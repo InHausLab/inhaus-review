@@ -7,9 +7,9 @@ const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const review = readFileSync(new URL('../review.html', import.meta.url), 'utf8');
 
 test('portal version and room-level follow-up editor are present', () => {
-  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V91'/);
-  assert.match(index, /portal\.js\?v=20260901-91-1/);
-  assert.match(review, /portal\.js\?v=20260901-91-1/);
+  assert.match(portal, /REVIEW_PORTAL_VERSION = 'V92'/);
+  assert.match(index, /portal\.js\?v=20260901-92-1/);
+  assert.match(review, /portal\.js\?v=20260901-92-1/);
   assert.match(portal, /function buildRoomFollowUpEditor\(/);
   assert.match(portal, /buildRoomFollowUpEditor\(record, insp, locked\)/);
   assert.match(portal, /stepId: item\?\.stepId \|\| ''/);
@@ -59,6 +59,15 @@ test('finish tracker uses the live submission gate and supports exact navigation
   assert.match(portal, /action: 'unreviewedPhotos'/);
   assert.match(portal, /focusSelector: firstMissingLocation/);
   assert.match(portal, /Use Finish Review for the remaining items/);
+});
+
+test('real findings require at least one Assessment Observation before submission', () => {
+  assert.match(portal, /function assessmentObservationGateState\(insp\)/);
+  assert.match(portal, /finding\?\.status === 'approved'/);
+  assert.match(portal, /!roomNoIssuesFound\(record, insp\)/);
+  assert.match(portal, /key: 'assessmentObservations'/);
+  assert.match(portal, /!observationGate\.required \|\| observationGate\.observationCount > 0/);
+  assert.match(portal, /Assessment observations recorded/);
 });
 
 test('review readiness is consolidated into one persistent finish tool', () => {
