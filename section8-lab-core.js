@@ -76,6 +76,34 @@ function cleanText(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
+function parseList(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function roomKey(value) {
+  return cleanText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function authoritativeFollowUps(inspection) {
+  const roomData = inspection?.reviewedData?.roomData || {};
+  const submitted = parseList(roomData.authoritativeFollowUpItems);
+  const reviewed = submitted.length ? submitted : parseList(roomData.followUpItems);
+  return reviewed.map(item => ({
+    stepId: cleanText(item?.stepId),
+    roomName: cleanText(item?.room || item?.roomName || item?.stepId),
+    timeframe: cleanText(item?.recheckIn || item?.timeframe || item?.followUpTimeframe),
+    note: cleanText(item?.watchFor || item?.note || item?.followUpNote || item?.followUpPlan),
+    photoIds: parseList(item?.photoIds).map(photo => cleanText(photo?.photoId || photo?.id || photo)).filter(Boolean)
+  })).filter(item => item.stepId || item.roomName);
+}
+
 function stableHash(value) {
   let hash = 2166136261;
   const input = String(value ?? '');
@@ -258,6 +286,8 @@ export function compileSection8(inspection) {
   const items = [];
   const exceptions = [];
   const records = normalizeRoomRecords(inspection);
+  const canonicalFollowUps = authoritativeFollowUps(inspection);
+  const consumedFollowUps = new Set();
 
   records.forEach(record => {
     const reviewedStep = reviewedStepFor(inspection, record.stepId);
@@ -351,21 +381,28 @@ export function compileSection8(inspection) {
 
     actionEvidenceForRoom(inspectionId, record, reviewedStep).forEach(item => addEvidence(items, item));
 
-    const followUpNeeded = sourceValue(step, reviewedStep, FOLLOW_UP_KEYS.needed);
-    const followUpNote = cleanText(sourceValue(step, reviewedStep, FOLLOW_UP_KEYS.note));
-    const timeframe = cleanText(sourceValue(step, reviewedStep, FOLLOW_UP_KEYS.timeframe));
+    const canonicalIndex = canonicalFollowUps.findIndex(item =>
+      (item.stepId && item.stepId === record.stepId) ||
+      (roomKey(item.roomName) && roomKey(item.roomName) === roomKey(record.roomName))
+    );
+    const canonical = canonicalIndex >= 0 ? canonicalFollowUps[canonicalIndex] : null;
+    if (canonical) consumedFollowUps.add(canonicalIndex);
+    const followUpNeeded = canonical ? true : sourceValue(step, reviewedStep, FOLLOW_UP_KEYS.needed);
+    const followUpNote = canonical?.note || cleanText(sourceValue(step, reviewedStep, FOLLOW_UP_KEYS.note));
+    const timeframe = canonical?.timeframe || cleanText(sourceValue(step, reviewedStep, FOLLOW_UP_KEYS.timeframe));
+    const followUpRoomName = canonical?.roomName || record.roomName;
     if (isYes(followUpNeeded)) {
       if (!followUpNote) {
         exceptions.push({
           type: 'missing-follow-up-plan',
-          roomName: record.roomName,
+          roomName: followUpRoomName,
           stepId: record.stepId,
           message: 'Follow-up is marked Yes, but the inspector did not record the plan.'
         });
       } else {
         addEvidence(items, {
           category: 'follow-up',
-          roomName: record.roomName,
+          roomName: followUpRoomName,
           stepId: record.stepId,
           text: timeframe ? `${followUpNote} Re-check: ${timeframe}` : followUpNote,
           timeframe,
@@ -374,11 +411,38 @@ export function compileSection8(inspection) {
             evidenceId([inspectionId, record.stepId, FOLLOW_UP_KEYS.note]),
             ...(timeframe ? [evidenceId([inspectionId, record.stepId, FOLLOW_UP_KEYS.timeframe])] : [])
           ],
-          sourceFields: [FOLLOW_UP_KEYS.needed, FOLLOW_UP_KEYS.note, FOLLOW_UP_KEYS.timeframe],
-          photoIds: parsePhotoIds(sourceValue(step, reviewedStep, FOLLOW_UP_KEYS.photos))
+          sourceFields: canonical
+            ? ['roomData.authoritativeFollowUpItems']
+            : [FOLLOW_UP_KEYS.needed, FOLLOW_UP_KEYS.note, FOLLOW_UP_KEYS.timeframe],
+          photoIds: canonical?.photoIds?.length
+            ? canonical.photoIds
+            : parsePhotoIds(sourceValue(step, reviewedStep, FOLLOW_UP_KEYS.photos))
         });
       }
     }
+  });
+
+  canonicalFollowUps.forEach((followUp, index) => {
+    if (consumedFollowUps.has(index)) return;
+    if (!followUp.note) {
+      exceptions.push({
+        type: 'missing-follow-up-plan',
+        roomName: followUp.roomName,
+        stepId: followUp.stepId,
+        message: 'Follow-up is listed in review data, but no plan was recorded.'
+      });
+      return;
+    }
+    addEvidence(items, {
+      category: 'follow-up',
+      roomName: followUp.roomName,
+      stepId: followUp.stepId,
+      text: followUp.timeframe ? `${followUp.note} Re-check: ${followUp.timeframe}` : followUp.note,
+      timeframe: followUp.timeframe,
+      evidenceIds: [evidenceId([inspectionId, followUp.stepId || followUp.roomName, 'authoritativeFollowUpItems'])],
+      sourceFields: ['roomData.authoritativeFollowUpItems'],
+      photoIds: followUp.photoIds
+    });
   });
 
   (inspection?.findings || [])

@@ -2,7 +2,7 @@ import {
   compileSection8,
   evaluateCompilationReadiness,
   mergeInspectionSources
-} from './section8-lab-core.js?v=20260807-1';
+} from './section8-lab-core.js?v=20260902-1';
 
 const WORKER_URL = 'https://inhaus-photo-worker.inhauslab.workers.dev';
 const params = new URLSearchParams(window.location.search);
@@ -137,7 +137,7 @@ function renderExperiment(inspection, readiness, compilation) {
       ${exceptions}
     </section>
 
-    ${renderSection('General Follow-Up Actions', 'Consolidated from room-level inspector follow-up decisions.', compilation.sections.followUps)}
+    ${renderSection('General Follow-Up Actions', 'Consolidated from the authoritative inspector and reviewer follow-up list.', compilation.sections.followUps)}
     ${renderSection('Actions Taken During Assessment', 'Generated only from explicit completed actions, tests, and collection records.', compilation.sections.actions)}
     ${renderSection('Assessment Observations', 'Built from inspector notes, approved findings, observation tags, and explicit adverse conditions.', compilation.sections.observations)}
 

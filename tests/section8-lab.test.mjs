@@ -92,6 +92,38 @@ test('follow-up source data becomes a source-backed Tanner item', () => {
   assert(result.sections.followUps[0].evidenceIds.length >= 2);
 });
 
+test('submitted authoritative follow-ups include reviewer additions and replace matching inspector rows', () => {
+  const inspection = fixture();
+  inspection.stepData.utility.followUpNote = 'Inspector condensate note.';
+  inspection.stepData.utility.followUpTimeframe = '3 months';
+  inspection.reviewedData = {
+    roomData: {
+      authoritativeFollowUpItems: JSON.stringify([
+        {
+          stepId: 'utility',
+          room: 'Utility Room',
+          recheckIn: '6 months',
+          watchFor: 'Reviewer-adjusted condensate plan.'
+        },
+        {
+          stepId: 'room-1',
+          room: 'Primary Bedroom—Bathroom',
+          recheckIn: 'Next visit',
+          watchFor: 'Check the bathroom moisture reading.'
+        }
+      ])
+    }
+  };
+
+  const result = compileSection8(inspection);
+  assert.equal(result.sections.followUps.length, 2);
+  assert.match(result.sections.followUps.find(item => item.stepId === 'utility').text, /Reviewer-adjusted/);
+  assert.doesNotMatch(result.sections.followUps.map(item => item.text).join('\n'), /Inspector condensate note/);
+  assert.match(result.sections.followUps.find(item => item.stepId === 'room-1').roomName, /Primary Bedroom/);
+  assert.match(result.sections.followUps.find(item => item.stepId === 'room-1').text, /bathroom moisture/);
+  assert.equal(result.exceptions.some(item => item.type === 'missing-follow-up-plan' && item.stepId === 'utility'), false);
+});
+
 test('routine no-issue room notes do not inflate assessment observations', () => {
   const inspection = fixture();
   inspection.stepData['room-1'].notes = 'No issues found.';
